@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.next/
+.env
+.env.local
+*.log
+.DS_Store
+coverage/
+.turbo/
+apps/api/prisma/migrations/*_migration_lock.toml
+backups/
+coverage/
+playwright-report/
+test-results/
+infra/certs/*.pem
+infra/certs/*.key
+!infra/certs/.gitkeep

@@ -1,0 +1,354 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  chairman
+  accountant
+  board
+  resident
+  auditor
+}
+
+enum FundType {
+  maintenance
+  capital_repair
+  special
+}
+
+enum AccrualDistribution {
+  by_area
+  fixed_per_apartment
+  manual
+}
+
+enum AccrualLineStatus {
+  open
+  partially_paid
+  paid
+  overdue
+}
+
+enum PaymentSource {
+  bank
+  cash
+  transfer
+}
+
+enum RequestStatus {
+  new
+  in_progress
+  done
+}
+
+enum UserStatus {
+  pending
+  active
+  blocked
+}
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  phone        String?
+  role         UserRole   @default(resident)
+  status       UserStatus @default(pending)
+  apartmentId  String?
+  apartment    Apartment? @relation(fields: [apartmentId], references: [id])
+  refreshToken String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  auditLogs          AuditLog[]
+  createdExpenses    Expense[]           @relation("ExpenseCreatedBy")
+  announcements      Announcement[]
+  requests           Request[]           @relation("RequestAuthor")
+  assignedRequests   Request[]           @relation("RequestAssignee")
+  pushSubscriptions  PushSubscription[]
+}
+
+model Building {
+  id                      String   @id @default(cuid())
+  name                    String
+  address                 String
+  edrpou                  String?
+  showDebtorsToResidents  Boolean  @default(true)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  apartments  Apartment[]
+  bankAccounts BankAccount[]
+  funds       Fund[]
+  suppliers   Supplier[]
+}
+
+model Apartment {
+  id         String   @id @default(cuid())
+  buildingId String
+  building   Building @relation(fields: [buildingId], references: [id])
+  number     String
+  entrance   Int      @default(1)
+  floor      Int?
+  area       Float
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  residents    Resident[]
+  users        User[]
+  accrualLines AccrualLine[]
+  payments     Payment[]
+
+  @@unique([buildingId, number])
+}
+
+model Resident {
+  id          String    @id @default(cuid())
+  apartmentId String
+  apartment   Apartment @relation(fields: [apartmentId], references: [id])
+  firstName   String
+  lastName    String
+  phone       String?
+  email       String?
+  isOwner     Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model BankAccount {
+  id          String   @id @default(cuid())
+  buildingId  String
+  building    Building @relation(fields: [buildingId], references: [id])
+  bankName    String
+  iban        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  funds Fund[]
+}
+
+model Fund {
+  id            String    @id @default(cuid())
+  buildingId    String
+  building      Building  @relation(fields: [buildingId], references: [id])
+  bankAccountId String?
+  bankAccount   BankAccount? @relation(fields: [bankAccountId], references: [id])
+  type          FundType
+  name          String
+  openingBalance Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  expenses         Expense[]
+  accrualTemplates AccrualTemplate[]
+  accruals         Accrual[]
+}
+
+model ExpenseCategory {
+  id        String   @id @default(cuid())
+  name      String
+  code      String   @unique
+  createdAt DateTime @default(now())
+
+  expenses Expense[]
+}
+
+model Supplier {
+  id          String   @id @default(cuid())
+  buildingId  String
+  building    Building @relation(fields: [buildingId], references: [id])
+  name        String
+  edrpou      String?
+  iban        String?
+  phone       String?
+  serviceType String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  expenses Expense[]
+}
+
+model Expense {
+  id          String          @id @default(cuid())
+  fundId      String
+  fund        Fund            @relation(fields: [fundId], references: [id])
+  categoryId  String
+  category    ExpenseCategory @relation(fields: [categoryId], references: [id])
+  supplierId  String?
+  supplier    Supplier?       @relation(fields: [supplierId], references: [id])
+  amount      Decimal         @db.Decimal(12, 2)
+  date        DateTime
+  description String?
+  documentKey String?
+  isVoided    Boolean         @default(false)
+  voidReason  String?
+  createdById String
+  createdBy   User            @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+model AccrualTemplate {
+  id           String              @id @default(cuid())
+  fundId       String
+  fund         Fund                @relation(fields: [fundId], references: [id])
+  name         String
+  distribution AccrualDistribution
+  rate         Decimal?            @db.Decimal(12, 4)
+  fixedAmount  Decimal?            @db.Decimal(12, 2)
+  isActive     Boolean             @default(true)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  accruals Accrual[]
+}
+
+model Accrual {
+  id         String   @id @default(cuid())
+  fundId     String
+  fund       Fund     @relation(fields: [fundId], references: [id])
+  templateId String?
+  template   AccrualTemplate? @relation(fields: [templateId], references: [id])
+  period     String
+  title      String
+  createdAt  DateTime @default(now())
+
+  lines AccrualLine[]
+}
+
+model AccrualLine {
+  id          String            @id @default(cuid())
+  accrualId   String
+  accrual     Accrual           @relation(fields: [accrualId], references: [id])
+  apartmentId String
+  apartment   Apartment         @relation(fields: [apartmentId], references: [id])
+  amount      Decimal           @db.Decimal(12, 2)
+  paidAmount  Decimal           @default(0) @db.Decimal(12, 2)
+  status      AccrualLineStatus @default(open)
+  dueDate     DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  allocations PaymentAllocation[]
+}
+
+model Payment {
+  id          String        @id @default(cuid())
+  apartmentId String
+  apartment   Apartment     @relation(fields: [apartmentId], references: [id])
+  amount      Decimal       @db.Decimal(12, 2)
+  date        DateTime
+  source      PaymentSource
+  reference   String?
+  isVoided    Boolean       @default(false)
+  voidReason  String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  allocations PaymentAllocation[]
+}
+
+model PaymentAllocation {
+  id            String      @id @default(cuid())
+  paymentId     String
+  payment       Payment     @relation(fields: [paymentId], references: [id])
+  accrualLineId String
+  accrualLine   AccrualLine @relation(fields: [accrualLineId], references: [id])
+  amount        Decimal     @db.Decimal(12, 2)
+  createdAt     DateTime    @default(now())
+}
+
+model Announcement {
+  id        String   @id @default(cuid())
+  title     String
+  body      String
+  isPinned  Boolean  @default(false)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Request {
+  id          String        @id @default(cuid())
+  title       String
+  description String
+  category    String
+  status      RequestStatus @default(new)
+  authorId    String
+  author      User          @relation("RequestAuthor", fields: [authorId], references: [id])
+  assigneeId  String?
+  assignee    User?         @relation("RequestAssignee", fields: [assigneeId], references: [id])
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model Poll {
+  id        String       @id @default(cuid())
+  question  String
+  isActive  Boolean      @default(true)
+  endsAt    DateTime?
+  createdAt DateTime     @default(now())
+
+  options PollOption[]
+  votes   PollVote[]
+}
+
+model PollOption {
+  id     String @id @default(cuid())
+  pollId String
+  poll   Poll   @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  text   String
+
+  votes PollVote[]
+}
+
+model PollVote {
+  id       String     @id @default(cuid())
+  pollId   String
+  poll     Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  optionId String
+  option   PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  userId   String
+  createdAt DateTime  @default(now())
+
+  @@unique([pollId, userId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String
+  entityType String
+  entityId   String
+  payload    Json?
+  createdAt  DateTime @default(now())
+}
+
+model Document {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  fileKey     String
+  isPublic    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+}

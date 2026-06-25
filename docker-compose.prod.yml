@@ -1,0 +1,31 @@
+# Production overlay: HTTPS via nginx + stricter env
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+services:
+  api:
+    environment:
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://localhost}
+    restart: always
+
+  web:
+    build:
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://localhost/api}
+    restart: always
+
+  nginx:
+    volumes:
+      - ./infra/nginx/nginx-ssl.conf:/etc/nginx/nginx.conf:ro
+      - ${SSL_CERT_DIR:-./infra/certs}:/etc/nginx/certs:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    restart: always
+
+  postgres:
+    restart: always
+
+  redis:
+    restart: always
+
+  minio:
+    restart: always

@@ -1,0 +1,93 @@
+name: Test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  api-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w @dah/shared
+      - run: npm run test:cov -w @dah/api
+
+  api-e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: dah
+          POSTGRES_PASSWORD: dah_secret_change_me
+          POSTGRES_DB: dah
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dah"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://dah:dah_secret_change_me@localhost:5432/dah_test
+      JWT_SECRET: ci-test-jwt-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w @dah/shared
+      - run: npm run db:generate -w @dah/api
+      - run: |
+          PGPASSWORD=dah_secret_change_me psql -h localhost -U dah -d dah -c "CREATE DATABASE dah_test;" || true
+          npm run test:e2e:setup -w @dah/api
+      - run: npm run test:e2e -w @dah/api
+
+  web-e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: dah
+          POSTGRES_PASSWORD: dah_secret_change_me
+          POSTGRES_DB: dah
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dah"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://dah:dah_secret_change_me@localhost:5432/dah
+      JWT_SECRET: ci-test-jwt-secret
+      NEXT_PUBLIC_API_URL: http://localhost:3001/api
+      CI: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w @dah/shared
+      - run: npm run db:generate -w @dah/api
+      - run: npm run test:e2e:setup -w @dah/api
+      - run: npm run db:seed -w @dah/api
+      - run: npx playwright install --with-deps chromium
+        working-directory: apps/web
+      - run: npm run build -w @dah/api
+      - run: npm run start -w @dah/api &
+      - run: npm run build -w @dah/web && npm run start -w @dah/web &
+      - run: npx wait-on http://localhost:3001/api/health http://localhost:3000
+      - run: npm run test:e2e -w @dah/web

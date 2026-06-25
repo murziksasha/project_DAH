@@ -1,0 +1,27 @@
+{
+  "name": "dah-osmd",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w @dah/api",
+    "dev:web": "npm run dev -w @dah/web",
+    "build": "npm run build -w @dah/shared && npm run build -w @dah/api && npm run build -w @dah/web",
+    "db:migrate": "npm run db:migrate -w @dah/api",
+    "db:seed": "npm run db:seed -w @dah/api",
+    "backup": "docker compose --profile backup run --rm backup",
+    "test": "npm run test -w @dah/api",
+    "test:cov": "npm run test:cov -w @dah/api",
+    "test:e2e": "npm run test:e2e -w @dah/api",
+    "test:e2e:web": "npm run test:e2e -w @dah/web",
+    "test:all": "npm run test -w @dah/api && npm run test:e2e -w @dah/api",
+    "lint": "npm run lint -w @dah/api && npm run lint -w @dah/web"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "allowScripts": {}
+}
