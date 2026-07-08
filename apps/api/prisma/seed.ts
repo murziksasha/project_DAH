@@ -41,6 +41,13 @@ async function main() {
       name: buildingName,
       address: 'м. Київ, вул. Прикладна, 1',
       edrpou: '12345678',
+      isInitialized: true,
+      settings: {
+        registrationEnabled: true,
+        showBankDetailsToResidents: true,
+        defaultAccrualDueDays: 14,
+        locale: 'uk',
+      },
     },
   });
 
@@ -127,6 +134,21 @@ async function main() {
   }
 
   const passwordHash = await bcrypt.hash('password123', 10);
+
+  const superAdminEmail = process.env.SUPER_ADMIN_EMAIL ?? 'admin@dah.local';
+  const superAdminPassword = process.env.SUPER_ADMIN_PASSWORD ?? 'password123';
+  const superAdminHash = await bcrypt.hash(superAdminPassword, 10);
+
+  await prisma.user.create({
+    data: {
+      email: superAdminEmail,
+      passwordHash: superAdminHash,
+      firstName: 'Системний',
+      lastName: 'Адміністратор',
+      role: UserRole.super_admin,
+      status: UserStatus.active,
+    },
+  });
 
   await prisma.user.create({
     data: {
@@ -289,6 +311,7 @@ async function main() {
   console.log('  Building:', building.name);
   console.log('  Apartments:', apartments.length);
   console.log('  Demo users:');
+  console.log(`    ${superAdminEmail} / ${superAdminPassword} (super_admin)`);
   console.log('    chairman@osbb.local / password123');
   console.log('    accountant@osbb.local / password123');
   console.log('    auditor@osbb.local / password123');

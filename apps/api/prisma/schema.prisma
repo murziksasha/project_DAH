@@ -8,6 +8,7 @@ datasource db {
 }
 
 enum UserRole {
+  super_admin
   chairman
   accountant
   board
@@ -81,6 +82,8 @@ model Building {
   address                 String
   edrpou                  String?
   showDebtorsToResidents  Boolean  @default(true)
+  isInitialized           Boolean  @default(false)
+  settings                Json     @default("{}")
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
