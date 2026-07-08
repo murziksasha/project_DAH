@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -7,7 +8,9 @@ import {
   AccrualLineStatus,
   PaymentSource,
   Prisma,
+  UserRole,
 } from '@prisma/client';
+import { AuthUser } from '../../common/decorators/current-user.decorator';
 import {
   FifoLineInput,
   planFifoAllocation,
@@ -26,6 +29,14 @@ export interface AllocationPlan {
   lineBalance: number;
 }
 
+const PAYMENT_READ_ROLES: UserRole[] = [
+  UserRole.chairman,
+  UserRole.accountant,
+  UserRole.board,
+  UserRole.auditor,
+  UserRole.super_admin,
+];
+
 @Injectable()
 export class PaymentsService {
   constructor(
@@ -33,9 +44,17 @@ export class PaymentsService {
     private audit: AuditService,
   ) {}
 
-  listPayments(apartmentId?: string) {
+  listPayments(user: AuthUser, apartmentId?: string) {
     const where: Prisma.PaymentWhereInput = { isVoided: false };
-    if (apartmentId) where.apartmentId = apartmentId;
+
+    if (PAYMENT_READ_ROLES.includes(user.role as UserRole)) {
+      if (apartmentId) where.apartmentId = apartmentId;
+    } else {
+      if (!user.apartmentId) {
+        throw new ForbiddenException('Квартиру не прив\'язано до облікового запису');
+      }
+      where.apartmentId = user.apartmentId;
+    }
 
     return this.prisma.payment.findMany({
       where,
@@ -51,8 +70,8 @@ export class PaymentsService {
     });
   }
 
-  getPayment(id: string) {
-    return this.prisma.payment.findUnique({
+  async getPayment(id: string, user: AuthUser) {
+    const payment = await this.prisma.payment.findUnique({
       where: { id },
       include: {
         apartment: true,
@@ -63,6 +82,16 @@ export class PaymentsService {
         },
       },
     });
+
+    if (!payment) throw new NotFoundException('Платіж не знайдено');
+
+    if (!PAYMENT_READ_ROLES.includes(user.role as UserRole)) {
+      if (payment.apartmentId !== user.apartmentId) {
+        throw new ForbiddenException('Немає доступу до цього платежу');
+      }
+    }
+
+    return payment;
   }
 
   async previewAllocation(apartmentId: string, amount: number) {
@@ -82,7 +111,8 @@ export class PaymentsService {
     };
   }
 
-  async createPayment(dto: CreatePaymentDto, userId: string) {
+  async createPayment(dto: CreatePaymentDto, user: AuthUser) {
+    const userId = user.id;
     const apartment = await this.prisma.apartment.findUnique({
       where: { id: dto.apartmentId },
     });
@@ -141,7 +171,7 @@ export class PaymentsService {
       },
     });
 
-    return this.getPayment(payment.id);
+    return this.getPayment(payment.id, user);
   }
 
   async voidPayment(id: string, reason: string, userId: string) {

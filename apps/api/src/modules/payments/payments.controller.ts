@@ -36,8 +36,8 @@ export class PaymentsController {
   }
 
   @Get()
-  list(@Query('apartmentId') apartmentId?: string) {
-    return this.payments.listPayments(apartmentId);
+  list(@Query('apartmentId') apartmentId: string | undefined, @CurrentUser() user: AuthUser) {
+    return this.payments.listPayments(user, apartmentId);
   }
 
   @UseGuards(RolesGuard)
@@ -54,12 +54,12 @@ export class PaymentsController {
   @Roles(...WRITE_ROLES)
   @Post()
   create(@Body() dto: CreatePaymentDto, @CurrentUser() user: AuthUser) {
-    return this.payments.createPayment(dto, user.id);
+    return this.payments.createPayment(dto, user);
   }
 
   @Get(':id')
-  getOne(@Param('id') id: string) {
-    return this.payments.getPayment(id);
+  getOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.payments.getPayment(id, user);
   }
 
   @UseGuards(RolesGuard)
