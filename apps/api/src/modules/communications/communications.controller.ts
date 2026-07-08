@@ -90,6 +90,8 @@ export class CommunicationsController {
     return this.communications.createPoll(dto, user.id);
   }
 
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.chairman, UserRole.accountant, UserRole.board, UserRole.resident)
   @Post('polls/:id/vote')
   votePoll(
     @Param('id') id: string,

@@ -1,3 +1,4 @@
+process.env.NODE_ENV ??= 'test';
 process.env.DATABASE_URL ??=
   'postgresql://dah:dah_secret_change_me@localhost:5432/dah_test';
 process.env.JWT_SECRET ??= 'test-jwt-secret-for-e2e-only';
