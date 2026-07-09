@@ -7,6 +7,9 @@
     "packages/*"
   ],
   "scripts": {
+    "docker:up": "docker compose build api web && docker compose up -d",
+    "docker:down": "docker compose stop postgres redis minio",
+    "setup:local": "npm run docker:up && npm run db:generate -w @dah/api && npm run db:migrate:dev -w @dah/api && npm run db:seed -w @dah/api",
     "dev:api": "npm run dev -w @dah/api",
     "dev:web": "npm run dev -w @dah/web",
     "build": "npm run build -w @dah/shared && npm run build -w @dah/api && npm run build -w @dah/web",

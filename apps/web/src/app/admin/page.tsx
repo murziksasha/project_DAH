@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, getToken } from '@/lib/api';
 
 interface CashFlowReport {
   totalIncome: number;
@@ -31,7 +31,7 @@ export default function AdminDashboard() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const token = localStorage.getItem('dah_token');
+    const token = getToken();
     if (!token) {
       window.location.href = '/login';
       return;
@@ -64,6 +64,7 @@ export default function AdminDashboard() {
           <Link href="/admin/reports" className="btn" style={{ background: 'var(--surface-2)' }}>Звіти</Link>
           <Link href="/admin/documents" className="btn" style={{ background: 'var(--surface-2)' }}>Документи</Link>
           <Link href="/admin/communications" className="btn" style={{ background: 'var(--surface-2)' }}>Комунікації</Link>
+          <Link href="/admin/residents" className="btn" style={{ background: 'var(--surface-2)' }}>Мешканці</Link>
           <Link href="/admin/settings" className="btn" style={{ background: 'var(--surface-2)' }}>Налаштування</Link>
           <Link href="/admin/audit" className="btn" style={{ background: 'var(--surface-2)' }}>Аудит</Link>
           <Link href="/" style={{ color: 'var(--muted)', alignSelf: 'center' }}>На головну</Link>

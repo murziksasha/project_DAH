@@ -1,8 +1,10 @@
 {
+  "id": "/",
   "name": "DAH — ОСМД у смартфоні",
   "short_name": "DAH",
   "description": "Управління ОСМД: фінанси, внески, прозорість",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#2563eb",

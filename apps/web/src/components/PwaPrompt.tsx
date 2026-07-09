@@ -1,34 +1,70 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
+import { useCallback, useEffect, useState } from 'react';
 import { getToken } from '@/lib/api';
-import { canUsePush, subscribeToPush } from '@/lib/push';
+import { canUsePush, isPushConfigured, registerServiceWorker, subscribeToPush } from '@/lib/push';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
+const INSTALL_DISMISSED_KEY = 'dah_pwa_install_dismissed';
+const PUSH_DISMISSED_KEY = 'dah_push_dismissed';
+
 export function PwaPrompt() {
+  const pathname = usePathname();
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstall, setShowInstall] = useState(false);
   const [showPush, setShowPush] = useState(false);
   const [message, setMessage] = useState('');
+  const [messageIsError, setMessageIsError] = useState(false);
+
+  const evaluatePushPrompt = useCallback(async () => {
+    if (
+      !canUsePush() ||
+      Notification.permission !== 'default' ||
+      !getToken() ||
+      sessionStorage.getItem(PUSH_DISMISSED_KEY)
+    ) {
+      setShowPush(false);
+      return;
+    }
+
+    const configured = await isPushConfigured();
+    setShowPush(configured);
+  }, []);
 
   useEffect(() => {
+    registerServiceWorker().catch(() => undefined);
+
     const handler = (e: Event) => {
       e.preventDefault();
+      if (sessionStorage.getItem(INSTALL_DISMISSED_KEY)) return;
       setInstallEvent(e as BeforeInstallPromptEvent);
       setShowInstall(true);
     };
     window.addEventListener('beforeinstallprompt', handler);
 
-    if (canUsePush() && Notification.permission === 'default' && getToken()) {
-      setShowPush(true);
-    }
+    const onAuthChange = () => {
+      void evaluatePushPrompt();
+    };
+    window.addEventListener('dah-auth-change', onAuthChange);
+    window.addEventListener('focus', onAuthChange);
 
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
+    void evaluatePushPrompt();
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handler);
+      window.removeEventListener('dah-auth-change', onAuthChange);
+      window.removeEventListener('focus', onAuthChange);
+    };
+  }, [evaluatePushPrompt]);
+
+  useEffect(() => {
+    void evaluatePushPrompt();
+  }, [pathname, evaluatePushPrompt]);
 
   async function handleInstall() {
     if (!installEvent) return;
@@ -38,13 +74,26 @@ export function PwaPrompt() {
     setInstallEvent(null);
   }
 
+  function dismissInstall() {
+    sessionStorage.setItem(INSTALL_DISMISSED_KEY, '1');
+    setShowInstall(false);
+    setInstallEvent(null);
+  }
+
+  function dismissPush() {
+    sessionStorage.setItem(PUSH_DISMISSED_KEY, '1');
+    setShowPush(false);
+  }
+
   async function handlePush() {
     try {
-      const ok = await subscribeToPush();
-      setMessage(ok ? 'Сповіщення увімкнено' : 'Не вдалося підписатися');
+      await subscribeToPush();
+      setMessage('Сповіщення увімкнено');
+      setMessageIsError(false);
       setShowPush(false);
-    } catch {
-      setMessage('Помилка підписки на сповіщення');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Помилка підписки на сповіщення');
+      setMessageIsError(true);
     }
   }
 
@@ -72,7 +121,7 @@ export function PwaPrompt() {
           </button>
           <button
             type="button"
-            onClick={() => setShowInstall(false)}
+            onClick={dismissInstall}
             style={{ fontSize: '0.85rem', background: 'var(--surface-2)' }}
           >
             Пізніше
@@ -87,7 +136,7 @@ export function PwaPrompt() {
           </button>
           <button
             type="button"
-            onClick={() => setShowPush(false)}
+            onClick={dismissPush}
             style={{ fontSize: '0.85rem', background: 'var(--surface-2)' }}
           >
             Ні
@@ -95,7 +144,16 @@ export function PwaPrompt() {
         </div>
       )}
       {message && (
-        <p style={{ textAlign: 'center', fontSize: '0.85rem', color: 'var(--success)' }}>{message}</p>
+        <p
+          className="card"
+          style={{
+            textAlign: 'center',
+            fontSize: '0.85rem',
+            color: messageIsError ? 'var(--danger)' : 'var(--success)',
+          }}
+        >
+          {message}
+        </p>
       )}
     </div>
   );

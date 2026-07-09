@@ -4,6 +4,7 @@
 
 | Роль | Код | Опис |
 |------|-----|------|
+| Системний адміністратор | `super_admin` | Bootstrap, користувачі, квартири, налаштування (без фінансових операцій) |
 | Голова правління | `chairman` | Повний адмін-доступ |
 | Бухгалтер | `accountant` | Фінанси, без видалення оголошень |
 | Член правління | `board` | Фінанси + комунікації |
@@ -83,7 +84,9 @@
 |---------|--------|
 | `/login` | Публічний |
 | `/resident` | `resident` (та admin roles для перегляду) |
-| `/admin/*` | `chairman`, `accountant`, `board`, `auditor` |
+| `/admin/setup` | `super_admin` (поки `isInitialized = false`) |
+| `/admin/organization` | `super_admin` |
+| `/admin/*` (фінанси) | `chairman`, `accountant`, `board`, `auditor` |
 
 Після login admin-ролі перенаправляються на `/admin`, мешканець — на `/resident`.
 

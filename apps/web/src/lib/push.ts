@@ -1,5 +1,12 @@
 import { apiFetch, getToken } from './api';
 
+export type PushSubscribeError =
+  | 'no_token'
+  | 'no_vapid'
+  | 'denied'
+  | 'no_sw'
+  | 'invalid_subscription';
+
 function urlBase64ToUint8Array(base64: string): Uint8Array {
   const padding = '='.repeat((4 - (base64.length % 4)) % 4);
   const b64 = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -12,26 +19,41 @@ function urlBase64ToUint8Array(base64: string): Uint8Array {
 export async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
   if (!('serviceWorker' in navigator)) return null;
   try {
-    return await navigator.serviceWorker.register('/sw.js');
+    return await navigator.serviceWorker.register('/sw.js', { scope: '/' });
   } catch {
     return null;
   }
 }
 
-export async function subscribeToPush(): Promise<boolean> {
+export async function isPushConfigured(): Promise<boolean> {
+  try {
+    const { publicKey } = await apiFetch<{ publicKey: string | null }>(
+      '/notifications/vapid-public-key',
+    );
+    return Boolean(publicKey);
+  } catch {
+    return false;
+  }
+}
+
+export async function subscribeToPush(): Promise<void> {
   const token = getToken();
-  if (!token) return false;
+  if (!token) throw new Error('Увійдіть у систему, щоб увімкнути сповіщення');
 
   const { publicKey } = await apiFetch<{ publicKey: string | null }>(
     '/notifications/vapid-public-key',
   );
-  if (!publicKey) return false;
+  if (!publicKey) {
+    throw new Error('Сповіщення не налаштовані на сервері (VAPID ключі)');
+  }
 
   const permission = await Notification.requestPermission();
-  if (permission !== 'granted') return false;
+  if (permission !== 'granted') {
+    throw new Error('Дозвіл на сповіщення не надано');
+  }
 
   const registration = await registerServiceWorker();
-  if (!registration) return false;
+  if (!registration) throw new Error('Не вдалося зареєструвати service worker');
 
   let subscription = await registration.pushManager.getSubscription();
   if (!subscription) {
@@ -42,7 +64,9 @@ export async function subscribeToPush(): Promise<boolean> {
   }
 
   const json = subscription.toJSON();
-  if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) return false;
+  if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
+    throw new Error('Некоректна підписка браузера');
+  }
 
   await apiFetch('/notifications/subscribe', {
     method: 'POST',
@@ -53,8 +77,6 @@ export async function subscribeToPush(): Promise<boolean> {
       auth: json.keys.auth,
     }),
   });
-
-  return true;
 }
 
 export function canUsePush(): boolean {
