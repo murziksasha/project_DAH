@@ -1,12 +1,28 @@
+export type DeferredSetupRole = 'accountant' | 'auditor';
+
 export interface BuildingSettingsJson {
   registrationEnabled?: boolean;
   showBankDetailsToResidents?: boolean;
   defaultAccrualDueDays?: number;
   locale?: 'uk' | 'ru';
+  /** Ролі, відкладені на етапі майстра налаштування */
+  deferredSetupRoles?: DeferredSetupRole[];
   features?: {
     polls?: boolean;
     requests?: boolean;
     webPush?: boolean;
+  };
+}
+
+export function clearDeferredSetupRole(
+  raw: unknown,
+  role: DeferredSetupRole,
+): BuildingSettingsJson {
+  const parsed = parseBuildingSettings(raw);
+  const next = (parsed.deferredSetupRoles ?? []).filter((r) => r !== role);
+  return {
+    ...parsed,
+    deferredSetupRoles: next.length > 0 ? next : undefined,
   };
 }
 

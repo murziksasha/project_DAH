@@ -156,6 +156,111 @@ describe('Setup (e2e)', () => {
   });
 });
 
+describe('Setup defer roles (e2e)', () => {
+  let app: INestApplication;
+  let token: string;
+
+  beforeAll(async () => {
+    await resetTestDatabase();
+    await seedSuperAdminOnly();
+
+    const moduleFixture = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    app.setGlobalPrefix('api');
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }),
+    );
+    await app.init();
+
+    token = await loginSuper(app);
+  });
+
+  afterAll(async () => {
+    await app.close();
+    await disconnectTestDatabase();
+  });
+
+  it('completes setup when accountant and auditor are deferred', async () => {
+    await request(app.getHttpServer())
+      .post('/api/setup/building')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Defer OSBB', address: 'Defer st.', edrpou: '11111111' })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/setup/bank')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        bankName: 'ПриватБанк',
+        iban: 'UA111111111111111111111111111',
+        funds: [
+          { name: 'Фонд утримання', type: 'maintenance', openingBalance: 0 },
+          { name: 'Фонд капітального ремонту', type: 'capital_repair', openingBalance: 0 },
+        ],
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/setup/apartments')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ apartments: [{ number: '101', entrance: 1, area: 50 }] })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/setup/users')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        users: [
+          {
+            email: 'chair-only@osbb.local',
+            password: 'password123',
+            firstName: 'Only',
+            lastName: 'Chair',
+            role: 'chairman',
+          },
+        ],
+        deferRoles: ['accountant', 'auditor'],
+      })
+      .expect(201);
+
+    const status = await request(app.getHttpServer())
+      .get('/api/setup/status')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(status.body.canComplete).toBe(true);
+    expect(status.body.pendingDeferredRoles).toEqual(['accountant', 'auditor']);
+    expect(status.body.deferredSetupRoles).toEqual(['accountant', 'auditor']);
+
+    await request(app.getHttpServer())
+      .post('/api/setup/complete')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/users')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        email: 'late-acc@osbb.local',
+        password: 'password123',
+        firstName: 'Late',
+        lastName: 'Acc',
+        role: 'accountant',
+      })
+      .expect(201);
+
+    const afterAcc = await request(app.getHttpServer())
+      .get('/api/setup/status')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(afterAcc.body.pendingDeferredRoles).toEqual(['auditor']);
+  });
+});
+
 describe('Setup resume (e2e)', () => {
   let app: INestApplication;
   let token: string;

@@ -255,10 +255,79 @@ label {
 .app-content {
   flex: 1;
   width: 100%;
+  min-width: 0;
   max-width: 960px;
   margin: 0 auto;
   padding: 1rem;
   padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  overflow-x: clip;
+}
+
+.audit-log-list {
+  list-style: none;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.audit-log-item {
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.audit-log-item:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.audit-log-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.audit-log-main {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.audit-log-action {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.audit-log-meta {
+  margin-top: 0.25rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  word-break: break-word;
+}
+
+.audit-log-time {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.audit-log-payload {
+  margin-top: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .nav-scroll {

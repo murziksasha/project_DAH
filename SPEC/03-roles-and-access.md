@@ -122,6 +122,8 @@ Web UI `/admin/organization` — лише `super_admin`.
 - Resume: `GET /setup/status` повертає `nextStep`, `stepDone`, prefill для building/bank
 - Завершені кроки пропускають POST — кнопка **Продовжити**
 - Повторний `POST /setup/bank` при наявних фондах — `200` з `{ skipped: true }` (не помилка)
+- Крок **Користувачі**: голова правління обов'язкова; для бухгалтера та ревізії — чекбокс **Створити пізніше**
+- Відкладені ролі (`deferredSetupRoles`) створюються в `/admin/organization` (банер + форма `POST /users`)
 
 ## Реалізація
 

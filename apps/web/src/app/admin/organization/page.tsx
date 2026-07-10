@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { apiFetch, getToken } from '@/lib/api';
 import { ApartmentsSection } from './apartments-section';
-import { PAGE_SIZE } from './constants';
+import { PAGE_SIZE, ROLE_LABELS } from './constants';
 import { UserForm } from './user-form';
 import { UsersSection } from './users-section';
 import {
@@ -30,6 +30,7 @@ export default function OrganizationPage() {
 
   const [userForm, setUserForm] = useState<UserFormState>(emptyUserForm());
   const [editingUser, setEditingUser] = useState<UserRow | null>(null);
+  const [pendingDeferredRoles, setPendingDeferredRoles] = useState<Array<'accountant' | 'auditor'>>([]);
 
   const loadApartments = useCallback(async (token: string) => {
     const data = await apiFetch<ApartmentRow[]>('/building/apartments', { token });
@@ -66,11 +67,15 @@ export default function OrganizationPage() {
       window.location.href = '/login';
       return;
     }
-    await Promise.all([
+    const [, , , setupStatus] = await Promise.all([
       loadUsers(token, page, search),
       loadApartments(token),
       loadResidents(token),
+      apiFetch<{ pendingDeferredRoles?: Array<'accountant' | 'auditor'> }>('/setup/status', {
+        token,
+      }).catch(() => ({ pendingDeferredRoles: [] })),
     ]);
+    setPendingDeferredRoles(setupStatus.pendingDeferredRoles ?? []);
   }, [loadApartments, loadResidents, loadUsers, page, search]);
 
   useEffect(() => {
@@ -112,6 +117,14 @@ export default function OrganizationPage() {
   function cancelEditUser() {
     setEditingUser(null);
     setUserForm(emptyUserForm());
+  }
+
+  function startCreateDeferredRole(role: 'accountant' | 'auditor') {
+    setEditingUser(null);
+    setUserForm({ ...emptyUserForm(), role });
+    setMessage('');
+    setError('');
+    document.getElementById('org-user-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   async function handleUserSubmit(e: FormEvent) {
@@ -310,6 +323,42 @@ export default function OrganizationPage() {
       {error && <p className="error">{error}</p>}
       {message && <p style={{ color: 'var(--success)' }}>{message}</p>}
 
+      {pendingDeferredRoles.length > 0 && (
+        <section
+          className="card"
+          style={{
+            marginBottom: '1.5rem',
+            borderColor: 'var(--primary)',
+            display: 'grid',
+            gap: '0.75rem',
+          }}
+        >
+          <h2 style={{ fontSize: '1rem' }}>Завершіть первинне налаштування</h2>
+          <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
+            Під час майстра ви відклали створення цих ролей. Додайте їх тут, щоб відкрити повний фінансовий кабінет.
+          </p>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            {pendingDeferredRoles.map((role) => (
+              <button key={role} type="button" onClick={() => startCreateDeferredRole(role)}>
+                Створити: {ROLE_LABELS[role]}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <div id="org-user-form">
+        <UserForm
+          form={userForm}
+          editingUser={editingUser}
+          apartments={apartments}
+          saving={saving}
+          onChange={setUserForm}
+          onSubmit={handleUserSubmit}
+          onCancel={cancelEditUser}
+        />
+      </div>
+
       <UsersSection
         users={users}
         total={total}
@@ -320,16 +369,6 @@ export default function OrganizationPage() {
         onPageChange={setPage}
         onEdit={startEditUser}
         onToggleBlock={handleToggleBlock}
-      />
-
-      <UserForm
-        form={userForm}
-        editingUser={editingUser}
-        apartments={apartments}
-        saving={saving}
-        onChange={setUserForm}
-        onSubmit={handleUserSubmit}
-        onCancel={cancelEditUser}
       />
 
       <ApartmentsSection

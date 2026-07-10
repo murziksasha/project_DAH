@@ -33,15 +33,31 @@
   "canComplete": false,
   "nextStep": 2,
   "stepDone": { "building": true, "bank": true, "apartments": false, "users": false },
+  "deferredSetupRoles": ["accountant"],
+  "pendingDeferredRoles": ["accountant"],
   "building": { "name": "...", "address": "...", "edrpou": null },
   "bankAccount": { "bankName": "...", "iban": "...", "description": "..." }
 }
 ```
 
+`POST /setup/users` body (додатково):
+
+```json
+{
+  "users": [{ "email": "...", "password": "...", "firstName": "...", "lastName": "...", "role": "chairman" }],
+  "deferRoles": ["accountant", "auditor"]
+}
+```
+
+- **Голова правління** — обов'язкова для завершення майстра
+- **Бухгалтер / ревізія** — можна відкласти (`deferRoles`); зберігається в `Building.settings.deferredSetupRoles`
+- Після `POST /users` з роллю `accountant` або `auditor` відкладена роль знімається з `deferredSetupRoles`
+- UI «Організація» показує банер `pendingDeferredRoles` з кнопкою швидкого створення
+
 Ідемпотентність:
 
 - `POST /setup/bank` — якщо фонди вже є → `200`, `{ skipped: true, bankAccount, funds }`
-- `POST /setup/users` — якщо всі 3 ролі активні → `200`, `{ skipped: true, users }`; інакше створює лише відсутні ролі (існуючі пропускаються)
+- `POST /setup/users` — якщо всі потрібні ролі активні або відкладені → `200`, `{ skipped: true, users }`; інакше створює лише відсутні ролі (існуючі пропускаються)
 - `POST /setup/apartments` — якщо квартири вже є → `400` «Квартири вже додано» (UI пропускає крок)
 
 ---

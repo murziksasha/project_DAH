@@ -31,6 +31,7 @@ erDiagram
 | address | String | Адреса |
 | edrpou | String? | ЄДРПОУ |
 | showDebtorsToResidents | Boolean | Показувати боржників мешканцям |
+| settings (JSON) | Object | `deferredSetupRoles?: ('accountant' \| 'auditor')[]` — ролі, відкладені в майстрі налаштування |
 
 ### Apartment
 | Поле | Тип | Опис |

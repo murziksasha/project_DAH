@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, UserRole, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { clearDeferredSetupRole, parseBuildingSettings } from '../building/building-settings';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -145,6 +146,22 @@ export class UsersService {
       entityId: user.id,
       payload: { email: user.email, role: user.role },
     });
+
+    if (dto.role === UserRole.accountant || dto.role === UserRole.auditor) {
+      const building = await this.prisma.building.findFirst({ select: { id: true, settings: true } });
+      if (building) {
+        const nextSettings = clearDeferredSetupRole(
+          building.settings,
+          dto.role === UserRole.accountant ? 'accountant' : 'auditor',
+        );
+        if (JSON.stringify(nextSettings) !== JSON.stringify(parseBuildingSettings(building.settings))) {
+          await this.prisma.building.update({
+            where: { id: building.id },
+            data: { settings: nextSettings as object },
+          });
+        }
+      }
+    }
 
     return user;
   }

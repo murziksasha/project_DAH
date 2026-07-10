@@ -26,9 +26,17 @@ interface SetupStatus {
     accountant: { email: string; firstName: string; lastName: string } | null;
     auditor: { email: string; firstName: string; lastName: string } | null;
   };
+  deferredSetupRoles: ('accountant' | 'auditor')[];
+  pendingDeferredRoles: ('accountant' | 'auditor')[];
 }
 
 type SetupRole = 'chairman' | 'accountant' | 'auditor';
+type DeferrableRole = 'accountant' | 'auditor';
+
+const DEFERRABLE_ROLE_LABELS: Record<DeferrableRole, string> = {
+  accountant: 'Бухгалтер',
+  auditor: 'Ревізійна комісія',
+};
 
 const STEPS = ['ОСМД', 'Банк', 'Квартири', 'Користувачі', 'Підтвердження'];
 const STEP_KEYS = ['building', 'bank', 'apartments', 'users'] as const;
@@ -57,6 +65,10 @@ export default function SetupPage() {
     boardFirstName: '',
     boardLastName: '',
     addBoard: false,
+  });
+  const [createLater, setCreateLater] = useState<Record<DeferrableRole, boolean>>({
+    accountant: false,
+    auditor: false,
   });
 
   function applyStatus(s: SetupStatus) {
@@ -96,6 +108,12 @@ export default function SetupPage() {
         return next;
       });
     }
+    if (s.deferredSetupRoles) {
+      setCreateLater({
+        accountant: s.deferredSetupRoles.includes('accountant') && !s.hasAccountant,
+        auditor: s.deferredSetupRoles.includes('auditor') && !s.hasAuditor,
+      });
+    }
     if (s.isInitialized) window.location.href = '/admin/organization';
   }
 
@@ -126,6 +144,15 @@ export default function SetupPage() {
     return status.hasAuditor;
   }
 
+  function isRoleDeferred(role: DeferrableRole): boolean {
+    return createLater[role] || (status?.deferredSetupRoles.includes(role) ?? false);
+  }
+
+  function isRoleResolved(role: SetupRole): boolean {
+    if (role === 'chairman') return hasRoleFilled(role);
+    return hasRoleFilled(role) || isRoleDeferred(role);
+  }
+
   function missingForComplete(): string[] {
     if (!status) return [];
     const missing: string[] = [];
@@ -133,8 +160,8 @@ export default function SetupPage() {
     if (!status.stepDone.bank) missing.push('банківські реквізити');
     if (!status.stepDone.apartments) missing.push('квартири');
     if (!status.hasChairman) missing.push('голова правління');
-    if (!status.hasAccountant) missing.push('бухгалтер');
-    if (!status.hasAuditor) missing.push('ревізійна комісія');
+    if (!status.hasAccountant && !isRoleDeferred('accountant')) missing.push('бухгалтер');
+    if (!status.hasAuditor && !isRoleDeferred('auditor')) missing.push('ревізійна комісія');
     return missing;
   }
 
@@ -193,8 +220,11 @@ export default function SetupPage() {
         });
         setMessage(`Додано ${apartments.length} квартир`);
       } else if (step === 3) {
+        const deferRoles = (['accountant', 'auditor'] as const).filter(
+          (role) => isRoleDeferred(role) && !hasRoleFilled(role),
+        );
         const payload = (['chairman', 'accountant', 'auditor'] as const)
-          .filter((role) => !hasRoleFilled(role))
+          .filter((role) => !isRoleResolved(role))
           .map((role) => ({ ...users[role], role }));
         if (users.addBoard && users.boardEmail) {
           payload.push({
@@ -208,9 +238,13 @@ export default function SetupPage() {
         await apiFetch('/setup/users', {
           method: 'POST',
           token,
-          body: JSON.stringify({ users: payload }),
+          body: JSON.stringify({ users: payload, deferRoles }),
         });
-        setMessage('Ключових користувачів створено');
+        setMessage(
+          deferRoles.length > 0
+            ? 'Користувачів збережено. Відкладені ролі можна створити в Організації.'
+            : 'Ключових користувачів створено',
+        );
       } else if (step === 4) {
         await apiFetch('/setup/complete', { method: 'POST', token });
         window.location.href = '/admin/organization';
@@ -356,18 +390,38 @@ export default function SetupPage() {
           <>
             {(['chairman', 'accountant', 'auditor'] as const).map((role) => {
               const roleDone = hasRoleFilled(role);
-              const roleReadOnly = readOnly || roleDone;
+              const deferrable = role !== 'chairman';
+              const deferred = deferrable && isRoleDeferred(role);
+              const roleReadOnly = readOnly || roleDone || deferred;
               return (
               <fieldset key={role} style={{ border: '1px solid var(--border)', padding: '1rem', borderRadius: 8 }}>
                 <legend style={{ padding: '0 0.5rem' }}>
                   {role === 'chairman' ? 'Голова правління' : role === 'accountant' ? 'Бухгалтер' : 'Ревізійна комісія'}
-                  {roleDone ? ' ✓' : ''}
+                  {roleDone ? ' ✓' : deferred ? ' ⏳' : ''}
                 </legend>
                 {roleDone && (
                   <p className="success-banner" style={{ marginBottom: '0.75rem' }}>
                     Вже створено
                   </p>
                 )}
+                {deferred && !roleDone && (
+                  <p className="success-banner" style={{ marginBottom: '0.75rem' }}>
+                    Створення відкладено — додайте в розділі Організація
+                  </p>
+                )}
+                {deferrable && !roleDone && !readOnly && (
+                  <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.75rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={createLater[role]}
+                      onChange={(e) =>
+                        setCreateLater((prev) => ({ ...prev, [role]: e.target.checked }))
+                      }
+                    />
+                    Створити пізніше
+                  </label>
+                )}
+                {!deferred && (
                 <div style={{ display: 'grid', gap: '0.75rem' }}>
                   <input
                     placeholder="Email"
@@ -400,6 +454,7 @@ export default function SetupPage() {
                     readOnly={roleReadOnly}
                   />
                 </div>
+                )}
               </fieldset>
             );
             })}
@@ -429,9 +484,14 @@ export default function SetupPage() {
         {step === 4 && (
           <>
             <p>
-              Перевірте дані та завершіть налаштування. Після цього фінансовий кабінет стане доступним для голови,
-              бухгалтера та ревізійної комісії.
+              Перевірте дані та завершіть налаштування. Після цього фінансовий кабінет стане доступним для голови
+              правління. Бухгалтера та ревізію можна додати зараз або пізніше в Організації.
             </p>
+            {status && status.pendingDeferredRoles.length > 0 && (
+              <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
+                Відкладено: {status.pendingDeferredRoles.map((r) => DEFERRABLE_ROLE_LABELS[r]).join(', ')}
+              </p>
+            )}
             {status && !status.canComplete && (
               <p className="error">
                 Ще потрібно: {missingForComplete().join(', ')}

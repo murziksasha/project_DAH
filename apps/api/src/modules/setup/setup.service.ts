@@ -5,6 +5,11 @@ import {
 } from '@nestjs/common';
 import { FundType, UserRole, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import {
+  DeferredSetupRole,
+  mergeBuildingSettings,
+  parseBuildingSettings,
+} from '../building/building-settings';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { SetupApartmentsDto } from './dto/setup-apartment.dto';
@@ -13,6 +18,8 @@ import { SetupBuildingDto } from './dto/setup-building.dto';
 import { SetupUsersDto } from './dto/setup-users.dto';
 
 const REQUIRED_SETUP_ROLES = [UserRole.chairman, UserRole.accountant, UserRole.auditor] as const;
+const SETUP_COMPLETE_MIN_ROLES = [UserRole.chairman] as const;
+const DEFERRABLE_SETUP_ROLES: DeferredSetupRole[] = ['accountant', 'auditor'];
 
 @Injectable()
 export class SetupService {
@@ -29,9 +36,14 @@ export class SetupService {
         address: true,
         edrpou: true,
         isInitialized: true,
+        settings: true,
         _count: { select: { apartments: true, funds: true } },
       },
     });
+
+    const deferredSetupRoles = (parseBuildingSettings(building?.settings).deferredSetupRoles ?? []).filter(
+      (r): r is DeferredSetupRole => DEFERRABLE_SETUP_ROLES.includes(r),
+    );
 
     const bankAccount = building
       ? await this.prisma.bankAccount.findFirst({
@@ -60,12 +72,19 @@ export class SetupService {
     const hasAccountant = hasRole(UserRole.accountant);
     const hasAuditor = hasRole(UserRole.auditor);
 
+    const roleResolved = (role: DeferredSetupRole) =>
+      (role === 'accountant' ? hasAccountant : hasAuditor) || deferredSetupRoles.includes(role);
+
     const stepDone = {
       building: hasBuilding,
       bank: fundCount > 0,
       apartments: apartmentCount > 0,
-      users: hasChairman && hasAccountant && hasAuditor,
+      users: hasChairman && roleResolved('accountant') && roleResolved('auditor'),
     };
+
+    const pendingDeferredRoles = deferredSetupRoles.filter((role) =>
+      role === 'accountant' ? !hasAccountant : !hasAuditor,
+    );
 
     let nextStep = 4;
     if (!stepDone.building) nextStep = 0;
@@ -87,9 +106,9 @@ export class SetupService {
         !building!.isInitialized &&
         apartmentCount > 0 &&
         fundCount > 0 &&
-        hasChairman &&
-        hasAccountant &&
-        hasAuditor,
+        stepDone.users,
+      deferredSetupRoles,
+      pendingDeferredRoles,
       nextStep,
       stepDone,
       building: building
@@ -229,7 +248,8 @@ export class SetupService {
   }
 
   async setupUsers(dto: SetupUsersDto, actorId: string) {
-    await this.requireUninitializedBuilding();
+    const building = await this.requireUninitializedBuilding();
+    if (!building) throw new BadRequestException('Спочатку створіть дані ОСМД');
 
     const singleSeatRoles: UserRole[] = [UserRole.chairman, UserRole.accountant, UserRole.auditor];
 
@@ -243,13 +263,48 @@ export class SetupService {
 
     const hasRole = (role: UserRole) => existingByRole.some((u) => u.role === role);
 
-    const missingRequired = REQUIRED_SETUP_ROLES.filter((role) => !hasRole(role));
-    if (missingRequired.length === 0) {
-      return { skipped: true, users: existingByRole };
+    const deferRoles = new Set<DeferredSetupRole>(
+      (dto.deferRoles ?? []).filter((r) => DEFERRABLE_SETUP_ROLES.includes(r)),
+    );
+    for (const role of DEFERRABLE_SETUP_ROLES) {
+      if (hasRole(role === 'accountant' ? UserRole.accountant : UserRole.auditor)) {
+        deferRoles.delete(role);
+      }
+    }
+
+    const settingsPatch = mergeBuildingSettings(building.settings, {
+      deferredSetupRoles: deferRoles.size > 0 ? [...deferRoles] : undefined,
+    });
+    await this.prisma.building.update({
+      where: { id: building.id },
+      data: { settings: settingsPatch as object },
+    });
+
+    const rolesToCreate = [
+      ...SETUP_COMPLETE_MIN_ROLES,
+      ...DEFERRABLE_SETUP_ROLES.map((r) =>
+        r === 'accountant' ? UserRole.accountant : UserRole.auditor,
+      ),
+    ].filter((role) => {
+      if (hasRole(role)) return false;
+      if (role === UserRole.accountant && deferRoles.has('accountant')) return false;
+      if (role === UserRole.auditor && deferRoles.has('auditor')) return false;
+      return true;
+    });
+
+    if (rolesToCreate.length === 0) {
+      const users = await this.prisma.user.findMany({
+        where: {
+          role: { in: [...REQUIRED_SETUP_ROLES] },
+          status: UserStatus.active,
+        },
+        select: { id: true, email: true, role: true, firstName: true, lastName: true },
+      });
+      return { skipped: true, users, deferredSetupRoles: [...deferRoles] };
     }
 
     const dtoRoles = dto.users.map((u) => u.role);
-    for (const required of missingRequired) {
+    for (const required of rolesToCreate) {
       if (!dtoRoles.includes(required)) {
         throw new BadRequestException(`Обов'язкова роль: ${required}`);
       }
@@ -299,7 +354,7 @@ export class SetupService {
       select: { id: true, email: true, role: true, firstName: true, lastName: true },
     });
 
-    return { skipped: created.length === 0, users };
+    return { skipped: created.length === 0, users, deferredSetupRoles: [...deferRoles] };
   }
 
   async complete(actorId: string) {

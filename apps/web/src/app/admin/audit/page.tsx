@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { apiFetch, getToken } from '@/lib/api';
 
@@ -99,41 +98,28 @@ export default function AuditPage() {
         {logs.length === 0 ? (
           <p style={{ color: 'var(--muted)' }}>Записів немає</p>
         ) : (
-          <table style={{ width: '100%', fontSize: '0.85rem', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left' }}>
-                <th style={{ padding: '0.5rem' }}>Час</th>
-                <th style={{ padding: '0.5rem' }}>Дія</th>
-                <th style={{ padding: '0.5rem' }}>Користувач</th>
-                <th style={{ padding: '0.5rem' }}>Сутність</th>
-              </tr>
-            </thead>
-            <tbody>
-              {logs.map((log) => (
-                <tr key={log.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                  <td style={{ padding: '0.5rem', whiteSpace: 'nowrap', color: 'var(--muted)' }}>
+          <ul className="audit-log-list">
+            {logs.map((log) => (
+              <li key={log.id} className="audit-log-item">
+                <div className="audit-log-head">
+                  <div className="audit-log-main">
+                    <div className="audit-log-action">{ACTION_LABELS[log.action] ?? log.action}</div>
+                    <div className="audit-log-meta">
+                      {log.user ? `${log.user.firstName} ${log.user.lastName}` : '—'}
+                      {' · '}
+                      {log.entityType} · {log.entityId.slice(-8)}
+                    </div>
+                  </div>
+                  <time className="audit-log-time" dateTime={log.createdAt}>
                     {new Date(log.createdAt).toLocaleString('uk-UA')}
-                  </td>
-                  <td style={{ padding: '0.5rem' }}>
-                    <div style={{ fontWeight: 600 }}>{ACTION_LABELS[log.action] ?? log.action}</div>
-                    {log.payload && (
-                      <div style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>
-                        {JSON.stringify(log.payload)}
-                      </div>
-                    )}
-                  </td>
-                  <td style={{ padding: '0.5rem' }}>
-                    {log.user
-                      ? `${log.user.firstName} ${log.user.lastName}`
-                      : '—'}
-                  </td>
-                  <td style={{ padding: '0.5rem', color: 'var(--muted)' }}>
-                    {log.entityType} · {log.entityId.slice(-8)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </time>
+                </div>
+                {log.payload && (
+                  <pre className="audit-log-payload">{JSON.stringify(log.payload, null, 2)}</pre>
+                )}
+              </li>
+            ))}
+          </ul>
         )}
         {cursor && (
           <button
