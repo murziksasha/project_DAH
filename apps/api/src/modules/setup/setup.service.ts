@@ -5,6 +5,11 @@ import {
 } from '@nestjs/common';
 import { FundType, UserRole, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import {
+  DeferredSetupRole,
+  mergeBuildingSettings,
+  parseBuildingSettings,
+} from '../building/building-settings';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { SetupApartmentsDto } from './dto/setup-apartment.dto';
@@ -13,6 +18,8 @@ import { SetupBuildingDto } from './dto/setup-building.dto';
 import { SetupUsersDto } from './dto/setup-users.dto';
 
 const REQUIRED_SETUP_ROLES = [UserRole.chairman, UserRole.accountant, UserRole.auditor] as const;
+const SETUP_COMPLETE_MIN_ROLES = [UserRole.chairman] as const;
+const DEFERRABLE_SETUP_ROLES: DeferredSetupRole[] = ['accountant', 'auditor'];
 
 @Injectable()
 export class SetupService {
@@ -26,40 +33,93 @@ export class SetupService {
       select: {
         id: true,
         name: true,
+        address: true,
+        edrpou: true,
         isInitialized: true,
+        settings: true,
         _count: { select: { apartments: true, funds: true } },
       },
     });
 
-    const roleCounts = await this.prisma.user.groupBy({
-      by: ['role'],
-      _count: true,
+    const deferredSetupRoles = (parseBuildingSettings(building?.settings).deferredSetupRoles ?? []).filter(
+      (r): r is DeferredSetupRole => DEFERRABLE_SETUP_ROLES.includes(r),
+    );
+
+    const bankAccount = building
+      ? await this.prisma.bankAccount.findFirst({
+          where: { buildingId: building.id },
+          select: { bankName: true, iban: true, description: true },
+        })
+      : null;
+
+    const existingSetupUsers = await this.prisma.user.findMany({
       where: {
-        role: { in: [...REQUIRED_SETUP_ROLES, UserRole.board] },
+        role: { in: [...REQUIRED_SETUP_ROLES] },
         status: UserStatus.active,
       },
+      select: { email: true, firstName: true, lastName: true, role: true },
     });
 
-    const hasRole = (role: UserRole) =>
-      roleCounts.some((r) => r.role === role && r._count > 0);
+    const userByRole = (role: UserRole) =>
+      existingSetupUsers.find((u) => u.role === role) ?? null;
+
+    const hasRole = (role: UserRole) => userByRole(role) !== null;
+
+    const hasBuilding = !!building;
+    const fundCount = building?._count.funds ?? 0;
+    const apartmentCount = building?._count.apartments ?? 0;
+    const hasChairman = hasRole(UserRole.chairman);
+    const hasAccountant = hasRole(UserRole.accountant);
+    const hasAuditor = hasRole(UserRole.auditor);
+
+    const roleResolved = (role: DeferredSetupRole) =>
+      (role === 'accountant' ? hasAccountant : hasAuditor) || deferredSetupRoles.includes(role);
+
+    const stepDone = {
+      building: hasBuilding,
+      bank: fundCount > 0,
+      apartments: apartmentCount > 0,
+      users: hasChairman && roleResolved('accountant') && roleResolved('auditor'),
+    };
+
+    const pendingDeferredRoles = deferredSetupRoles.filter((role) =>
+      role === 'accountant' ? !hasAccountant : !hasAuditor,
+    );
+
+    let nextStep = 4;
+    if (!stepDone.building) nextStep = 0;
+    else if (!stepDone.bank) nextStep = 1;
+    else if (!stepDone.apartments) nextStep = 2;
+    else if (!stepDone.users) nextStep = 3;
 
     return {
-      hasBuilding: !!building,
+      hasBuilding,
       isInitialized: building?.isInitialized ?? false,
       buildingName: building?.name ?? null,
-      apartmentCount: building?._count.apartments ?? 0,
-      fundCount: building?._count.funds ?? 0,
-      hasChairman: hasRole(UserRole.chairman),
-      hasAccountant: hasRole(UserRole.accountant),
-      hasAuditor: hasRole(UserRole.auditor),
+      apartmentCount,
+      fundCount,
+      hasChairman,
+      hasAccountant,
+      hasAuditor,
       canComplete:
-        !!building &&
-        !building.isInitialized &&
-        building._count.apartments > 0 &&
-        building._count.funds > 0 &&
-        hasRole(UserRole.chairman) &&
-        hasRole(UserRole.accountant) &&
-        hasRole(UserRole.auditor),
+        hasBuilding &&
+        !building!.isInitialized &&
+        apartmentCount > 0 &&
+        fundCount > 0 &&
+        stepDone.users,
+      deferredSetupRoles,
+      pendingDeferredRoles,
+      nextStep,
+      stepDone,
+      building: building
+        ? { name: building.name, address: building.address, edrpou: building.edrpou }
+        : null,
+      bankAccount,
+      existingUsers: {
+        chairman: userByRole(UserRole.chairman),
+        accountant: userByRole(UserRole.accountant),
+        auditor: userByRole(UserRole.auditor),
+      },
     };
   }
 
@@ -105,9 +165,17 @@ export class SetupService {
     const building = await this.requireUninitializedBuilding();
     if (!building) throw new BadRequestException('Спочатку створіть дані ОСМД');
 
-    const existingFunds = await this.prisma.fund.count({ where: { buildingId: building.id } });
-    if (existingFunds > 0) {
-      throw new BadRequestException('Банківські реквізити вже налаштовано');
+    const existingFunds = await this.prisma.fund.findMany({
+      where: { buildingId: building.id },
+      include: { bankAccount: true },
+    });
+    if (existingFunds.length > 0) {
+      const bankAccount = existingFunds[0].bankAccount;
+      return {
+        skipped: true,
+        bankAccount,
+        funds: existingFunds,
+      };
     }
 
     const bankAccount = await this.prisma.bankAccount.create({
@@ -141,13 +209,18 @@ export class SetupService {
       payload: { iban: dto.iban, fundCount: funds.length },
     });
 
-    return { bankAccount, funds };
+    return { skipped: false, bankAccount, funds };
   }
 
   async setupApartments(dto: SetupApartmentsDto, actorId: string) {
     const building = await this.requireUninitializedBuilding();
     if (!building) throw new BadRequestException('Спочатку створіть дані ОСМД');
     if (!dto.apartments.length) throw new BadRequestException('Додайте хоча б одну квартиру');
+
+    const existingCount = await this.prisma.apartment.count({ where: { buildingId: building.id } });
+    if (existingCount > 0) {
+      throw new BadRequestException('Квартири вже додано');
+    }
 
     const created = await this.prisma.$transaction(
       dto.apartments.map((apt) =>
@@ -175,27 +248,76 @@ export class SetupService {
   }
 
   async setupUsers(dto: SetupUsersDto, actorId: string) {
-    await this.requireUninitializedBuilding();
+    const building = await this.requireUninitializedBuilding();
+    if (!building) throw new BadRequestException('Спочатку створіть дані ОСМД');
 
-    const roles = dto.users.map((u) => u.role);
-    for (const required of REQUIRED_SETUP_ROLES) {
-      if (!roles.includes(required)) {
+    const singleSeatRoles: UserRole[] = [UserRole.chairman, UserRole.accountant, UserRole.auditor];
+
+    const existingByRole = await this.prisma.user.findMany({
+      where: {
+        role: { in: [...REQUIRED_SETUP_ROLES] },
+        status: UserStatus.active,
+      },
+      select: { id: true, email: true, role: true, firstName: true, lastName: true },
+    });
+
+    const hasRole = (role: UserRole) => existingByRole.some((u) => u.role === role);
+
+    const deferRoles = new Set<DeferredSetupRole>(
+      (dto.deferRoles ?? []).filter((r) => DEFERRABLE_SETUP_ROLES.includes(r)),
+    );
+    for (const role of DEFERRABLE_SETUP_ROLES) {
+      if (hasRole(role === 'accountant' ? UserRole.accountant : UserRole.auditor)) {
+        deferRoles.delete(role);
+      }
+    }
+
+    const settingsPatch = mergeBuildingSettings(building.settings, {
+      deferredSetupRoles: deferRoles.size > 0 ? [...deferRoles] : undefined,
+    });
+    await this.prisma.building.update({
+      where: { id: building.id },
+      data: { settings: settingsPatch as object },
+    });
+
+    const rolesToCreate = [
+      ...SETUP_COMPLETE_MIN_ROLES,
+      ...DEFERRABLE_SETUP_ROLES.map((r) =>
+        r === 'accountant' ? UserRole.accountant : UserRole.auditor,
+      ),
+    ].filter((role) => {
+      if (hasRole(role)) return false;
+      if (role === UserRole.accountant && deferRoles.has('accountant')) return false;
+      if (role === UserRole.auditor && deferRoles.has('auditor')) return false;
+      return true;
+    });
+
+    if (rolesToCreate.length === 0) {
+      const users = await this.prisma.user.findMany({
+        where: {
+          role: { in: [...REQUIRED_SETUP_ROLES] },
+          status: UserStatus.active,
+        },
+        select: { id: true, email: true, role: true, firstName: true, lastName: true },
+      });
+      return { skipped: true, users, deferredSetupRoles: [...deferRoles] };
+    }
+
+    const dtoRoles = dto.users.map((u) => u.role);
+    for (const required of rolesToCreate) {
+      if (!dtoRoles.includes(required)) {
         throw new BadRequestException(`Обов'язкова роль: ${required}`);
       }
     }
 
     const created = [];
     for (const item of dto.users) {
+      if (singleSeatRoles.includes(item.role) && hasRole(item.role)) {
+        continue;
+      }
+
       const existing = await this.prisma.user.findUnique({ where: { email: item.email } });
       if (existing) throw new BadRequestException(`Email вже зареєстрований: ${item.email}`);
-
-      const activeSameRole = await this.prisma.user.findFirst({
-        where: { role: item.role, status: UserStatus.active },
-      });
-      const singleSeatRoles: UserRole[] = [UserRole.chairman, UserRole.accountant, UserRole.auditor];
-      if (activeSameRole && singleSeatRoles.includes(item.role)) {
-        throw new BadRequestException(`Активний користувач з роллю ${item.role} вже існує`);
-      }
 
       const passwordHash = await bcrypt.hash(item.password, 10);
       const user = await this.prisma.user.create({
@@ -211,6 +333,9 @@ export class SetupService {
         select: { id: true, email: true, role: true, firstName: true, lastName: true },
       });
       created.push(user);
+      if (singleSeatRoles.includes(item.role)) {
+        existingByRole.push(user);
+      }
     }
 
     await this.audit.log({
@@ -218,10 +343,18 @@ export class SetupService {
       action: 'setup.users',
       entityType: 'User',
       entityId: actorId,
-      payload: { count: created.length, roles: roles },
+      payload: { count: created.length, roles: created.map((u) => u.role) },
     });
 
-    return created;
+    const users = await this.prisma.user.findMany({
+      where: {
+        role: { in: [...REQUIRED_SETUP_ROLES] },
+        status: UserStatus.active,
+      },
+      select: { id: true, email: true, role: true, firstName: true, lastName: true },
+    });
+
+    return { skipped: created.length === 0, users, deferredSetupRoles: [...deferRoles] };
   }
 
   async complete(actorId: string) {

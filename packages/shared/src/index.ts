@@ -1,10 +1,13 @@
 export enum UserRole {
+  SUPER_ADMIN = 'super_admin',
   CHAIRMAN = 'chairman',
   ACCOUNTANT = 'accountant',
   BOARD = 'board',
   RESIDENT = 'resident',
   AUDITOR = 'auditor',
 }
+
+export * from './permissions';
 
 export enum FundType {
   MAINTENANCE = 'maintenance',
@@ -44,6 +47,7 @@ export const FUND_LABELS: Record<FundType, { uk: string; ru: string }> = {
 };
 
 export const ROLE_LABELS: Record<UserRole, { uk: string; ru: string }> = {
+  [UserRole.SUPER_ADMIN]: { uk: 'Системний адміністратор', ru: 'Системный администратор' },
   [UserRole.CHAIRMAN]: { uk: 'Голова правління', ru: 'Председатель' },
   [UserRole.ACCOUNTANT]: { uk: 'Бухгалтер', ru: 'Бухгалтер' },
   [UserRole.BOARD]: { uk: 'Член правління', ru: 'Член правления' },

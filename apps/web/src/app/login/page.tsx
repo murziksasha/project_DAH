@@ -1,17 +1,30 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { FormEvent, useState } from 'react';
+import Link from 'next/link';
+import { FormEvent, useEffect, useState } from 'react';
 import { apiFetch, LoginResponse } from '@/lib/api';
+import { setAuthCookie } from '@/lib/auth-cookie';
 
 const ADMIN_ROLES = ['chairman', 'accountant', 'board', 'auditor'];
 
+function isLocalHost(): boolean {
+  if (typeof window === 'undefined') return process.env.NODE_ENV === 'development';
+  const h = window.location.hostname;
+  return h === 'localhost' || h === '127.0.0.1';
+}
+
 export default function LoginPage() {
-  const router = useRouter();
-  const [email, setEmail] = useState('chairman@osbb.local');
-  const [password, setPassword] = useState('password123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (isLocalHost()) {
+      setEmail('chairman@osbb.local');
+      setPassword('password123');
+    }
+  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -23,13 +36,23 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
       localStorage.setItem('dah_token', data.accessToken);
+      localStorage.setItem('dah_refresh', data.refreshToken);
       localStorage.setItem('dah_user', JSON.stringify(data.user));
+      setAuthCookie(data.accessToken);
+      window.dispatchEvent(new Event('dah-auth-change'));
 
-      if (ADMIN_ROLES.includes(data.user.role)) {
-        router.push('/admin');
-      } else {
-        router.push('/resident');
+      let target = '/resident';
+      if (data.user.role === 'super_admin') {
+        const status = await apiFetch<{ isInitialized: boolean }>('/setup/status', {
+          token: data.accessToken,
+        });
+        target = status.isInitialized ? '/admin/organization' : '/admin/setup';
+      } else if (ADMIN_ROLES.includes(data.user.role)) {
+        target = '/admin';
       }
+
+      // Full navigation so middleware receives the auth cookie
+      window.location.href = target;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Помилка входу');
     } finally {
@@ -49,7 +72,7 @@ export default function LoginPage() {
         </div>
         <div>
           <label htmlFor="password">Пароль</label>
-          <input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          <input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} />
         </div>
         {error && <p className="error">{error}</p>}
         <button type="submit" disabled={loading}>
@@ -59,6 +82,11 @@ export default function LoginPage() {
 
       <p style={{ marginTop: '1rem', color: 'var(--muted)', fontSize: '0.85rem' }}>
         Демо: chairman@osbb.local / password123
+        <br />
+        Супер-адмін: admin@dah.local / password123
+      </p>
+      <p style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: 'var(--muted)' }}>
+        Немає облікового запису? <Link href="/register">Зареєструватися</Link>
       </p>
     </main>
   );

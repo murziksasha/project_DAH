@@ -61,7 +61,7 @@ export default function ExpensesListPage() {
   }, []);
 
   return (
-    <main style={{ maxWidth: 900, margin: '0 auto', padding: '1rem' }}>
+    <main>
       <Link href="/admin/expenses" style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>← Нова витрата</Link>
       <h1 style={{ margin: '1rem 0 0.5rem' }}>Витрати ОСМД</h1>
       <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>Фільтрація по фонду та періоду</p>

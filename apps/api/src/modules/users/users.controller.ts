@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
@@ -6,6 +6,7 @@ import { CurrentUser, AuthUser } from '../../common/decorators/current-user.deco
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { CreateUserDto } from './dto/create-user.dto';
+import { ListUsersQueryDto } from './dto/list-users.query.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
 
@@ -18,8 +19,8 @@ export class UsersController {
 
   @Roles(UserRole.super_admin, UserRole.chairman)
   @Get()
-  list() {
-    return this.users.listUsers();
+  list(@Query() query: ListUsersQueryDto) {
+    return this.users.listUsers(query);
   }
 
   @Roles(UserRole.super_admin)
@@ -42,5 +43,25 @@ export class UsersController {
   @Patch(':id/block')
   block(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.users.blockUser(id, user.id);
+  }
+
+  @Roles(UserRole.super_admin)
+  @Post(':id/apartments/:apartmentId')
+  linkApartment(
+    @Param('id') id: string,
+    @Param('apartmentId') apartmentId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.users.linkApartment(id, apartmentId, user.id);
+  }
+
+  @Roles(UserRole.super_admin)
+  @Delete(':id/apartments/:apartmentId')
+  unlinkApartment(
+    @Param('id') id: string,
+    @Param('apartmentId') apartmentId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.users.unlinkApartment(id, apartmentId, user.id);
   }
 }

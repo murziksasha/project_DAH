@@ -1,7 +1,0 @@
----
-pid: 0
-cwd: "c:\Users\murzi\Desktop\DAH"
-command: "$env:DATABASE_URL='postgresql://dah:dah_secret_change_me@localhost:5432/dah'; $env:JWT_SECRET='dev-secret'; cd \"c:\\Users\\murzi\\Desktop\\DAH\\apps\\api\"; node dist/main.js"
-started_at: 2026-06-25T12:21:47.799Z
-running_for_ms: 0        
----

@@ -99,8 +99,7 @@ export default function SuppliersPage() {
   }
 
   return (
-    <main style={{ maxWidth: 720, margin: '0 auto', padding: '1rem' }}>
-      <Link href="/admin" style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>← Дашборд</Link>
+    <main>
       <h1 style={{ margin: '1rem 0 0.5rem' }}>Постачальники</h1>
       <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>
         Облэнерго, водоканал, підрядники та інші контрагенти

@@ -192,6 +192,9 @@ async function main() {
       role: UserRole.resident,
       status: UserStatus.active,
       apartmentId: apartments[0].id,
+      apartmentLinks: {
+        create: { apartmentId: apartments[0].id, isPrimary: true },
+      },
     },
   });
 

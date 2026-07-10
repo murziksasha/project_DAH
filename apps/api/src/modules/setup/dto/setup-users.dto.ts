@@ -48,10 +48,22 @@ class SetupUserItemDto {
   role!: (typeof SETUP_ROLES)[number];
 }
 
+const DEFERRABLE_ROLES = [UserRole.accountant, UserRole.auditor] as const;
+
 export class SetupUsersDto {
   @ApiProperty({ type: [SetupUserItemDto] })
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => SetupUserItemDto)
   users!: SetupUserItemDto[];
+
+  @ApiPropertyOptional({
+    description: 'Ролі, які super_admin створить пізніше в Організації',
+    enum: DEFERRABLE_ROLES,
+    isArray: true,
+  })
+  @IsOptional()
+  @IsArray()
+  @IsIn(DEFERRABLE_ROLES, { each: true })
+  deferRoles?: (typeof DEFERRABLE_ROLES)[number][];
 }

@@ -68,8 +68,7 @@ export default function DocumentsPage() {
   }
 
   return (
-    <main style={{ maxWidth: 720, margin: '0 auto', padding: '1rem' }}>
-      <Link href="/admin" style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>← Дашборд</Link>
+    <main>
       <h1 style={{ margin: '1rem 0 0.5rem' }}>Документи ОСМД</h1>
       <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>Публічні документи для мешканців</p>
 

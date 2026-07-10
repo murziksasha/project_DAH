@@ -95,8 +95,7 @@ export default function PaymentsPage() {
   }
 
   return (
-    <main style={{ maxWidth: 720, margin: '0 auto', padding: '1rem' }}>
-      <Link href="/admin" style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>← Дашборд</Link>
+    <main>
       <h1 style={{ margin: '1rem 0 0.5rem' }}>Платіж від мешканця</h1>
       <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>
         Реєстрація надходження з автоматичною розноскою FIFO

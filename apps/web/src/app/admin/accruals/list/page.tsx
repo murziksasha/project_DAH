@@ -42,7 +42,7 @@ export default function AccrualsListPage() {
   }, []);
 
   return (
-    <main style={{ maxWidth: 900, margin: '0 auto', padding: '1rem' }}>
+    <main>
       <Link href="/admin/accruals" style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>← Нарахування</Link>
       <h1 style={{ margin: '1rem 0 0.5rem' }}>Історія нарахувань</h1>
 

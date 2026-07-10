@@ -1,8 +1,7 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, getToken } from '@/lib/api';
 
 interface CashFlowReport {
   totalIncome: number;
@@ -31,7 +30,7 @@ export default function AdminDashboard() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const token = localStorage.getItem('dah_token');
+    const token = getToken();
     if (!token) {
       window.location.href = '/login';
       return;
@@ -49,25 +48,10 @@ export default function AdminDashboard() {
   }, []);
 
   return (
-    <main style={{ maxWidth: 960, margin: '0 auto', padding: '1rem' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <h1>Кабінет правління</h1>
-          <p style={{ color: 'var(--muted)' }}>Фінансовий стан ОСМД</p>
-        </div>
-        <nav style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <Link href="/admin/expenses" className="btn">Нова витрата</Link>
-          <Link href="/admin/expenses/list" className="btn" style={{ background: 'var(--surface-2)' }}>Список</Link>
-          <Link href="/admin/suppliers" className="btn" style={{ background: 'var(--surface-2)' }}>Постачальники</Link>
-          <Link href="/admin/accruals" className="btn" style={{ background: 'var(--surface-2)' }}>Нарахування</Link>
-          <Link href="/admin/payments" className="btn" style={{ background: 'var(--surface-2)' }}>Платежі</Link>
-          <Link href="/admin/reports" className="btn" style={{ background: 'var(--surface-2)' }}>Звіти</Link>
-          <Link href="/admin/documents" className="btn" style={{ background: 'var(--surface-2)' }}>Документи</Link>
-          <Link href="/admin/communications" className="btn" style={{ background: 'var(--surface-2)' }}>Комунікації</Link>
-          <Link href="/admin/settings" className="btn" style={{ background: 'var(--surface-2)' }}>Налаштування</Link>
-          <Link href="/admin/audit" className="btn" style={{ background: 'var(--surface-2)' }}>Аудит</Link>
-          <Link href="/" style={{ color: 'var(--muted)', alignSelf: 'center' }}>На головну</Link>
-        </nav>
+    <main>
+      <header style={{ marginBottom: '1.5rem' }}>
+        <h1>Кабінет правління</h1>
+        <p style={{ color: 'var(--muted)' }}>Фінансовий стан ОСМД</p>
       </header>
 
       {error && <p className="error">{error}</p>}
