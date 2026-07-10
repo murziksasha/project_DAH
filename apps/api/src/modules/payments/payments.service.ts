@@ -50,10 +50,15 @@ export class PaymentsService {
     if (PAYMENT_READ_ROLES.includes(user.role as UserRole)) {
       if (apartmentId) where.apartmentId = apartmentId;
     } else {
-      if (!user.apartmentId) {
+      const ids = user.apartmentIds?.length
+        ? user.apartmentIds
+        : user.apartmentId
+          ? [user.apartmentId]
+          : [];
+      if (!ids.length) {
         throw new ForbiddenException('Квартиру не прив\'язано до облікового запису');
       }
-      where.apartmentId = user.apartmentId;
+      where.apartmentId = { in: ids };
     }
 
     return this.prisma.payment.findMany({
@@ -86,7 +91,12 @@ export class PaymentsService {
     if (!payment) throw new NotFoundException('Платіж не знайдено');
 
     if (!PAYMENT_READ_ROLES.includes(user.role as UserRole)) {
-      if (payment.apartmentId !== user.apartmentId) {
+      const ids = user.apartmentIds?.length
+        ? user.apartmentIds
+        : user.apartmentId
+          ? [user.apartmentId]
+          : [];
+      if (!ids.includes(payment.apartmentId)) {
         throw new ForbiddenException('Немає доступу до цього платежу');
       }
     }
@@ -219,7 +229,7 @@ export class PaymentsService {
         status: { in: [AccrualLineStatus.open, AccrualLineStatus.partially_paid, AccrualLineStatus.overdue] },
       },
       include: {
-        apartment: { include: { residents: true, users: { where: { status: 'active' } } } },
+        apartment: { select: { number: true, entrance: true } },
         accrual: true,
       },
       orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],

@@ -35,6 +35,19 @@
 
 \* `pending` / `blocked` — login відхиляється
 
+### Users & Organization
+
+| Ендпоінт | super_admin | chairman | інші |
+|----------|-------------|----------|------|
+| GET /users | ✅ | ✅ | ❌ |
+| POST /users | ✅ | ❌ | ❌ |
+| PATCH /users/:id | ✅ | ❌ | ❌ |
+| PATCH /users/:id/block | ✅ | ✅ | ❌ |
+| POST/DELETE /users/:id/apartments/:apartmentId | ✅ | ❌ | ❌ |
+| POST/PATCH/DELETE /building/apartments | ✅ | ✅ | ❌ |
+
+Web UI `/admin/organization` — лише `super_admin`.
+
 ### Finance
 
 | Операція | resident | board | accountant | chairman | auditor |
@@ -88,7 +101,27 @@
 | `/admin/organization` | `super_admin` |
 | `/admin/*` (фінанси) | `chairman`, `accountant`, `board`, `auditor` |
 
-Після login admin-ролі перенаправляються на `/admin`, мешканець — на `/resident`.
+Після login admin-ролі перенаправляються на `/admin`, мешканець — на `/resident`, `super_admin` — на `/admin/setup` або `/admin/organization` (якщо `isInitialized`).
+
+### Глобальна навігація (AppShell)
+
+Усі авторизовані сторінки `/admin/*` та `/resident` обгорнуті в `AppShell`:
+
+- Sticky header: меню (☰), назва кабінету, кнопка **Вихід**
+- Drawer-меню з пунктами за роллю + **Домівка** (role home, не публічний `/`)
+- **Вихід:** `POST /auth/logout` (best-effort) → очистка `localStorage` + cookie → `/login`
+
+| Роль | Домівка | Пункти drawer |
+|------|---------|---------------|
+| `super_admin` | `/admin/setup` або `/admin/organization` | Майстер, Організація |
+| `chairman`, `accountant`, `board`, `auditor` | `/admin` | Дашборд, фінанси, комунікації, налаштування, аудит |
+| `resident` | `/resident` | Кабінет мешканця |
+
+### Майстер налаштування (`/admin/setup`)
+
+- Resume: `GET /setup/status` повертає `nextStep`, `stepDone`, prefill для building/bank
+- Завершені кроки пропускають POST — кнопка **Продовжити**
+- Повторний `POST /setup/bank` при наявних фондах — `200` з `{ skipped: true }` (не помилка)
 
 ## Реалізація
 

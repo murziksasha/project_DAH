@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { apiFetch, getToken } from '@/lib/api';
 
@@ -53,16 +52,15 @@ export default function SettingsPage() {
 
   if (!settings) {
     return (
-      <main style={{ maxWidth: 560, margin: '0 auto', padding: '1rem' }}>
+      <main>
         {error ? <p className="error">{error}</p> : <p>Завантаження...</p>}
       </main>
     );
   }
 
   return (
-    <main style={{ maxWidth: 560, margin: '0 auto', padding: '1rem' }}>
-      <Link href="/admin" style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>← Дашборд</Link>
-      <h1 style={{ margin: '1rem 0 0.5rem' }}>Налаштування</h1>
+    <main>
+      <h1 style={{ marginBottom: '0.5rem' }}>Налаштування</h1>
       <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>{settings.name}</p>
 
       {error && <p className="error">{error}</p>}

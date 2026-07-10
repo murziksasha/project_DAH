@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
 import { apiFetch, downloadReceipt, getToken } from '@/lib/api';
 
@@ -196,16 +195,15 @@ export default function ResidentPage() {
   );
 
   return (
-    <main style={{ maxWidth: 720, margin: '0 auto', padding: '1rem' }}>
-      <header style={{ marginBottom: '1rem' }}>
-        <h1>Кабінет мешканця</h1>
-        <p style={{ color: 'var(--muted)' }}>
+    <main>
+      {(userName || account) && (
+        <p style={{ color: 'var(--muted)', marginBottom: '1rem' }}>
           {userName && `Вітаємо, ${userName}`}
           {account ? ` · кв. ${account.apartment.number}` : ''}
         </p>
-      </header>
+      )}
 
-      <nav style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
+      <nav className="nav-scroll">
         {visibleTabs.map((t) => (
           <button
             key={t.id}
@@ -463,9 +461,6 @@ export default function ResidentPage() {
         </section>
       )}
 
-      <p style={{ textAlign: 'center', marginTop: '2rem' }}>
-        <Link href="/" style={{ color: 'var(--muted)' }}>На головну</Link>
-      </p>
     </main>
   );
 }

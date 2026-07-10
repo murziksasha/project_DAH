@@ -55,6 +55,9 @@ export class AuthService {
         role: UserRole.resident,
         status: UserStatus.pending,
         apartmentId: dto.apartmentId,
+        apartmentLinks: {
+          create: { apartmentId: dto.apartmentId, isPrimary: true },
+        },
       },
       select: {
         id: true,
@@ -138,10 +141,38 @@ export class AuthService {
   }
 
   async getPendingUsers() {
-    return this.prisma.user.findMany({
+    const users = await this.prisma.user.findMany({
       where: { status: UserStatus.pending },
-      include: { apartment: true },
+      include: {
+        apartmentLinks: {
+          include: { apartment: true },
+          orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+        },
+      },
       orderBy: { createdAt: 'desc' },
+    });
+    return users.map((u) => {
+      const primary =
+        u.apartmentLinks.find((l) => l.isPrimary)?.apartment ??
+        u.apartmentLinks[0]?.apartment ??
+        null;
+      return {
+        id: u.id,
+        email: u.email,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        phone: u.phone,
+        createdAt: u.createdAt,
+        apartment: primary
+          ? { id: primary.id, number: primary.number, entrance: primary.entrance }
+          : null,
+        apartments: u.apartmentLinks.map((l) => ({
+          id: l.apartment.id,
+          number: l.apartment.number,
+          entrance: l.apartment.entrance,
+          isPrimary: l.isPrimary,
+        })),
+      };
     });
   }
 

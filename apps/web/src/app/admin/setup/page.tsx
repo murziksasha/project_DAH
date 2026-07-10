@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
 import { apiFetch, getToken } from '@/lib/api';
 
@@ -13,9 +12,26 @@ interface SetupStatus {
   hasAccountant: boolean;
   hasAuditor: boolean;
   canComplete: boolean;
+  nextStep: number;
+  stepDone: {
+    building: boolean;
+    bank: boolean;
+    apartments: boolean;
+    users: boolean;
+  };
+  building: { name: string; address: string; edrpou: string | null } | null;
+  bankAccount: { bankName: string; iban: string; description: string | null } | null;
+  existingUsers: {
+    chairman: { email: string; firstName: string; lastName: string } | null;
+    accountant: { email: string; firstName: string; lastName: string } | null;
+    auditor: { email: string; firstName: string; lastName: string } | null;
+  };
 }
 
+type SetupRole = 'chairman' | 'accountant' | 'auditor';
+
 const STEPS = ['ОСМД', 'Банк', 'Квартири', 'Користувачі', 'Підтвердження'];
+const STEP_KEYS = ['building', 'bank', 'apartments', 'users'] as const;
 
 export default function SetupPage() {
   const [step, setStep] = useState(0);
@@ -23,6 +39,7 @@ export default function SetupPage() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [initialized, setInitialized] = useState(false);
 
   const [building, setBuilding] = useState({ name: '', address: '', edrpou: '' });
   const [bank, setBank] = useState({
@@ -42,6 +59,46 @@ export default function SetupPage() {
     addBoard: false,
   });
 
+  function applyStatus(s: SetupStatus) {
+    setStatus(s);
+    if (!initialized) {
+      setStep(s.nextStep);
+      setInitialized(true);
+    }
+    if (s.building) {
+      setBuilding({
+        name: s.building.name,
+        address: s.building.address,
+        edrpou: s.building.edrpou ?? '',
+      });
+    }
+    if (s.bankAccount) {
+      setBank({
+        bankName: s.bankAccount.bankName,
+        iban: s.bankAccount.iban,
+        description: s.bankAccount.description ?? '',
+      });
+    }
+    if (s.existingUsers) {
+      setUsers((prev) => {
+        const next = { ...prev };
+        for (const role of ['chairman', 'accountant', 'auditor'] as const) {
+          const existing = s.existingUsers[role];
+          if (existing) {
+            next[role] = {
+              email: existing.email,
+              firstName: existing.firstName,
+              lastName: existing.lastName,
+              password: '',
+            };
+          }
+        }
+        return next;
+      });
+    }
+    if (s.isInitialized) window.location.href = '/admin/organization';
+  }
+
   async function loadStatus() {
     const token = getToken();
     if (!token) {
@@ -49,13 +106,37 @@ export default function SetupPage() {
       return;
     }
     const s = await apiFetch<SetupStatus>('/setup/status', { token });
-    setStatus(s);
-    if (s.isInitialized) window.location.href = '/admin/organization';
+    applyStatus(s);
   }
 
   useEffect(() => {
     loadStatus().catch((err) => setError(err.message));
   }, []);
+
+  function isStepDone(stepIndex: number): boolean {
+    if (!status) return false;
+    if (stepIndex >= 4) return status.canComplete;
+    return status.stepDone[STEP_KEYS[stepIndex]];
+  }
+
+  function hasRoleFilled(role: SetupRole): boolean {
+    if (!status) return false;
+    if (role === 'chairman') return status.hasChairman;
+    if (role === 'accountant') return status.hasAccountant;
+    return status.hasAuditor;
+  }
+
+  function missingForComplete(): string[] {
+    if (!status) return [];
+    const missing: string[] = [];
+    if (!status.stepDone.building) missing.push('дані ОСМД');
+    if (!status.stepDone.bank) missing.push('банківські реквізити');
+    if (!status.stepDone.apartments) missing.push('квартири');
+    if (!status.hasChairman) missing.push('голова правління');
+    if (!status.hasAccountant) missing.push('бухгалтер');
+    if (!status.hasAuditor) missing.push('ревізійна комісія');
+    return missing;
+  }
 
   async function submitStep(e: FormEvent) {
     e.preventDefault();
@@ -66,6 +147,11 @@ export default function SetupPage() {
     setLoading(true);
 
     try {
+      if (step < 4 && isStepDone(step)) {
+        setStep(step + 1);
+        return;
+      }
+
       if (step === 0) {
         await apiFetch('/setup/building', {
           method: 'POST',
@@ -107,11 +193,9 @@ export default function SetupPage() {
         });
         setMessage(`Додано ${apartments.length} квартир`);
       } else if (step === 3) {
-        const payload = [
-          { ...users.chairman, role: 'chairman' },
-          { ...users.accountant, role: 'accountant' },
-          { ...users.auditor, role: 'auditor' },
-        ];
+        const payload = (['chairman', 'accountant', 'auditor'] as const)
+          .filter((role) => !hasRoleFilled(role))
+          .map((role) => ({ ...users[role], role }));
         if (users.addBoard && users.boardEmail) {
           payload.push({
             email: users.boardEmail,
@@ -142,28 +226,34 @@ export default function SetupPage() {
     }
   }
 
+  const stepComplete = step < 4 && isStepDone(step);
+  const readOnly = stepComplete;
+
   return (
-    <main style={{ maxWidth: 720, margin: '0 auto', padding: '1rem' }}>
+    <main>
       <h1>Налаштування ОСМД</h1>
       <p style={{ color: 'var(--muted)', marginBottom: '1rem' }}>
         Майстер першого запуску для системного адміністратора
       </p>
 
-      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
-        {STEPS.map((label, i) => (
-          <span
-            key={label}
-            style={{
-              padding: '0.35rem 0.75rem',
-              borderRadius: 6,
-              background: i === step ? 'var(--accent)' : 'var(--surface-2)',
-              color: i === step ? '#fff' : 'var(--muted)',
-              fontSize: '0.85rem',
-            }}
-          >
-            {i + 1}. {label}
-          </span>
-        ))}
+      <div className="setup-steps">
+        {STEPS.map((label, i) => {
+          const done = i < 4 && status?.stepDone[STEP_KEYS[i]];
+          const active = i === step;
+          return (
+            <button
+              key={label}
+              type="button"
+              className={`setup-step-pill${active ? ' active' : ''}${done ? ' done' : ''}`}
+              onClick={() => done && setStep(i)}
+              disabled={!done}
+              aria-current={active ? 'step' : undefined}
+            >
+              {done ? '✓ ' : `${i + 1}. `}
+              {label}
+            </button>
+          );
+        })}
       </div>
 
       {status && (
@@ -174,6 +264,10 @@ export default function SetupPage() {
         </div>
       )}
 
+      {stepComplete && (
+        <p className="success-banner">Цей крок уже виконано. Натисніть «Продовжити», щоб перейти далі.</p>
+      )}
+
       {error && <p className="error">{error}</p>}
       {message && <p style={{ color: 'var(--success)' }}>{message}</p>}
 
@@ -182,15 +276,29 @@ export default function SetupPage() {
           <>
             <div>
               <label>Назва ОСМД</label>
-              <input value={building.name} onChange={(e) => setBuilding({ ...building, name: e.target.value })} required />
+              <input
+                value={building.name}
+                onChange={(e) => setBuilding({ ...building, name: e.target.value })}
+                required
+                readOnly={readOnly}
+              />
             </div>
             <div>
               <label>Адреса</label>
-              <input value={building.address} onChange={(e) => setBuilding({ ...building, address: e.target.value })} required />
+              <input
+                value={building.address}
+                onChange={(e) => setBuilding({ ...building, address: e.target.value })}
+                required
+                readOnly={readOnly}
+              />
             </div>
             <div>
               <label>ЄДРПОУ</label>
-              <input value={building.edrpou} onChange={(e) => setBuilding({ ...building, edrpou: e.target.value })} />
+              <input
+                value={building.edrpou}
+                onChange={(e) => setBuilding({ ...building, edrpou: e.target.value })}
+                readOnly={readOnly}
+              />
             </div>
           </>
         )}
@@ -199,115 +307,159 @@ export default function SetupPage() {
           <>
             <div>
               <label>Банк</label>
-              <input value={bank.bankName} onChange={(e) => setBank({ ...bank, bankName: e.target.value })} required />
+              <input
+                value={bank.bankName}
+                onChange={(e) => setBank({ ...bank, bankName: e.target.value })}
+                required
+                readOnly={readOnly}
+              />
             </div>
             <div>
               <label>IBAN</label>
-              <input value={bank.iban} onChange={(e) => setBank({ ...bank, iban: e.target.value })} required />
+              <input
+                value={bank.iban}
+                onChange={(e) => setBank({ ...bank, iban: e.target.value })}
+                required
+                readOnly={readOnly}
+              />
             </div>
             <div>
               <label>Опис рахунку</label>
-              <input value={bank.description} onChange={(e) => setBank({ ...bank, description: e.target.value })} />
+              <input
+                value={bank.description}
+                onChange={(e) => setBank({ ...bank, description: e.target.value })}
+                readOnly={readOnly}
+              />
             </div>
-            <p style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>
-              Автоматично створюються фонди утримання та капремонту.
-            </p>
+            {!readOnly && (
+              <p style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>
+                Автоматично створюються фонди утримання та капремонту.
+              </p>
+            )}
           </>
         )}
 
         {step === 2 && (
-          <>
-            <div>
-              <label>Квартири (CSV: номер,під&apos;їзд,поверх,площа)</label>
-              <textarea
-                rows={8}
-                value={apartmentText}
-                onChange={(e) => setApartmentText(e.target.value)}
-                style={{ width: '100%' }}
-              />
-            </div>
-          </>
+          <div>
+            <label>Квартири (CSV: номер,під&apos;їзд,поверх,площа)</label>
+            <textarea
+              rows={8}
+              value={apartmentText}
+              onChange={(e) => setApartmentText(e.target.value)}
+              style={{ width: '100%' }}
+              readOnly={readOnly}
+            />
+          </div>
         )}
 
         {step === 3 && (
           <>
-            {(['chairman', 'accountant', 'auditor'] as const).map((role) => (
+            {(['chairman', 'accountant', 'auditor'] as const).map((role) => {
+              const roleDone = hasRoleFilled(role);
+              const roleReadOnly = readOnly || roleDone;
+              return (
               <fieldset key={role} style={{ border: '1px solid var(--border)', padding: '1rem', borderRadius: 8 }}>
                 <legend style={{ padding: '0 0.5rem' }}>
                   {role === 'chairman' ? 'Голова правління' : role === 'accountant' ? 'Бухгалтер' : 'Ревізійна комісія'}
+                  {roleDone ? ' ✓' : ''}
                 </legend>
+                {roleDone && (
+                  <p className="success-banner" style={{ marginBottom: '0.75rem' }}>
+                    Вже створено
+                  </p>
+                )}
                 <div style={{ display: 'grid', gap: '0.75rem' }}>
                   <input
                     placeholder="Email"
                     value={users[role].email}
                     onChange={(e) => setUsers({ ...users, [role]: { ...users[role], email: e.target.value } })}
-                    required
+                    required={!roleReadOnly}
+                    readOnly={roleReadOnly}
                   />
-                  <input
-                    type="password"
-                    placeholder="Пароль (мін. 8 символів)"
-                    value={users[role].password}
-                    onChange={(e) => setUsers({ ...users, [role]: { ...users[role], password: e.target.value } })}
-                    required
-                  />
+                  {!roleReadOnly && (
+                    <input
+                      type="password"
+                      placeholder="Пароль (мін. 8 символів)"
+                      value={users[role].password}
+                      onChange={(e) => setUsers({ ...users, [role]: { ...users[role], password: e.target.value } })}
+                      required
+                    />
+                  )}
                   <input
                     placeholder="Ім'я"
                     value={users[role].firstName}
                     onChange={(e) => setUsers({ ...users, [role]: { ...users[role], firstName: e.target.value } })}
-                    required
+                    required={!roleReadOnly}
+                    readOnly={roleReadOnly}
                   />
                   <input
                     placeholder="Прізвище"
                     value={users[role].lastName}
                     onChange={(e) => setUsers({ ...users, [role]: { ...users[role], lastName: e.target.value } })}
-                    required
+                    required={!roleReadOnly}
+                    readOnly={roleReadOnly}
                   />
                 </div>
               </fieldset>
-            ))}
-            <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <input
-                type="checkbox"
-                checked={users.addBoard}
-                onChange={(e) => setUsers({ ...users, addBoard: e.target.checked })}
-              />
-              Додати члена правління (опційно)
-            </label>
-            {users.addBoard && (
-              <div style={{ display: 'grid', gap: '0.75rem' }}>
-                <input placeholder="Email" value={users.boardEmail} onChange={(e) => setUsers({ ...users, boardEmail: e.target.value })} />
-                <input type="password" placeholder="Пароль" value={users.boardPassword} onChange={(e) => setUsers({ ...users, boardPassword: e.target.value })} />
-                <input placeholder="Ім'я" value={users.boardFirstName} onChange={(e) => setUsers({ ...users, boardFirstName: e.target.value })} />
-                <input placeholder="Прізвище" value={users.boardLastName} onChange={(e) => setUsers({ ...users, boardLastName: e.target.value })} />
-              </div>
+            );
+            })}
+            {!readOnly && (
+              <>
+                <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <input
+                    type="checkbox"
+                    checked={users.addBoard}
+                    onChange={(e) => setUsers({ ...users, addBoard: e.target.checked })}
+                  />
+                  Додати члена правління (опційно)
+                </label>
+                {users.addBoard && (
+                  <div style={{ display: 'grid', gap: '0.75rem' }}>
+                    <input placeholder="Email" value={users.boardEmail} onChange={(e) => setUsers({ ...users, boardEmail: e.target.value })} />
+                    <input type="password" placeholder="Пароль" value={users.boardPassword} onChange={(e) => setUsers({ ...users, boardPassword: e.target.value })} />
+                    <input placeholder="Ім'я" value={users.boardFirstName} onChange={(e) => setUsers({ ...users, boardFirstName: e.target.value })} />
+                    <input placeholder="Прізвище" value={users.boardLastName} onChange={(e) => setUsers({ ...users, boardLastName: e.target.value })} />
+                  </div>
+                )}
+              </>
             )}
           </>
         )}
 
         {step === 4 && (
-          <p>
-            Перевірте дані та завершіть налаштування. Після цього фінансовий кабінет стане доступним для голови,
-            бухгалтера та ревізійної комісії.
-          </p>
+          <>
+            <p>
+              Перевірте дані та завершіть налаштування. Після цього фінансовий кабінет стане доступним для голови,
+              бухгалтера та ревізійної комісії.
+            </p>
+            {status && !status.canComplete && (
+              <p className="error">
+                Ще потрібно: {missingForComplete().join(', ')}
+              </p>
+            )}
+          </>
         )}
 
-        <div style={{ display: 'flex', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
           {step > 0 && (
             <button type="button" onClick={() => setStep(step - 1)} style={{ background: 'var(--surface-2)' }}>
               Назад
             </button>
           )}
-          <button type="submit" disabled={loading}>
-            {loading ? 'Збереження...' : step === 4 ? 'Завершити налаштування' : 'Далі'}
+          <button
+            type="submit"
+            disabled={loading || (step === 4 && status !== null && !status.canComplete)}
+          >
+            {loading
+              ? 'Збереження...'
+              : step === 4
+                ? 'Завершити налаштування'
+                : stepComplete
+                  ? 'Продовжити'
+                  : 'Далі'}
           </button>
         </div>
       </form>
-
-      <p style={{ marginTop: '1rem' }}>
-        <Link href="/admin/organization" style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
-          Організація (після завершення)
-        </Link>
-      </p>
     </main>
   );
 }

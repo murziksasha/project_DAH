@@ -17,7 +17,7 @@ erDiagram
   Payment ||--o{ PaymentAllocation : has
   AccrualLine ||--o{ PaymentAllocation : has
   User ||--o{ AuditLog : creates
-  User }o--o| Apartment : lives_in
+  User }o--o{ Apartment : owns_via_UserApartment
 ```
 
 ## Основні сутності
@@ -41,6 +41,20 @@ erDiagram
 | area | Float | Площа, м² |
 
 Унікальність: `(buildingId, number)`.
+
+### User / UserApartment
+
+Зв'язок користувача з квартирами — **many-to-many** через `UserApartment`:
+- один мешканець може володіти кількома квартирами;
+- одна квартира може мати кількох мешканців (співвласники).
+
+| Поле UserApartment | Опис |
+|--------------------|------|
+| userId | Користувач |
+| apartmentId | Квартира |
+| isPrimary | Основна квартира для порталу мешканця |
+
+`User.apartmentId` — денормалізована основна квартира (синхронізується з `isPrimary`).
 
 ### Fund
 | type | Опис |
@@ -93,7 +107,7 @@ Web Push endpoint + ключі (`p256dh`, `auth`) для користувача.
 ## Enums (довідник)
 
 ```
-UserRole: chairman | accountant | board | resident | auditor
+UserRole: super_admin | chairman | accountant | board | resident | auditor
 UserStatus: pending | active | blocked
 FundType: maintenance | capital_repair | special
 AccrualDistribution: by_area | fixed_per_apartment | manual
@@ -107,7 +121,9 @@ RequestStatus: new | in_progress | done
 apps/api/prisma/migrations/
 ├── 20260625121850_init
 ├── 20260625123336_building_settings
-└── 20260625140000_push_subscription
+├── 20260625140000_push_subscription
+├── 20260709120000_super_admin_setup
+└── 20260710120000_user_apartment_links
 ```
 
 Команди:

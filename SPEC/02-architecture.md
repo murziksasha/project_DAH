@@ -60,6 +60,19 @@ flowchart LR
 | redis | 6379 | BullMQ |
 | minio | 9000 / 9001 | S3 API / Console |
 
+## Web UI shell
+
+| Компонент | Шлях | Призначення |
+|-----------|------|-------------|
+| `AppShell` | `apps/web/src/components/AppShell.tsx` | Header, drawer, logout |
+| `admin/layout.tsx` | `apps/web/src/app/admin/` | Обгортка admin-сторінок |
+| `resident/layout.tsx` | `apps/web/src/app/resident/` | Обгортка кабінету мешканця |
+| `lib/auth.ts` | `apps/web/src/lib/` | `logout()`, `getRoleHome()` |
+| `lib/nav-config.ts` | `apps/web/src/lib/` | Пункти меню за роллю |
+| `globals.css` | `.app-shell`, `.app-drawer`, `.nav-scroll` | Адаптивні стилі |
+
+Layouts не використовують server-side auth (middleware вимкнено) — guard на клієнті через `getToken()`.
+
 ## Модулі API
 
 | Модуль | Prefix | Відповідальність |

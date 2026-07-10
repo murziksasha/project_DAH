@@ -29,6 +29,7 @@ export async function resetTestDatabase() {
   await prisma.expenseCategory.deleteMany();
   await prisma.fund.deleteMany();
   await prisma.bankAccount.deleteMany();
+  await prisma.userApartment.deleteMany();
   await prisma.user.deleteMany();
   await prisma.resident.deleteMany();
   await prisma.apartment.deleteMany();
@@ -60,6 +61,17 @@ export async function seedTestFixtures() {
 
   const passwordHash = await bcrypt.hash('password123', 4);
 
+  const superAdmin = await prisma.user.create({
+    data: {
+      email: 'test-admin@osbb.local',
+      passwordHash,
+      firstName: 'Test',
+      lastName: 'Admin',
+      role: UserRole.super_admin,
+      status: UserStatus.active,
+    },
+  });
+
   const chairman = await prisma.user.create({
     data: {
       email: 'test-chairman@osbb.local',
@@ -80,6 +92,9 @@ export async function seedTestFixtures() {
       role: UserRole.resident,
       status: UserStatus.active,
       apartmentId: apartment.id,
+      apartmentLinks: {
+        create: { apartmentId: apartment.id, isPrimary: true },
+      },
     },
   });
 
@@ -110,7 +125,7 @@ export async function seedTestFixtures() {
     },
   });
 
-  return { building, fund, apartment, chairman, resident, accrual };
+  return { building, fund, apartment, superAdmin, chairman, resident, accrual };
 }
 
 export async function disconnectTestDatabase() {

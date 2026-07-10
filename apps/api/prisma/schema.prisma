@@ -63,17 +63,31 @@ model User {
   role         UserRole   @default(resident)
   status       UserStatus @default(pending)
   apartmentId  String?
-  apartment    Apartment? @relation(fields: [apartmentId], references: [id])
+  primaryApartment Apartment? @relation("UserPrimaryApartment", fields: [apartmentId], references: [id])
   refreshToken String?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
+  apartmentLinks     UserApartment[]
   auditLogs          AuditLog[]
   createdExpenses    Expense[]           @relation("ExpenseCreatedBy")
   announcements      Announcement[]
   requests           Request[]           @relation("RequestAuthor")
   assignedRequests   Request[]           @relation("RequestAssignee")
   pushSubscriptions  PushSubscription[]
+}
+
+model UserApartment {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apartmentId String
+  apartment   Apartment @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+  isPrimary   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+
+  @@unique([userId, apartmentId])
+  @@index([apartmentId])
 }
 
 model Building {
@@ -104,10 +118,11 @@ model Apartment {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  residents    Resident[]
-  users        User[]
-  accrualLines AccrualLine[]
-  payments     Payment[]
+  residents      Resident[]
+  primaryUsers   User[]            @relation("UserPrimaryApartment")
+  apartmentLinks UserApartment[]
+  accrualLines   AccrualLine[]
+  payments       Payment[]
 
   @@unique([buildingId, number])
 }

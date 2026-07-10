@@ -8,6 +8,44 @@
 
 ---
 
+## Setup (super_admin)
+
+| Method | Path | Auth | Опис |
+|--------|------|------|------|
+| GET | `/setup/status` | super_admin | Стан майстра + resume |
+| POST | `/setup/building` | super_admin | Створити/оновити ОСМД (upsert) |
+| POST | `/setup/bank` | super_admin | Банк + фонди (ідемпотентно) |
+| POST | `/setup/apartments` | super_admin | Масове додавання квартир |
+| POST | `/setup/users` | super_admin | Ключові ролі (ідемпотентно) |
+| POST | `/setup/complete` | super_admin | `isInitialized = true` |
+
+`GET /setup/status` відповідь (додаткові поля для resume):
+
+```json
+{
+  "hasBuilding": true,
+  "isInitialized": false,
+  "apartmentCount": 0,
+  "fundCount": 2,
+  "hasChairman": false,
+  "hasAccountant": false,
+  "hasAuditor": false,
+  "canComplete": false,
+  "nextStep": 2,
+  "stepDone": { "building": true, "bank": true, "apartments": false, "users": false },
+  "building": { "name": "...", "address": "...", "edrpou": null },
+  "bankAccount": { "bankName": "...", "iban": "...", "description": "..." }
+}
+```
+
+Ідемпотентність:
+
+- `POST /setup/bank` — якщо фонди вже є → `200`, `{ skipped: true, bankAccount, funds }`
+- `POST /setup/users` — якщо всі 3 ролі активні → `200`, `{ skipped: true, users }`; інакше створює лише відсутні ролі (існуючі пропускаються)
+- `POST /setup/apartments` — якщо квартири вже є → `400` «Квартири вже додано» (UI пропускає крок)
+
+---
+
 ## Health
 
 | Method | Path | Auth | Опис |
@@ -24,13 +62,39 @@
 | GET | `/auth/pending` | chairman, board | Очікують підтвердження |
 | PATCH | `/auth/approve/:id` | chairman, board | Активувати користувача |
 
+## Users
+
+| Method | Path | Auth | Опис |
+|--------|------|------|------|
+| GET | `/users` | super_admin, chairman | Список користувачів (пагінація) |
+| POST | `/users` | super_admin | Створити admin-користувача |
+| PATCH | `/users/:id` | super_admin | Оновити профіль, роль, статус, квартири |
+| PATCH | `/users/:id/block` | super_admin, chairman | Заблокувати |
+| POST | `/users/:id/apartments/:apartmentId` | super_admin | Прив'язати квартиру (many-to-many) |
+| DELETE | `/users/:id/apartments/:apartmentId` | super_admin | Відв'язати квартиру |
+
+Query для `GET /users`: `?search=&page=1&limit=20`
+
+Відповідь `GET /users`:
+```json
+{ "items": [...], "total": 42, "page": 1, "limit": 20 }
+```
+
+Кожен item містить `apartments[]` (усі прив'язані квартири, `isPrimary`) та `apartment` (основна).
+
+`PATCH /users/:id` body (усі поля опційні):
+`firstName`, `lastName`, `phone`, `email`, `password`, `role`, `status`, `apartmentIds[]`, `primaryApartmentId`
+
 ## Building
 
 | Method | Path | Auth | Опис |
 |--------|------|------|------|
 | GET | `/building` | JWT | Дані будинку + фонди |
-| GET | `/building/apartments` | JWT | Список квартир |
+| GET | `/building/apartments` | JWT | Список квартир (+ `users` через зв'язки) |
 | GET | `/building/apartments/:id` | JWT | Квартира з деталями |
+| POST | `/building/apartments` | super_admin, chairman | Створити квартиру |
+| PATCH | `/building/apartments/:id` | super_admin, chairman | Оновити |
+| DELETE | `/building/apartments/:id` | super_admin, chairman | Видалити (без пов'язаних даних) |
 | GET | `/building/settings` | JWT | Налаштування |
 | PATCH | `/building/settings` | chairman, board | `showDebtorsToResidents` |
 

@@ -10,6 +10,16 @@
 | `/admin` | Дашборд правління |
 | `/admin/*` | Адмін-розділи |
 
+## Глобальна навігація
+
+Усі сторінки `/resident` та `/admin/*` використовують **AppShell** (mobile-first):
+
+- Sticky header з кнопкою меню та **Вихід**
+- Drawer-навігація за роллю (див. `SPEC/03-roles-and-access.md`)
+- Контент: `max-width: 960px`, safe-area insets для iPhone
+- Вкладки кабінету мешканця — горизонтальний scroll (`.nav-scroll`) на вузьких екранах
+- Touch targets ≥ 44px; `font-size: 16px` на input (без zoom на iOS)
+
 ## Вкладки кабінету мешканця (`/resident`)
 
 | Вкладка | Дані |

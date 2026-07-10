@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { apiFetch, getToken } from '@/lib/api';
 
@@ -75,11 +74,8 @@ export default function ResidentsPage() {
   }
 
   return (
-    <main style={{ maxWidth: 960, margin: '0 auto', padding: '1rem' }}>
-      <Link href="/admin" style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
-        ← Дашборд
-      </Link>
-      <h1 style={{ margin: '1rem 0 0.5rem' }}>Заявки на реєстрацію</h1>
+    <main>
+      <h1 style={{ marginBottom: '0.5rem' }}>Заявки на реєстрацію</h1>
       <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>
         Мешканці, які очікують підтвердження від правління
       </p>

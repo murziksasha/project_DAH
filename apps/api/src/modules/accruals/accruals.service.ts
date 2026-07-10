@@ -253,7 +253,11 @@ export class AccrualsService {
     return this.getApartmentAccount(apartmentId);
   }
 
-  async generateReceipt(lineId: string, apartmentId: string | null, isAdmin: boolean) {
+  async generateReceipt(
+    lineId: string,
+    residentApartmentIds: string[],
+    isAdmin: boolean,
+  ) {
     const line = await this.prisma.accrualLine.findUnique({
       where: { id: lineId },
       include: {
@@ -264,7 +268,7 @@ export class AccrualsService {
 
     if (!line) throw new NotFoundException('Рядок нарахування не знайдено');
 
-    if (!isAdmin && line.apartmentId !== apartmentId) {
+    if (!isAdmin && !residentApartmentIds.includes(line.apartmentId)) {
       throw new ForbiddenException('Немає доступу до цієї квитанції');
     }
 
