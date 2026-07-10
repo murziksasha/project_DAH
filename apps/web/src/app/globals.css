@@ -100,3 +100,292 @@ label {
   font-size: 0.875rem;
   margin-top: 0.5rem;
 }
+
+.success-banner {
+  color: var(--success);
+  font-size: 0.875rem;
+  margin-bottom: 0.5rem;
+}
+
+.app-shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.app-header-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.app-brand {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.app-header-sub {
+  color: var(--muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-menu-btn {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  background: var(--surface-2);
+}
+
+.app-menu-icon,
+.app-menu-icon::before,
+.app-menu-icon::after {
+  display: block;
+  width: 18px;
+  height: 2px;
+  background: var(--text);
+  border-radius: 1px;
+  position: relative;
+}
+
+.app-menu-icon::before,
+.app-menu-icon::after {
+  content: '';
+  position: absolute;
+  left: 0;
+}
+
+.app-menu-icon::before {
+  top: -6px;
+}
+
+.app-menu-icon::after {
+  top: 6px;
+}
+
+.app-logout-btn {
+  flex-shrink: 0;
+  min-height: 44px;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.85rem;
+  background: var(--surface-2);
+}
+
+.app-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  background: rgba(0, 0, 0, 0.5);
+  border: none;
+  cursor: pointer;
+}
+
+.app-drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 200;
+  width: min(300px, 85vw);
+  height: 100dvh;
+  padding: 1rem;
+  padding-top: max(1rem, env(safe-area-inset-top));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  transform: translateX(-100%);
+  transition: transform 0.2s ease;
+  overflow-y: auto;
+}
+
+.app-drawer.open {
+  transform: translateX(0);
+}
+
+.app-drawer-user {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.app-drawer-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.app-drawer-link {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.app-drawer-link:hover {
+  background: var(--surface-2);
+}
+
+.app-drawer-link.active {
+  background: var(--primary);
+  color: #fff;
+}
+
+.app-content {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1rem;
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  overflow-x: clip;
+}
+
+.audit-log-list {
+  list-style: none;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.audit-log-item {
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.audit-log-item:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.audit-log-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.audit-log-main {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.audit-log-action {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.audit-log-meta {
+  margin-top: 0.25rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  word-break: break-word;
+}
+
+.audit-log-time {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.audit-log-payload {
+  margin-top: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.nav-scroll {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-bottom: 0.25rem;
+}
+
+.nav-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.setup-steps {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-bottom: 0.25rem;
+}
+
+.setup-steps::-webkit-scrollbar {
+  display: none;
+}
+
+.setup-step-pill {
+  flex-shrink: 0;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.85rem;
+  border: none;
+  cursor: default;
+}
+
+.setup-step-pill.active {
+  background: var(--primary);
+  color: #fff;
+}
+
+.setup-step-pill.done {
+  background: color-mix(in srgb, var(--success) 25%, var(--surface-2));
+  color: var(--success);
+  cursor: pointer;
+}
+
+.setup-step-pill.done:hover {
+  filter: brightness(1.1);
+}
+
+@media (min-width: 768px) {
+  .app-drawer {
+    width: 280px;
+  }
+}

@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { AuthCookieSync } from '@/components/AuthCookieSync';
 import { PwaPrompt } from '@/components/PwaPrompt';
 import './globals.css';
 
@@ -27,6 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
       </head>
       <body>
+        <AuthCookieSync />
         {children}
         <PwaPrompt />
       </body>

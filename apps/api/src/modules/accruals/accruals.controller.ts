@@ -86,11 +86,12 @@ export class AccrualsController {
     @Res() res: Response,
   ) {
     const isAdmin = ADMIN_ROLES.includes(user.role as UserRole);
-    const pdf = await this.accruals.generateReceipt(
-      lineId,
-      user.apartmentId ?? null,
-      isAdmin,
-    );
+    const residentApartmentIds = user.apartmentIds?.length
+      ? user.apartmentIds
+      : user.apartmentId
+        ? [user.apartmentId]
+        : [];
+    const pdf = await this.accruals.generateReceipt(lineId, residentApartmentIds, isAdmin);
     res.setHeader('Content-Disposition', `attachment; filename="receipt-${lineId.slice(-8)}.pdf"`);
     res.send(pdf);
   }

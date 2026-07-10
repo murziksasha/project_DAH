@@ -93,8 +93,7 @@ export default function ExpensesPage() {
   }
 
   return (
-    <main style={{ maxWidth: 560, margin: '0 auto', padding: '1rem' }}>
-      <Link href="/admin" style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>← Дашборд</Link>
+    <main>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
         <h1>Нова витрата</h1>
         <Link href="/admin/expenses/list" className="btn" style={{ fontSize: '0.875rem', padding: '0.5rem 1rem' }}>

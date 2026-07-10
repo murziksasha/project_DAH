@@ -164,8 +164,7 @@ export default function CommunicationsPage() {
   ];
 
   return (
-    <main style={{ maxWidth: 800, margin: '0 auto', padding: '1rem' }}>
-      <Link href="/admin" style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>← Дашборд</Link>
+    <main>
       <h1 style={{ margin: '1rem 0 0.5rem' }}>Комунікації</h1>
       <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>Оголошення, заявки мешканців, опитування</p>
 

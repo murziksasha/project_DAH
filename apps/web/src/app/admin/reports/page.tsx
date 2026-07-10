@@ -46,8 +46,7 @@ export default function ReportsPage() {
   const totalDebt = debtors.reduce((s, d) => s + d.debt, 0);
 
   return (
-    <main style={{ maxWidth: 900, margin: '0 auto', padding: '1rem' }}>
-      <Link href="/admin" style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>← Дашборд</Link>
+    <main>
       <h1 style={{ margin: '1rem 0 0.5rem' }}>Звіти</h1>
       <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>Рух коштів та реєстр боржників</p>
 

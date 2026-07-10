@@ -118,14 +118,28 @@ export class BuildingService {
     };
   }
 
-  listApartments() {
-    return this.prisma.apartment.findMany({
+  async listApartments() {
+    const apartments = await this.prisma.apartment.findMany({
       orderBy: [{ entrance: 'asc' }, { number: 'asc' }],
       include: {
         residents: true,
-        users: { select: { id: true, email: true, firstName: true, lastName: true, status: true } },
+        apartmentLinks: {
+          include: {
+            user: {
+              select: { id: true, email: true, firstName: true, lastName: true, status: true },
+            },
+          },
+          orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+        },
       },
     });
+    return apartments.map((a) => ({
+      ...a,
+      users: a.apartmentLinks.map((l) => ({
+        ...l.user,
+        isPrimary: l.isPrimary,
+      })),
+    }));
   }
 
   getApartment(id: string) {
@@ -195,10 +209,10 @@ export class BuildingService {
   async deleteApartment(id: string, userId: string) {
     const existing = await this.prisma.apartment.findUnique({
       where: { id },
-      include: { users: true, payments: true, accrualLines: true },
+      include: { apartmentLinks: true, payments: true, accrualLines: true },
     });
     if (!existing) throw new NotFoundException('Квартиру не знайдено');
-    if (existing.users.length || existing.payments.length || existing.accrualLines.length) {
+    if (existing.apartmentLinks.length || existing.payments.length || existing.accrualLines.length) {
       throw new BadRequestException('Неможливо видалити квартиру з пов\'язаними даними');
     }
 
