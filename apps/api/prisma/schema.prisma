@@ -65,6 +65,10 @@ model User {
   apartmentId  String?
   primaryApartment Apartment? @relation("UserPrimaryApartment", fields: [apartmentId], references: [id])
   refreshToken String?
+  totpSecret         String?
+  totpEnabled        Boolean  @default(false)
+  totpTempSecret     String?
+  emailNotifyEnabled Boolean  @default(true)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
@@ -75,6 +79,8 @@ model User {
   requests           Request[]           @relation("RequestAuthor")
   assignedRequests   Request[]           @relation("RequestAssignee")
   pushSubscriptions  PushSubscription[]
+  reminders          Reminder[]          @relation("ReminderTarget")
+  createdReminders   Reminder[]          @relation("ReminderCreator")
 }
 
 model UserApartment {
@@ -123,6 +129,7 @@ model Apartment {
   apartmentLinks UserApartment[]
   accrualLines   AccrualLine[]
   payments       Payment[]
+  reminders      Reminder[]
 
   @@unique([buildingId, number])
 }
@@ -369,4 +376,37 @@ model PushSubscription {
   p256dh    String
   auth      String
   createdAt DateTime @default(now())
+}
+
+model EmailLog {
+  id        String   @id @default(cuid())
+  to        String
+  subject   String
+  template  String
+  status    String
+  error     String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([to])
+}
+
+model Reminder {
+  id          String    @id @default(cuid())
+  type        String
+  title       String
+  body        String?
+  dueAt       DateTime
+  sentAt      DateTime?
+  userId      String?
+  user        User?     @relation("ReminderTarget", fields: [userId], references: [id], onDelete: SetNull)
+  apartmentId String?
+  apartment   Apartment? @relation(fields: [apartmentId], references: [id], onDelete: SetNull)
+  createdById String?
+  createdBy   User?     @relation("ReminderCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  meta        Json?
+  createdAt   DateTime  @default(now())
+
+  @@index([dueAt, sentAt])
+  @@index([userId])
 }

@@ -15,6 +15,7 @@ import { CurrentUser, AuthUser } from '../../common/decorators/current-user.deco
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import { ImportPaymentsDto, ImportPreviewDto } from './dto/import-payments.dto';
 import { VoidPaymentDto } from './dto/void-payment.dto';
 import { PaymentsService } from './payments.service';
 
@@ -36,8 +37,13 @@ export class PaymentsController {
   }
 
   @Get()
-  list(@Query('apartmentId') apartmentId: string | undefined, @CurrentUser() user: AuthUser) {
-    return this.payments.listPayments(user, apartmentId);
+  list(
+    @Query('apartmentId') apartmentId: string | undefined,
+    @Query('from') from: string | undefined,
+    @Query('to') to: string | undefined,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.payments.listPayments(user, { apartmentId, from, to });
   }
 
   @UseGuards(RolesGuard)
@@ -55,6 +61,20 @@ export class PaymentsController {
   @Post()
   create(@Body() dto: CreatePaymentDto, @CurrentUser() user: AuthUser) {
     return this.payments.createPayment(dto, user);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(...WRITE_ROLES)
+  @Post('import/preview')
+  importPreview(@Body() dto: ImportPreviewDto) {
+    return this.payments.previewBankImport(dto.csv);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(...WRITE_ROLES)
+  @Post('import')
+  importCommit(@Body() dto: ImportPaymentsDto, @CurrentUser() user: AuthUser) {
+    return this.payments.importPayments(dto, user);
   }
 
   @Get(':id')

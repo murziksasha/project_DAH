@@ -29,6 +29,65 @@ export class BuildingService {
     });
   }
 
+  /** Lightweight counters for admin dashboard. */
+  async getOpsSummary() {
+    const [pendingResidents, openRequests, activePolls, debtorsLines, documents] =
+      await Promise.all([
+        this.prisma.user.count({ where: { status: 'pending', role: 'resident' } }),
+        this.prisma.request.count({ where: { status: { in: ['new', 'in_progress'] } } }),
+        this.prisma.poll.count({ where: { isActive: true } }),
+        this.prisma.accrualLine.count({
+          where: {
+            status: { in: ['open', 'partially_paid', 'overdue'] },
+          },
+        }),
+        this.prisma.document.count(),
+      ]);
+
+    return {
+      pendingResidents,
+      openRequests,
+      activePolls,
+      openAccrualLines: debtorsLines,
+      documents,
+    };
+  }
+
+  async updateBuildingProfile(
+    dto: { name?: string; address?: string; edrpou?: string | null },
+    userId: string,
+  ) {
+    const building = await this.prisma.building.findFirst();
+    if (!building) throw new NotFoundException('Будинок не налаштовано');
+
+    const updated = await this.prisma.building.update({
+      where: { id: building.id },
+      data: {
+        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+        ...(dto.address !== undefined ? { address: dto.address.trim() } : {}),
+        ...(dto.edrpou !== undefined
+          ? { edrpou: dto.edrpou?.trim() ? dto.edrpou.trim() : null }
+          : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        address: true,
+        edrpou: true,
+      },
+    });
+
+    await this.audit.log({
+      userId,
+      action: 'building.profile_updated',
+      entityType: 'Building',
+      entityId: building.id,
+      payload: { ...dto },
+    });
+
+    return updated;
+  }
+
   async getSettings() {
     const building = await this.prisma.building.findFirst({
       select: {
@@ -56,6 +115,7 @@ export class BuildingService {
         json.showBankDetailsToResidents ?? DEFAULT_BUILDING_SETTINGS.showBankDetailsToResidents,
       defaultAccrualDueDays:
         json.defaultAccrualDueDays ?? DEFAULT_BUILDING_SETTINGS.defaultAccrualDueDays,
+      reminderDaysBeforeDue: json.reminderDaysBeforeDue ?? 3,
       locale: json.locale ?? DEFAULT_BUILDING_SETTINGS.locale,
       features: json.features ?? {},
     };
@@ -74,6 +134,9 @@ export class BuildingService {
         : {}),
       ...(dto.defaultAccrualDueDays !== undefined
         ? { defaultAccrualDueDays: dto.defaultAccrualDueDays }
+        : {}),
+      ...(dto.reminderDaysBeforeDue !== undefined
+        ? { reminderDaysBeforeDue: dto.reminderDaysBeforeDue }
         : {}),
       ...(dto.locale !== undefined ? { locale: dto.locale } : {}),
     };
@@ -114,6 +177,7 @@ export class BuildingService {
         json.showBankDetailsToResidents ?? DEFAULT_BUILDING_SETTINGS.showBankDetailsToResidents,
       defaultAccrualDueDays:
         json.defaultAccrualDueDays ?? DEFAULT_BUILDING_SETTINGS.defaultAccrualDueDays,
+      reminderDaysBeforeDue: json.reminderDaysBeforeDue ?? 3,
       locale: json.locale ?? DEFAULT_BUILDING_SETTINGS.locale,
     };
   }
@@ -179,6 +243,82 @@ export class BuildingService {
     });
 
     return apartment;
+  }
+
+  /**
+   * Bulk import: lines "number,entrance,floor,area" (floor optional).
+   * Skips duplicates (same building + number).
+   */
+  async importApartmentsCsv(csv: string, userId: string) {
+    const building = await this.prisma.building.findFirst();
+    if (!building) throw new NotFoundException('Будинок не налаштовано');
+
+    const text = csv.replace(/^\uFEFF/, '').trim();
+    if (!text) throw new BadRequestException('Порожній CSV');
+
+    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    let created = 0;
+    let skipped = 0;
+    const errors: Array<{ line: number; message: string }> = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const raw = lines[i];
+      // skip header
+      if (i === 0 && /номер|number|кв/i.test(raw) && /площа|area/i.test(raw)) {
+        continue;
+      }
+      const parts = raw.split(/[,;\t]/).map((p) => p.trim().replace(/^"|"$/g, ''));
+      if (parts.length < 2) {
+        errors.push({ line: i + 1, message: 'Очікується number,entrance,floor?,area' });
+        continue;
+      }
+
+      const number = parts[0];
+      let entrance = 1;
+      let floor: number | undefined;
+      let area: number;
+
+      if (parts.length === 2) {
+        area = Number(parts[1].replace(',', '.'));
+      } else if (parts.length === 3) {
+        entrance = Number(parts[1]) || 1;
+        area = Number(parts[2].replace(',', '.'));
+      } else {
+        entrance = Number(parts[1]) || 1;
+        floor = parts[2] ? Number(parts[2]) : undefined;
+        area = Number(parts[3].replace(',', '.'));
+      }
+
+      if (!number || !Number.isFinite(area) || area <= 0) {
+        errors.push({ line: i + 1, message: 'Некоректний номер або площа' });
+        continue;
+      }
+
+      try {
+        await this.prisma.apartment.create({
+          data: {
+            buildingId: building.id,
+            number,
+            entrance,
+            floor: Number.isFinite(floor as number) ? floor : undefined,
+            area,
+          },
+        });
+        created++;
+      } catch {
+        skipped++;
+      }
+    }
+
+    await this.audit.log({
+      userId,
+      action: 'building.apartments_import',
+      entityType: 'Building',
+      entityId: building.id,
+      payload: { created, skipped, errors: errors.length },
+    });
+
+    return { created, skipped, errors };
   }
 
   async updateApartment(id: string, dto: UpdateApartmentDto, userId: string) {

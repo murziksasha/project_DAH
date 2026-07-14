@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { apiFetch, getToken } from '@/lib/api';
+import { downloadCsv } from '@/lib/csv';
 import { ApartmentsSection } from './apartments-section';
 import { PAGE_SIZE, ROLE_LABELS } from './constants';
 import { UserForm } from './user-form';
@@ -381,6 +382,44 @@ export default function OrganizationPage() {
         onLinkUser={handleLinkUser}
         onUnlinkUser={handleUnlinkUser}
         onEditUser={startEditUser}
+        onExportCsv={() => {
+          const rows: Array<Array<string | number>> = [
+            ['Номер', "Під'їзд", 'Поверх', 'Площа', 'Мешканці'],
+            ...apartments.map((a) => [
+              a.number,
+              a.entrance,
+              a.floor ?? '',
+              a.area,
+              (a.users ?? [])
+                .map((u) => `${u.firstName} ${u.lastName} <${u.email}>`)
+                .join('; '),
+            ]),
+          ];
+          downloadCsv(`kvartyry-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+        }}
+        onImportCsv={async (csv) => {
+          const token = getToken();
+          if (!token) return;
+          setError('');
+          try {
+            const res = await apiFetch<{
+              created: number;
+              skipped: number;
+              errors: Array<{ line: number; message: string }>;
+            }>('/building/apartments/import', {
+              method: 'POST',
+              token,
+              body: JSON.stringify({ csv }),
+            });
+            setMessage(
+              `Імпорт: додано ${res.created}, пропущено ${res.skipped}` +
+                (res.errors.length ? `, помилок рядків: ${res.errors.length}` : ''),
+            );
+            await loadApartments(token);
+          } catch (err) {
+            setError(err instanceof Error ? err.message : 'Помилка імпорту');
+          }
+        }}
       />
     </main>
   );

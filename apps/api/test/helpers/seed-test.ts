@@ -12,6 +12,8 @@ const prisma = new PrismaClient();
 
 export async function resetTestDatabase() {
   await prisma.auditLog.deleteMany();
+  await prisma.emailLog.deleteMany();
+  await prisma.reminder.deleteMany();
   await prisma.pushSubscription.deleteMany();
   await prisma.pollVote.deleteMany();
   await prisma.pollOption.deleteMany();

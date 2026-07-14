@@ -7,6 +7,8 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { StorageService } from '../files/storage.service';
+import { PaymentsService } from '../payments/payments.service';
+import { BoardReportPdfService } from './board-report-pdf.service';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { CreateSupplierDto } from './dto/create-supplier.dto';
 
@@ -16,14 +18,180 @@ export class FinanceService {
     private prisma: PrismaService,
     private storage: StorageService,
     private audit: AuditService,
+    private payments: PaymentsService,
+    private boardPdf: BoardReportPdfService,
   ) {}
 
   listFunds() {
-    return this.prisma.fund.findMany({ include: { bankAccount: true } });
+    return this.prisma.fund.findMany({
+      include: { bankAccount: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async updateFund(
+    id: string,
+    dto: { name?: string; openingBalance?: number; bankAccountId?: string | null },
+    userId: string,
+  ) {
+    const fund = await this.prisma.fund.findUnique({ where: { id } });
+    if (!fund) throw new NotFoundException('Фонд не знайдено');
+
+    if (dto.bankAccountId) {
+      const ba = await this.prisma.bankAccount.findUnique({ where: { id: dto.bankAccountId } });
+      if (!ba) throw new BadRequestException('Банківський рахунок не знайдено');
+    }
+
+    const updated = await this.prisma.fund.update({
+      where: { id },
+      data: {
+        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+        ...(dto.openingBalance !== undefined ? { openingBalance: dto.openingBalance } : {}),
+        ...(dto.bankAccountId !== undefined ? { bankAccountId: dto.bankAccountId } : {}),
+      },
+      include: { bankAccount: true },
+    });
+
+    await this.audit.log({
+      userId,
+      action: 'fund.updated',
+      entityType: 'Fund',
+      entityId: id,
+      payload: { ...dto },
+    });
+
+    return updated;
+  }
+
+  listBankAccounts() {
+    return this.prisma.bankAccount.findMany({ orderBy: { createdAt: 'asc' } });
+  }
+
+  async createBankAccount(
+    dto: { bankName: string; iban: string; description?: string },
+    userId: string,
+  ) {
+    const building = await this.prisma.building.findFirst();
+    if (!building) throw new BadRequestException('Будинок не налаштовано');
+
+    const iban = dto.iban.replace(/\s+/g, '').toUpperCase();
+    const created = await this.prisma.bankAccount.create({
+      data: {
+        buildingId: building.id,
+        bankName: dto.bankName.trim(),
+        iban,
+        description: dto.description?.trim() || null,
+      },
+    });
+    await this.audit.log({
+      userId,
+      action: 'bank_account.created',
+      entityType: 'BankAccount',
+      entityId: created.id,
+      payload: { iban },
+    });
+    return created;
+  }
+
+  async updateBankAccount(
+    id: string,
+    dto: { bankName?: string; iban?: string; description?: string | null },
+    userId: string,
+  ) {
+    const existing = await this.prisma.bankAccount.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Рахунок не знайдено');
+
+    const updated = await this.prisma.bankAccount.update({
+      where: { id },
+      data: {
+        ...(dto.bankName !== undefined ? { bankName: dto.bankName.trim() } : {}),
+        ...(dto.iban !== undefined ? { iban: dto.iban.replace(/\s+/g, '').toUpperCase() } : {}),
+        ...(dto.description !== undefined
+          ? { description: dto.description?.trim() || null }
+          : {}),
+      },
+    });
+    await this.audit.log({
+      userId,
+      action: 'bank_account.updated',
+      entityType: 'BankAccount',
+      entityId: id,
+      payload: { ...dto },
+    });
+    return updated;
+  }
+
+  async deleteBankAccount(id: string, userId: string) {
+    const existing = await this.prisma.bankAccount.findUnique({
+      where: { id },
+      include: { _count: { select: { funds: true } } },
+    });
+    if (!existing) throw new NotFoundException('Рахунок не знайдено');
+    if (existing._count.funds > 0) {
+      throw new BadRequestException('Спочатку відвʼяжіть фонди від цього рахунку');
+    }
+    await this.prisma.bankAccount.delete({ where: { id } });
+    await this.audit.log({
+      userId,
+      action: 'bank_account.deleted',
+      entityType: 'BankAccount',
+      entityId: id,
+      payload: { iban: existing.iban },
+    });
+    return { id, deleted: true };
   }
 
   listCategories() {
     return this.prisma.expenseCategory.findMany({ orderBy: { name: 'asc' } });
+  }
+
+  async createCategory(dto: { name: string; code?: string }) {
+    const code =
+      dto.code?.trim() ||
+      dto.name
+        .toLowerCase()
+        .replace(/[^a-z0-9а-яіїєґ]+/gi, '_')
+        .replace(/^_|_$/g, '')
+        .slice(0, 48) ||
+      `cat_${Date.now().toString(36)}`;
+
+    const existing = await this.prisma.expenseCategory.findUnique({ where: { code } });
+    if (existing) throw new BadRequestException(`Категорія з кодом «${code}» вже існує`);
+
+    return this.prisma.expenseCategory.create({
+      data: { name: dto.name.trim(), code },
+    });
+  }
+
+  async updateCategory(id: string, dto: { name: string; code?: string }) {
+    const cat = await this.prisma.expenseCategory.findUnique({ where: { id } });
+    if (!cat) throw new NotFoundException('Категорію не знайдено');
+
+    if (dto.code && dto.code !== cat.code) {
+      const clash = await this.prisma.expenseCategory.findUnique({ where: { code: dto.code } });
+      if (clash) throw new BadRequestException('Код уже зайнятий');
+    }
+
+    return this.prisma.expenseCategory.update({
+      where: { id },
+      data: {
+        name: dto.name.trim(),
+        ...(dto.code ? { code: dto.code } : {}),
+      },
+    });
+  }
+
+  async deleteCategory(id: string) {
+    const cat = await this.prisma.expenseCategory.findUnique({
+      where: { id },
+      include: { _count: { select: { expenses: true } } },
+    });
+    if (!cat) throw new NotFoundException('Категорію не знайдено');
+    if (cat._count.expenses > 0) {
+      throw new BadRequestException('Неможливо видалити: є витрати з цією категорією');
+    }
+    await this.prisma.expenseCategory.delete({ where: { id } });
+    return { id, deleted: true };
   }
 
   listSuppliers() {
@@ -62,7 +230,13 @@ export class FinanceService {
     });
   }
 
-  async listExpenses(params?: { fundId?: string; from?: string; to?: string }) {
+  async listExpenses(params?: {
+    fundId?: string;
+    from?: string;
+    to?: string;
+    page?: number;
+    limit?: number;
+  }) {
     const where: Prisma.ExpenseWhereInput = { isVoided: false };
     if (params?.fundId) where.fundId = params.fundId;
     if (params?.from || params?.to) {
@@ -71,18 +245,27 @@ export class FinanceService {
       if (params.to) where.date.lte = new Date(params.to);
     }
 
-    const expenses = await this.prisma.expense.findMany({
-      where,
-      include: {
-        fund: true,
-        category: true,
-        supplier: true,
-        createdBy: { select: { firstName: true, lastName: true } },
-      },
-      orderBy: { date: 'desc' },
-    });
+    const page = Math.max(1, params?.page ?? 1);
+    const limit = Math.min(Math.max(1, params?.limit ?? 50), 200);
+    const skip = (page - 1) * limit;
 
-    return Promise.all(
+    const [total, expenses] = await Promise.all([
+      this.prisma.expense.count({ where }),
+      this.prisma.expense.findMany({
+        where,
+        include: {
+          fund: true,
+          category: true,
+          supplier: true,
+          createdBy: { select: { firstName: true, lastName: true } },
+        },
+        orderBy: { date: 'desc' },
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    const items = await Promise.all(
       expenses.map(async (expense) => ({
         ...expense,
         documentUrl: expense.documentKey
@@ -90,6 +273,14 @@ export class FinanceService {
           : null,
       })),
     );
+
+    return {
+      items,
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    };
   }
 
   async getExpense(id: string) {
@@ -250,5 +441,45 @@ export class FinanceService {
       byCategory: Array.from(byCategory.values()).sort((a, b) => b.total - a.total),
       byFund: Array.from(byFund.values()).sort((a, b) => b.total - a.total),
     };
+  }
+
+  async generateBoardReportPdf(from?: string, to?: string) {
+    const building = await this.prisma.building.findFirst();
+    const [cashFlow, expensesSummary, debtors] = await Promise.all([
+      this.getCashFlowReport(from, to),
+      this.getExpensesSummary(from, to),
+      this.payments.getDebtorsReport(),
+    ]);
+
+    const buffer = await this.boardPdf.generate({
+      buildingName: building?.name ?? 'ОСМД',
+      buildingAddress: building?.address ?? '',
+      generatedAt: new Date(),
+      period: { from, to },
+      cashFlow: {
+        totalIncome: cashFlow.totalIncome,
+        totalExpenses: cashFlow.totalExpenses,
+        netFlow: cashFlow.netFlow,
+        fundBalances: cashFlow.fundBalances.map((f) => ({
+          fundName: f.fundName,
+          balance: f.balance,
+          income: f.income,
+          expenses: f.expenses,
+        })),
+      },
+      expensesSummary: {
+        total: expensesSummary.total,
+        byCategory: expensesSummary.byCategory,
+      },
+      debtors: debtors.map((d) => ({
+        number: d.number,
+        entrance: d.entrance,
+        debt: d.debt,
+        isOverdue: d.isOverdue,
+      })),
+    });
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    return { buffer, filename: `zvit-osmd-${stamp}.pdf` };
   }
 }

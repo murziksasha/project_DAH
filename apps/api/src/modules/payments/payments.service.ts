@@ -12,6 +12,10 @@ import {
 } from '@prisma/client';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import {
+  matchStatementRows,
+  parseBankStatementCsv,
+} from '../../common/utils/bank-statement-import';
+import {
   FifoLineInput,
   planFifoAllocation,
   resolveAccrualLineStatus,
@@ -19,7 +23,9 @@ import {
 import { roundMoney } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { MailService } from '../mail/mail.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import { ImportPaymentsDto } from './dto/import-payments.dto';
 
 export interface AllocationPlan {
   accrualLineId: string;
@@ -42,13 +48,17 @@ export class PaymentsService {
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
+    private mail: MailService,
   ) {}
 
-  listPayments(user: AuthUser, apartmentId?: string) {
+  listPayments(
+    user: AuthUser,
+    opts?: { apartmentId?: string; from?: string; to?: string },
+  ) {
     const where: Prisma.PaymentWhereInput = { isVoided: false };
 
     if (PAYMENT_READ_ROLES.includes(user.role as UserRole)) {
-      if (apartmentId) where.apartmentId = apartmentId;
+      if (opts?.apartmentId) where.apartmentId = opts.apartmentId;
     } else {
       const ids = user.apartmentIds?.length
         ? user.apartmentIds
@@ -59,6 +69,12 @@ export class PaymentsService {
         throw new ForbiddenException('Квартиру не прив\'язано до облікового запису');
       }
       where.apartmentId = { in: ids };
+    }
+
+    if (opts?.from || opts?.to) {
+      where.date = {};
+      if (opts.from) where.date.gte = new Date(opts.from);
+      if (opts.to) where.date.lte = new Date(opts.to);
     }
 
     return this.prisma.payment.findMany({
@@ -72,6 +88,7 @@ export class PaymentsService {
         },
       },
       orderBy: { date: 'desc' },
+      take: 500,
     });
   }
 
@@ -181,6 +198,11 @@ export class PaymentsService {
       },
     });
 
+    void this.mail.notifyResidentsOfApartments([dto.apartmentId], 'payment.received', () => ({
+      amount: dto.amount,
+      apartmentNumber: apartment.number,
+    }));
+
     return this.getPayment(payment.id, user);
   }
 
@@ -221,6 +243,119 @@ export class PaymentsService {
     });
 
     return { id, isVoided: true };
+  }
+
+  async previewBankImport(csv: string) {
+    if (!csv?.trim()) {
+      throw new BadRequestException('Порожній CSV');
+    }
+
+    const apartments = await this.prisma.apartment.findMany({
+      select: { id: true, number: true, entrance: true },
+      orderBy: [{ entrance: 'asc' }, { number: 'asc' }],
+    });
+
+    const parsed = parseBankStatementCsv(csv);
+    const rows = matchStatementRows(parsed, apartments);
+
+    // Flag possible duplicates by exact reference + amount + date already paid
+    const matchedRefs = rows
+      .filter((r) => r.status === 'matched' && r.reference)
+      .map((r) => r.reference);
+
+    const existing =
+      matchedRefs.length > 0
+        ? await this.prisma.payment.findMany({
+            where: {
+              isVoided: false,
+              reference: { in: matchedRefs },
+            },
+            select: { reference: true, amount: true, date: true, apartmentId: true },
+          })
+        : [];
+
+    const enriched = rows.map((row) => {
+      if (row.status !== 'matched' || !row.reference) return row;
+      const dup = existing.find(
+        (p) =>
+          p.reference === row.reference &&
+          Number(p.amount) === row.amount &&
+          p.date.toISOString().slice(0, 10) === row.date &&
+          p.apartmentId === row.apartmentId,
+      );
+      if (!dup) return row;
+      return {
+        ...row,
+        status: 'skipped' as const,
+        message: 'Схожий платіж уже є в системі (той самий референс/сума/дата)',
+      };
+    });
+
+    const summary = {
+      total: enriched.length,
+      matched: enriched.filter((r) => r.status === 'matched').length,
+      unmatched: enriched.filter((r) => r.status === 'unmatched').length,
+      skipped: enriched.filter((r) => r.status === 'skipped').length,
+      invalid: enriched.filter((r) => r.status === 'invalid').length,
+      totalAmount: roundMoney(
+        enriched
+          .filter((r) => r.status === 'matched' && r.amount != null)
+          .reduce((s, r) => s + (r.amount ?? 0), 0),
+      ),
+    };
+
+    return { rows: enriched, summary };
+  }
+
+  async importPayments(dto: ImportPaymentsDto, user: AuthUser) {
+    if (!dto.rows?.length) {
+      throw new BadRequestException('Немає рядків для імпорту');
+    }
+
+    const source = dto.source ?? PaymentSource.bank;
+    const created: string[] = [];
+    const errors: Array<{ index: number; message: string }> = [];
+
+    for (let i = 0; i < dto.rows.length; i++) {
+      const row = dto.rows[i];
+      try {
+        const payment = await this.createPayment(
+          {
+            apartmentId: row.apartmentId,
+            amount: row.amount,
+            date: row.date,
+            source,
+            reference: row.reference,
+          },
+          user,
+        );
+        created.push(payment.id);
+      } catch (err) {
+        errors.push({
+          index: i,
+          message: err instanceof Error ? err.message : 'Помилка імпорту',
+        });
+      }
+    }
+
+    await this.audit.log({
+      userId: user.id,
+      action: 'payment.import',
+      entityType: 'Payment',
+      entityId: created[0] ?? 'batch',
+      payload: {
+        requested: dto.rows.length,
+        created: created.length,
+        errors: errors.length,
+      },
+    });
+
+    return {
+      created: created.length,
+      failed: errors.length,
+      paymentIds: created,
+      errors,
+    };
   }
 
   async getDebtorsReport() {

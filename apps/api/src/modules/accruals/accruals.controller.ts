@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Header,
   Param,
@@ -45,6 +46,13 @@ export class AccrualsController {
   @Post('templates')
   createTemplate(@Body() dto: CreateAccrualTemplateDto) {
     return this.accruals.createTemplate(dto);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(...WRITE_ROLES)
+  @Delete('templates/:id')
+  deleteTemplate(@Param('id') id: string) {
+    return this.accruals.deleteTemplate(id);
   }
 
   @Get()
@@ -94,6 +102,26 @@ export class AccrualsController {
     const pdf = await this.accruals.generateReceipt(lineId, residentApartmentIds, isAdmin);
     res.setHeader('Content-Disposition', `attachment; filename="receipt-${lineId.slice(-8)}.pdf"`);
     res.send(pdf);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(...ADMIN_ROLES)
+  @Get(':id/receipts.zip')
+  async receiptsZip(@Param('id') id: string, @Res() res: Response) {
+    const { buffer, filename } = await this.accruals.generateAccrualReceiptsZip(id);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(...ADMIN_ROLES)
+  @Get(':id/receipts.pdf')
+  async receiptsPdf(@Param('id') id: string, @Res() res: Response) {
+    const { buffer, filename } = await this.accruals.generateAccrualReceiptsPdf(id);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
   }
 
   @Get(':id')

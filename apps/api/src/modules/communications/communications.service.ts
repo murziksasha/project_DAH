@@ -8,6 +8,7 @@ import { RequestStatus, UserRole } from '@prisma/client';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { MailService } from '../mail/mail.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import { CreatePollDto } from './dto/create-poll.dto';
@@ -22,6 +23,7 @@ export class CommunicationsService {
     private prisma: PrismaService,
     private notifications: NotificationsService,
     private audit: AuditService,
+    private mail: MailService,
   ) {}
 
   listAnnouncements() {
@@ -60,6 +62,19 @@ export class CommunicationsService {
         body: dto.title,
         url: '/resident?tab=communications',
       })
+      .catch(() => undefined);
+
+    void this.prisma.user
+      .findMany({
+        where: { status: 'active', emailNotifyEnabled: true, role: 'resident' },
+        select: { email: true, firstName: true, lastName: true, emailNotifyEnabled: true },
+      })
+      .then((users) =>
+        this.mail.notifyUsers(users, 'announcement.created', {
+          title: dto.title,
+          body: dto.body,
+        }),
+      )
       .catch(() => undefined);
 
     return announcement;
@@ -110,6 +125,14 @@ export class CommunicationsService {
       entityId: request.id,
       payload: { title: dto.title, category: dto.category },
     });
+
+    void this.mail.notifyAdmins('request.created', {
+      firstName: request.author.firstName,
+      lastName: request.author.lastName,
+      title: dto.title,
+      body: dto.description,
+    });
+
     return request;
   }
 
@@ -131,10 +154,33 @@ export class CommunicationsService {
         assigneeId: dto.assigneeId,
       },
       include: {
-        author: { select: { id: true, firstName: true, lastName: true } },
+        author: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            emailNotifyEnabled: true,
+          },
+        },
         assignee: { select: { id: true, firstName: true, lastName: true } },
       },
     });
+
+    if (dto.status && dto.status !== request.status && updated.author.emailNotifyEnabled !== false) {
+      const statusLabel: Record<string, string> = {
+        new: 'Нова',
+        in_progress: 'В роботі',
+        done: 'Виконано',
+      };
+      void this.mail.sendTemplate(updated.author.email, 'request.status_changed', {
+        firstName: updated.author.firstName,
+        lastName: updated.author.lastName,
+        title: updated.title,
+        status: statusLabel[dto.status] ?? dto.status,
+      });
+    }
+
     await this.audit.log({
       userId,
       action: 'request.updated',

@@ -12,9 +12,19 @@ import * as bcrypt from 'bcrypt';
 const prisma = new PrismaClient();
 
 async function main() {
+  const isProd =
+    process.env.NODE_ENV === 'production' || process.env.DAH_ENV === 'production';
+  if (isProd && process.env.ALLOW_SEED !== '1') {
+    throw new Error(
+      'Seed заборонено у production. Встановіть ALLOW_SEED=1 лише якщо свідомо перезаписуєте демо-дані.',
+    );
+  }
+
   const buildingName = process.env.BUILDING_NAME ?? 'ОСББ вул. Прикладна 1';
 
   await prisma.auditLog.deleteMany();
+  await prisma.emailLog.deleteMany();
+  await prisma.reminder.deleteMany();
   await prisma.pushSubscription.deleteMany();
   await prisma.announcement.deleteMany();
   await prisma.request.deleteMany();
@@ -27,10 +37,12 @@ async function main() {
   await prisma.accrual.deleteMany();
   await prisma.accrualTemplate.deleteMany();
   await prisma.expense.deleteMany();
+  await prisma.document.deleteMany();
   await prisma.supplier.deleteMany();
   await prisma.expenseCategory.deleteMany();
   await prisma.fund.deleteMany();
   await prisma.bankAccount.deleteMany();
+  await prisma.userApartment.deleteMany();
   await prisma.user.deleteMany();
   await prisma.resident.deleteMany();
   await prisma.apartment.deleteMany();

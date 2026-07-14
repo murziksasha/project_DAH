@@ -10,6 +10,7 @@ import { CreateApartmentDto } from './dto/create-apartment.dto';
 import { CreateResidentDto } from './dto/create-resident.dto';
 import { UpdateApartmentDto } from './dto/update-apartment.dto';
 import { UpdateResidentDto } from './dto/update-resident.dto';
+import { UpdateBuildingDto } from './dto/update-building.dto';
 import { UpdateBuildingSettingsDto } from './dto/update-settings.dto';
 
 @ApiTags('building')
@@ -22,6 +23,13 @@ export class BuildingController {
   @Get()
   getBuilding() {
     return this.building.getBuilding();
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.super_admin, UserRole.chairman, UserRole.board)
+  @Patch()
+  updateBuilding(@Body() dto: UpdateBuildingDto, @CurrentUser() user: AuthUser) {
+    return this.building.updateBuildingProfile(dto, user.id);
   }
 
   @Get('apartments')
@@ -40,6 +48,19 @@ export class BuildingController {
   }
 
   @UseGuards(RolesGuard)
+  @Roles(
+    UserRole.super_admin,
+    UserRole.chairman,
+    UserRole.accountant,
+    UserRole.board,
+    UserRole.auditor,
+  )
+  @Get('ops-summary')
+  opsSummary() {
+    return this.building.getOpsSummary();
+  }
+
+  @UseGuards(RolesGuard)
   @Roles(UserRole.super_admin, UserRole.chairman, UserRole.board)
   @Patch('settings')
   updateSettings(@Body() dto: UpdateBuildingSettingsDto, @CurrentUser() user: AuthUser) {
@@ -51,6 +72,13 @@ export class BuildingController {
   @Post('apartments')
   createApartment(@Body() dto: CreateApartmentDto, @CurrentUser() user: AuthUser) {
     return this.building.createApartment(dto, user.id);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.super_admin, UserRole.chairman)
+  @Post('apartments/import')
+  importApartments(@Body() body: { csv: string }, @CurrentUser() user: AuthUser) {
+    return this.building.importApartmentsCsv(body.csv ?? '', user.id);
   }
 
   @UseGuards(RolesGuard)

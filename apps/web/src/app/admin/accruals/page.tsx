@@ -2,9 +2,15 @@
 
 import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
+import { downloadAuthFile } from '@/lib/download';
+import { formatMoney } from '@/lib/money';
 
-interface Fund { id: string; name: string }
+interface Fund {
+  id: string;
+  name: string;
+}
 interface Template {
   id: string;
   name: string;
@@ -22,8 +28,17 @@ interface ApartmentPreview {
 }
 
 type Distribution = 'by_area' | 'fixed_per_apartment' | 'manual';
+type Step = 1 | 2 | 3 | 4;
+
+const STEPS: { id: Step; label: string }[] = [
+  { id: 1, label: 'Параметри' },
+  { id: 2, label: 'Перегляд' },
+  { id: 3, label: 'Підтвердження' },
+  { id: 4, label: 'Готово' },
+];
 
 export default function AccrualsPage() {
+  const [step, setStep] = useState<Step>(1);
   const [funds, setFunds] = useState<Fund[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [fundId, setFundId] = useState('');
@@ -36,6 +51,7 @@ export default function AccrualsPage() {
   const [dueDate, setDueDate] = useState('');
   const [preview, setPreview] = useState<ApartmentPreview[]>([]);
   const [manualAmounts, setManualAmounts] = useState<Record<string, string>>({});
+  const [createdId, setCreatedId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -68,30 +84,6 @@ export default function AccrualsPage() {
     if (tpl.fixedAmount) setFixedAmount(String(tpl.fixedAmount));
   }
 
-  async function loadPreview() {
-    const token = getToken();
-    if (!token) return;
-    setError('');
-    try {
-      const body = buildPayload();
-      const data = await apiFetch<ApartmentPreview[]>('/accruals/preview', {
-        method: 'POST',
-        token,
-        body: JSON.stringify(body),
-      });
-      setPreview(data);
-      if (distribution === 'manual') {
-        const amounts: Record<string, string> = {};
-        data.forEach((row) => {
-          amounts[row.apartmentId] = manualAmounts[row.apartmentId] ?? String(row.amount || '');
-        });
-        setManualAmounts(amounts);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
-    }
-  }
-
   function buildPayload() {
     const payload: Record<string, unknown> = {
       fundId,
@@ -111,6 +103,61 @@ export default function AccrualsPage() {
     return payload;
   }
 
+  async function loadPreview() {
+    const token = getToken();
+    if (!token) return;
+    setError('');
+    setLoading(true);
+    try {
+      const data = await apiFetch<ApartmentPreview[]>('/accruals/preview', {
+        method: 'POST',
+        token,
+        body: JSON.stringify(buildPayload()),
+      });
+      setPreview(data);
+      if (distribution === 'manual') {
+        const amounts: Record<string, string> = {};
+        data.forEach((row) => {
+          amounts[row.apartmentId] = manualAmounts[row.apartmentId] ?? String(row.amount || '');
+        });
+        setManualAmounts(amounts);
+      }
+      setStep(2);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Помилка');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveAsTemplate() {
+    const token = getToken();
+    if (!token) return;
+    if (distribution === 'manual') {
+      setError('Шаблон не підтримує ручний розподіл');
+      return;
+    }
+    setError('');
+    try {
+      await apiFetch('/accruals/templates', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          fundId,
+          name: title,
+          distribution,
+          rate: distribution === 'by_area' ? Number(rate) : undefined,
+          fixedAmount: distribution === 'fixed_per_apartment' ? Number(fixedAmount) : undefined,
+        }),
+      });
+      setMessage('Шаблон збережено');
+      const t = await apiFetch<Template[]>('/accruals/templates', { token });
+      setTemplates(t);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Помилка шаблону');
+    }
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     const token = getToken();
@@ -119,18 +166,27 @@ export default function AccrualsPage() {
     setError('');
     setMessage('');
     try {
-      await apiFetch('/accruals', {
+      const created = await apiFetch<{ id: string }>('/accruals', {
         method: 'POST',
         token,
         body: JSON.stringify(buildPayload()),
       });
-      setMessage('Нарахування проведено для всіх квартир');
-      setPreview([]);
+      setCreatedId(created.id);
+      setMessage('Нарахування проведено');
+      setStep(4);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Помилка');
     } finally {
       setLoading(false);
     }
+  }
+
+  function resetWizard() {
+    setStep(1);
+    setPreview([]);
+    setCreatedId(null);
+    setMessage('');
+    setError('');
   }
 
   const previewTotal = preview.reduce((s, r) => {
@@ -140,102 +196,149 @@ export default function AccrualsPage() {
     return s + r.amount;
   }, 0);
 
+  const fundName = funds.find((f) => f.id === fundId)?.name ?? '';
+
   return (
     <main>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-        <h1>Нарахування внесків</h1>
-        <Link href="/admin/accruals/list" className="btn" style={{ fontSize: '0.875rem', padding: '0.5rem 1rem' }}>
-          Історія
-        </Link>
-      </div>
-      <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>
-        Масове або ручне нарахування по квартирах (як у ДАХ)
-      </p>
+      <PageHeader
+        title="Нарахування внесків"
+        description="Майстер: параметри → перегляд → підтвердження → квитанції"
+        actions={
+          <Link href="/admin/accruals/list" className="btn btn-sm btn-ghost">
+            Історія
+          </Link>
+        }
+      />
 
-      <form onSubmit={handleSubmit} className="card" style={{ display: 'grid', gap: '1rem', marginBottom: '1.5rem' }}>
-        <div>
-          <label>Шаблон</label>
-          <select value={templateId} onChange={(e) => applyTemplate(e.target.value)}>
-            <option value="">— без шаблону —</option>
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>{t.name} ({t.distribution})</option>
-            ))}
-          </select>
-        </div>
-        <div className="grid-2">
+      <div className="setup-steps" style={{ marginBottom: '1.25rem' }}>
+        {STEPS.map((s) => (
+          <span
+            key={s.id}
+            className={`setup-step-pill${step === s.id ? ' active' : ''}${step > s.id ? ' done' : ''}`}
+          >
+            {s.id}. {s.label}
+          </span>
+        ))}
+      </div>
+
+      {error && <p className="error" style={{ marginBottom: '0.75rem' }}>{error}</p>}
+      {message && step !== 4 && <p className="success-banner">{message}</p>}
+
+      {step === 1 && (
+        <section className="card" style={{ display: 'grid', gap: '1rem' }}>
           <div>
-            <label>Фонд</label>
-            <select value={fundId} onChange={(e) => setFundId(e.target.value)} required>
-              {funds.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
+            <label>Шаблон</label>
+            <select value={templateId} onChange={(e) => applyTemplate(e.target.value)}>
+              <option value="">— без шаблону —</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name} ({t.distribution})
+                </option>
               ))}
             </select>
           </div>
-          <div>
-            <label>Період (YYYY-MM)</label>
-            <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} required />
+          <div className="grid-2">
+            <div>
+              <label>Фонд</label>
+              <select value={fundId} onChange={(e) => setFundId(e.target.value)} required>
+                {funds.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label>Період</label>
+              <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} required />
+            </div>
           </div>
-        </div>
-        <div>
-          <label>Назва нарахування</label>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} required />
-        </div>
-        <div>
-          <label>Тип розподілу</label>
-          <select value={distribution} onChange={(e) => setDistribution(e.target.value as Distribution)}>
-            <option value="by_area">По площі (грн/м²)</option>
-            <option value="fixed_per_apartment">Фіксована сума на квартиру</option>
-            <option value="manual">Вручну по квартирах</option>
-          </select>
-        </div>
-        {distribution === 'by_area' && (
           <div>
-            <label>Тариф (грн/м²)</label>
-            <input type="number" step="0.01" min="0.01" value={rate} onChange={(e) => setRate(e.target.value)} required />
+            <label>Назва нарахування</label>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} required />
           </div>
-        )}
-        {distribution === 'fixed_per_apartment' && (
           <div>
-            <label>Сума на квартиру (₴)</label>
-            <input type="number" step="0.01" min="0.01" value={fixedAmount} onChange={(e) => setFixedAmount(e.target.value)} required />
+            <label>Тип розподілу</label>
+            <select
+              value={distribution}
+              onChange={(e) => {
+                setDistribution(e.target.value as Distribution);
+                setPreview([]);
+              }}
+            >
+              <option value="by_area">По площі (грн/м²)</option>
+              <option value="fixed_per_apartment">Фіксована сума на квартиру</option>
+              <option value="manual">Вручну по квартирах</option>
+            </select>
           </div>
-        )}
-        <div>
-          <label>Термін оплати</label>
-          <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-        </div>
-        <button type="button" onClick={loadPreview} style={{ background: 'var(--surface-2)' }}>
-          Попередній перегляд
-        </button>
-        {error && <p className="error">{error}</p>}
-        {message && <p style={{ color: 'var(--success)' }}>{message}</p>}
-        <button type="submit" disabled={loading || preview.length === 0}>
-          {loading ? 'Проведення...' : 'Провести нарахування'}
-        </button>
-      </form>
+          {distribution === 'by_area' && (
+            <div>
+              <label>Тариф (грн/м²)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={rate}
+                onChange={(e) => setRate(e.target.value)}
+                required
+              />
+            </div>
+          )}
+          {distribution === 'fixed_per_apartment' && (
+            <div>
+              <label>Сума на квартиру (₴)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={fixedAmount}
+                onChange={(e) => setFixedAmount(e.target.value)}
+                required
+              />
+            </div>
+          )}
+          <div>
+            <label>Термін оплати</label>
+            <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <button type="button" onClick={loadPreview} disabled={loading || !fundId || !title}>
+              {loading ? 'Розрахунок…' : 'Далі: попередній перегляд'}
+            </button>
+            {distribution !== 'manual' && (
+              <button type="button" className="btn btn-ghost" onClick={saveAsTemplate}>
+                Зберегти як шаблон
+              </button>
+            )}
+          </div>
+        </section>
+      )}
 
-      {preview.length > 0 && (
+      {step === 2 && (
         <section className="card">
-          <h2 style={{ marginBottom: '1rem' }}>
-            Перегляд ({preview.length} кв.) · Разом: {previewTotal.toLocaleString('uk-UA')} ₴
+          <h2 style={{ marginBottom: '0.75rem', fontSize: '1.1rem' }}>
+            Перегляд · {preview.length} кв. · {formatMoney(previewTotal)}
           </h2>
-          <div style={{ maxHeight: 360, overflowY: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+          <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginBottom: '1rem' }}>
+            {title} · {period} · {fundName}
+          </p>
+          <div style={{ maxHeight: 360, overflowY: 'auto', marginBottom: '1rem' }}>
+            <table className="data-table">
               <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left' }}>
-                  <th style={{ padding: '0.5rem' }}>Кв.</th>
-                  <th style={{ padding: '0.5rem' }}>Під&apos;їзд</th>
-                  <th style={{ padding: '0.5rem' }}>м²</th>
-                  <th style={{ padding: '0.5rem' }}>Сума ₴</th>
+                <tr>
+                  <th>Кв.</th>
+                  <th>Під&apos;їзд</th>
+                  <th>м²</th>
+                  <th>Сума</th>
                 </tr>
               </thead>
               <tbody>
                 {preview.map((row) => (
-                  <tr key={row.apartmentId} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: '0.5rem' }}>{row.number}</td>
-                    <td style={{ padding: '0.5rem' }}>{row.entrance}</td>
-                    <td style={{ padding: '0.5rem' }}>{row.area}</td>
-                    <td style={{ padding: '0.5rem' }}>
+                  <tr key={row.apartmentId}>
+                    <td>{row.number}</td>
+                    <td>{row.entrance}</td>
+                    <td>{row.area}</td>
+                    <td>
                       {distribution === 'manual' ? (
                         <input
                           type="number"
@@ -248,13 +351,95 @@ export default function AccrualsPage() {
                           }
                         />
                       ) : (
-                        row.amount.toLocaleString('uk-UA')
+                        formatMoney(row.amount)
                       )}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <button type="button" className="btn btn-ghost" onClick={() => setStep(1)}>
+              Назад
+            </button>
+            <button type="button" onClick={() => setStep(3)} disabled={preview.length === 0 || previewTotal <= 0}>
+              Далі: підтвердження
+            </button>
+          </div>
+        </section>
+      )}
+
+      {step === 3 && (
+        <form onSubmit={handleSubmit} className="card" style={{ display: 'grid', gap: '1rem' }}>
+          <h2 style={{ fontSize: '1.1rem' }}>Підтвердження</h2>
+          <ul style={{ listStyle: 'none', display: 'grid', gap: '0.35rem', color: 'var(--muted)' }}>
+            <li>
+              <strong style={{ color: 'var(--text)' }}>{title}</strong>
+            </li>
+            <li>Період: {period}</li>
+            <li>Фонд: {fundName}</li>
+            <li>Квартир: {preview.length}</li>
+            <li>
+              Разом: <strong style={{ color: 'var(--text)' }}>{formatMoney(previewTotal)}</strong>
+            </li>
+            {dueDate && <li>Термін: {dueDate}</li>}
+          </ul>
+          <p style={{ fontSize: '0.9rem' }}>
+            Після підтвердження мешканцям піде email (якщо увімкнено сповіщення), зʼявляться рядки
+            особових рахунків.
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <button type="button" className="btn btn-ghost" onClick={() => setStep(2)}>
+              Назад
+            </button>
+            <button type="submit" disabled={loading}>
+              {loading ? 'Проведення…' : 'Провести нарахування'}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {step === 4 && (
+        <section className="card" style={{ display: 'grid', gap: '1rem' }}>
+          <h2 style={{ fontSize: '1.15rem', color: 'var(--success)' }}>Готово</h2>
+          <p>
+            Нарахування <strong>{title}</strong> за {period} проведено
+            {createdId ? ` (id …${createdId.slice(-6)})` : ''}.
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+            {createdId && (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() =>
+                    downloadAuthFile(`/accruals/${createdId}/receipts.pdf`, 'kvytantsii.pdf').catch(
+                      (e) => setError(e.message),
+                    )
+                  }
+                >
+                  PDF квитанції
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  onClick={() =>
+                    downloadAuthFile(`/accruals/${createdId}/receipts.zip`, 'kvytantsii.zip').catch(
+                      (e) => setError(e.message),
+                    )
+                  }
+                >
+                  ZIP
+                </button>
+              </>
+            )}
+            <Link href="/admin/accruals/list" className="btn btn-sm btn-ghost">
+              Історія нарахувань
+            </Link>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={resetWizard}>
+              Нове нарахування
+            </button>
           </div>
         </section>
       )}

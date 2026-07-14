@@ -10,8 +10,10 @@ import {
   validateAccrualDistribution,
 } from '../../common/utils/accrual-distribution';
 import { roundMoney } from '../../common/utils/money';
+import { createZipStore } from '../../common/utils/zip-store';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { MailService } from '../mail/mail.service';
 import { CreateAccrualDto } from './dto/create-accrual.dto';
 import { CreateAccrualTemplateDto } from './dto/create-accrual-template.dto';
 import { ReceiptPdfService } from './receipt-pdf.service';
@@ -22,6 +24,7 @@ export class AccrualsService {
     private prisma: PrismaService,
     private receiptPdf: ReceiptPdfService,
     private audit: AuditService,
+    private mail: MailService,
   ) {}
 
   listTemplates() {
@@ -45,6 +48,24 @@ export class AccrualsService {
       },
       include: { fund: true },
     });
+  }
+
+  async deleteTemplate(id: string) {
+    const tpl = await this.prisma.accrualTemplate.findUnique({
+      where: { id },
+      include: { _count: { select: { accruals: true } } },
+    });
+    if (!tpl) throw new NotFoundException('Шаблон не знайдено');
+    if (tpl._count.accruals > 0) {
+      // soft-deactivate if used
+      return this.prisma.accrualTemplate.update({
+        where: { id },
+        data: { isActive: false },
+        include: { fund: true },
+      });
+    }
+    await this.prisma.accrualTemplate.delete({ where: { id } });
+    return { id, deleted: true };
   }
 
   listAccruals(period?: string) {
@@ -163,6 +184,18 @@ export class AccrualsService {
         total: lines.reduce((s, l) => s + l.amount, 0),
       },
     });
+
+    const aptIds = lines.map((l) => l.apartmentId);
+    const amountByApt = new Map(lines.map((l) => [l.apartmentId, l.amount]));
+    const numberById = new Map(apartments.map((a) => [a.id, a.number]));
+    const dueLabel = dueDate.toLocaleDateString('uk-UA');
+    void this.mail.notifyResidentsOfApartments(aptIds, 'accrual.created', (apartmentId) => ({
+      title: dto.title,
+      period: dto.period,
+      amount: amountByApt.get(apartmentId),
+      dueDate: dueLabel,
+      apartmentNumber: numberById.get(apartmentId),
+    }));
 
     return this.getAccrual(accrual.id);
   }
@@ -289,6 +322,100 @@ export class AccrualsService {
       lineId: line.id,
       createdAt: line.createdAt,
     });
+  }
+
+  /** ZIP with one PDF receipt per apartment line of an accrual. */
+  async generateAccrualReceiptsZip(accrualId: string): Promise<{ buffer: Buffer; filename: string }> {
+    const accrual = await this.prisma.accrual.findUnique({
+      where: { id: accrualId },
+      include: {
+        fund: true,
+        lines: {
+          include: {
+            apartment: { include: { building: true } },
+          },
+          orderBy: { apartment: { number: 'asc' } },
+        },
+      },
+    });
+    if (!accrual) throw new NotFoundException('Нарахування не знайдено');
+    if (!accrual.lines.length) {
+      throw new BadRequestException('Немає рядків для квитанцій');
+    }
+
+    const files: Array<{ name: string; data: Buffer }> = [];
+    for (const line of accrual.lines) {
+      const amount = Number(line.amount);
+      const paid = Number(line.paidAmount);
+      const pdf = await this.receiptPdf.generate({
+        buildingName: line.apartment.building.name,
+        buildingAddress: line.apartment.building.address,
+        apartmentNumber: line.apartment.number,
+        period: accrual.period,
+        title: accrual.title,
+        fundName: accrual.fund.name,
+        amount,
+        paidAmount: paid,
+        balance: roundMoney(amount - paid),
+        dueDate: line.dueDate?.toISOString() ?? null,
+        lineId: line.id,
+        createdAt: line.createdAt,
+      });
+      const safeNum = String(line.apartment.number).replace(/[^\w.-]+/g, '_');
+      files.push({
+        name: `kvytantsiia-${accrual.period}-kv-${safeNum}.pdf`,
+        data: pdf,
+      });
+    }
+
+    const buffer = createZipStore(files);
+    const filename = `kvytantsii-${accrual.period}-${accrual.id.slice(-6)}.zip`;
+    return { buffer, filename };
+  }
+
+  /** Print-friendly multi-page PDF (all lines). */
+  async generateAccrualReceiptsPdf(accrualId: string): Promise<{ buffer: Buffer; filename: string }> {
+    const accrual = await this.prisma.accrual.findUnique({
+      where: { id: accrualId },
+      include: {
+        fund: true,
+        lines: {
+          include: {
+            apartment: { include: { building: true } },
+          },
+          orderBy: { apartment: { number: 'asc' } },
+        },
+      },
+    });
+    if (!accrual) throw new NotFoundException('Нарахування не знайдено');
+    if (!accrual.lines.length) {
+      throw new BadRequestException('Немає рядків для квитанцій');
+    }
+
+    const pages = accrual.lines.map((line) => {
+      const amount = Number(line.amount);
+      const paid = Number(line.paidAmount);
+      return {
+        buildingName: line.apartment.building.name,
+        buildingAddress: line.apartment.building.address,
+        apartmentNumber: line.apartment.number,
+        period: accrual.period,
+        title: accrual.title,
+        fundName: accrual.fund.name,
+        amount,
+        paidAmount: paid,
+        balance: roundMoney(amount - paid),
+        dueDate: line.dueDate?.toISOString() ?? null,
+        lineId: line.id,
+        createdAt: line.createdAt,
+      };
+    });
+
+    const buffer = await this.receiptPdf.generateMany(pages);
+    return {
+      buffer,
+      filename: `kvytantsii-${accrual.period}-${accrual.id.slice(-6)}.pdf`,
+    };
   }
 
   private assertValidDistribution(
