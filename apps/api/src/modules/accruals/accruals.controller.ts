@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Header,
   Param,
@@ -14,6 +15,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { Response } from 'express';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
+import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { AccrualsService } from './accruals.service';
@@ -36,8 +38,11 @@ export class AccrualsController {
   constructor(private accruals: AccrualsService) {}
 
   @Get('templates')
-  listTemplates() {
-    return this.accruals.listTemplates();
+  listTemplates(
+    @Query('buildingId') buildingId?: string,
+    @TenantId() tenantId?: string | null,
+  ) {
+    return this.accruals.listTemplates(buildingId, tenantId);
   }
 
   @UseGuards(RolesGuard)
@@ -47,9 +52,20 @@ export class AccrualsController {
     return this.accruals.createTemplate(dto);
   }
 
+  @UseGuards(RolesGuard)
+  @Roles(...WRITE_ROLES)
+  @Delete('templates/:id')
+  deleteTemplate(@Param('id') id: string) {
+    return this.accruals.deleteTemplate(id);
+  }
+
   @Get()
-  listAccruals(@Query('period') period?: string) {
-    return this.accruals.listAccruals(period);
+  listAccruals(
+    @Query('period') period?: string,
+    @Query('buildingId') buildingId?: string,
+    @TenantId() tenantId?: string | null,
+  ) {
+    return this.accruals.listAccruals(period, buildingId, tenantId);
   }
 
   @Get('my-account')
@@ -62,6 +78,31 @@ export class AccrualsController {
   @Get('apartments/:apartmentId/account')
   apartmentAccount(@Param('apartmentId') apartmentId: string) {
     return this.accruals.getApartmentAccount(apartmentId);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(...ADMIN_ROLES, UserRole.resident)
+  @Get('apartments/:apartmentId/statement.csv')
+  async apartmentStatement(
+    @Param('apartmentId') apartmentId: string,
+    @CurrentUser() user: AuthUser,
+    @Res() res: Response,
+  ) {
+    if (user.role === UserRole.resident) {
+      const ids = user.apartmentIds?.length
+        ? user.apartmentIds
+        : user.apartmentId
+          ? [user.apartmentId]
+          : [];
+      if (!ids.includes(apartmentId)) {
+        res.status(403).send('Forbidden');
+        return;
+      }
+    }
+    const { csv, filename } = await this.accruals.exportApartmentStatementCsv(apartmentId);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
   }
 
   @UseGuards(RolesGuard)
@@ -94,6 +135,26 @@ export class AccrualsController {
     const pdf = await this.accruals.generateReceipt(lineId, residentApartmentIds, isAdmin);
     res.setHeader('Content-Disposition', `attachment; filename="receipt-${lineId.slice(-8)}.pdf"`);
     res.send(pdf);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(...ADMIN_ROLES)
+  @Get(':id/receipts.zip')
+  async receiptsZip(@Param('id') id: string, @Res() res: Response) {
+    const { buffer, filename } = await this.accruals.generateAccrualReceiptsZip(id);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(...ADMIN_ROLES)
+  @Get(':id/receipts.pdf')
+  async receiptsPdf(@Param('id') id: string, @Res() res: Response) {
+    const { buffer, filename } = await this.accruals.generateAccrualReceiptsPdf(id);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
   }
 
   @Get(':id')

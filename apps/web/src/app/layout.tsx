@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { AuthCookieSync } from '@/components/AuthCookieSync';
 import { PwaPrompt } from '@/components/PwaPrompt';
+import { QueryProvider } from '@/components/QueryProvider';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -23,14 +24,21 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="uk">
+    <html lang="uk" suppressHydrationWarning>
       <head>
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('dah_theme')||'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`,
+          }}
+        />
       </head>
       <body>
-        <AuthCookieSync />
-        {children}
-        <PwaPrompt />
+        <QueryProvider>
+          <AuthCookieSync />
+          {children}
+          <PwaPrompt />
+        </QueryProvider>
       </body>
     </html>
   );

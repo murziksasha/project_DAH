@@ -4,6 +4,8 @@ export interface BuildingSettingsJson {
   registrationEnabled?: boolean;
   showBankDetailsToResidents?: boolean;
   defaultAccrualDueDays?: number;
+  /** Days before due date to email debt reminders (worker). */
+  reminderDaysBeforeDue?: number;
   locale?: 'uk' | 'ru';
   /** Ролі, відкладені на етапі майстра налаштування */
   deferredSetupRoles?: DeferredSetupRole[];
@@ -11,6 +13,7 @@ export interface BuildingSettingsJson {
     polls?: boolean;
     requests?: boolean;
     webPush?: boolean;
+    email?: boolean;
   };
 }
 

@@ -1,5 +1,4 @@
-import { apiFetch, getToken } from './api';
-import { clearAuthCookie } from './auth-cookie';
+import { apiFetch, clearClientSession, getToken } from './api';
 
 export interface StoredUser {
   id: string;
@@ -40,10 +39,19 @@ export async function logout(): Promise<void> {
       // proceed with local cleanup
     }
   }
-  localStorage.removeItem('dah_token');
-  localStorage.removeItem('dah_refresh');
-  localStorage.removeItem('dah_user');
-  clearAuthCookie();
-  window.dispatchEvent(new Event('dah-auth-change'));
+  clearClientSession();
+  window.location.href = '/login';
+}
+
+export async function logoutAll(): Promise<void> {
+  const token = getToken();
+  if (token) {
+    try {
+      await apiFetch('/auth/logout-all', { method: 'POST', token });
+    } catch {
+      // proceed
+    }
+  }
+  clearClientSession();
   window.location.href = '/login';
 }

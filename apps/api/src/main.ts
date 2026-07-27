@@ -1,13 +1,17 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import cookieParser from 'cookie-parser';
 import { assertProductionJwtSecret } from './common/config/jwt.config';
+import { RequestLoggingMiddleware } from './common/middleware/request-logging.middleware';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   assertProductionJwtSecret();
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api');
+  app.use(cookieParser());
+  app.use(new RequestLoggingMiddleware().use.bind(new RequestLoggingMiddleware()));
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -31,7 +35,7 @@ async function bootstrap() {
     const config = new DocumentBuilder()
       .setTitle('DAH OSMD API')
       .setDescription('API для управління ОСМД')
-      .setVersion('0.1.0')
+      .setVersion('1.0.0')
       .addBearerAuth()
       .build();
     SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, config));
@@ -39,7 +43,8 @@ async function bootstrap() {
 
   const port = process.env.API_PORT ?? 3001;
   await app.listen(port);
-  console.log(`API running on http://localhost:${port}/api`);
+  // eslint-disable-next-line no-console
+  console.log(JSON.stringify({ level: 'info', msg: 'api_started', port: Number(port) }));
 }
 
 bootstrap();

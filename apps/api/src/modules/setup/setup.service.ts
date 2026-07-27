@@ -135,6 +135,16 @@ export class SetupService {
     await this.requireUninitializedBuilding();
     const existing = await this.prisma.building.findFirst();
 
+    let tenantId = existing?.tenantId;
+    if (!tenantId) {
+      const tenant =
+        (await this.prisma.tenant.findFirst({ orderBy: { createdAt: 'asc' } })) ??
+        (await this.prisma.tenant.create({
+          data: { name: dto.name, slug: 'default' },
+        }));
+      tenantId = tenant.id;
+    }
+
     const building = existing
       ? await this.prisma.building.update({
           where: { id: existing.id },
@@ -142,6 +152,7 @@ export class SetupService {
         })
       : await this.prisma.building.create({
           data: {
+            tenantId,
             name: dto.name,
             address: dto.address,
             edrpou: dto.edrpou,

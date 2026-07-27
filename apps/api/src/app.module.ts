@@ -13,11 +13,18 @@ import { FinanceModule } from './modules/finance/finance.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { TransparencyModule } from './modules/transparency/transparency.module';
 import { HealthModule } from './modules/health/health.module';
+import { MailModule } from './modules/mail/mail.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { BootstrapModule } from './modules/bootstrap/bootstrap.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { RemindersModule } from './modules/reminders/reminders.module';
 import { SetupModule } from './modules/setup/setup.module';
 import { UsersModule } from './modules/users/users.module';
+import { JournalModule } from './modules/journal/journal.module';
+import { MetersModule } from './modules/meters/meters.module';
+import { SmsModule } from './modules/sms/sms.module';
+import { IdentityModule } from './modules/identity/identity.module';
+import { TenantsModule } from './modules/tenants/tenants.module';
 
 @Module({
   imports: [
@@ -26,6 +33,12 @@ import { UsersModule } from './modules/users/users.module';
       throttlers: [{ name: 'default', ttl: 60000, limit: 120 }],
     }),
     PrismaModule,
+    JournalModule,
+    MetersModule,
+    SmsModule,
+    IdentityModule,
+    TenantsModule,
+    MailModule,
     BootstrapModule,
     AuditModule,
     HealthModule,
@@ -38,6 +51,7 @@ import { UsersModule } from './modules/users/users.module';
     FinanceModule,
     NotificationsModule,
     PaymentsModule,
+    RemindersModule,
     TransparencyModule,
     UsersModule,
     SetupModule,

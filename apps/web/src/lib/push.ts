@@ -87,3 +87,49 @@ export function canUsePush(): boolean {
     'Notification' in window
   );
 }
+
+export async function getPushSubscriptionStatus(): Promise<{
+  supported: boolean;
+  permission: NotificationPermission | 'unsupported';
+  subscribed: boolean;
+  configured: boolean;
+}> {
+  if (!canUsePush()) {
+    return {
+      supported: false,
+      permission: 'unsupported',
+      subscribed: false,
+      configured: false,
+    };
+  }
+  const configured = await isPushConfigured();
+  const registration = await navigator.serviceWorker.getRegistration();
+  const sub = registration ? await registration.pushManager.getSubscription() : null;
+  return {
+    supported: true,
+    permission: Notification.permission,
+    subscribed: Boolean(sub),
+    configured,
+  };
+}
+
+export async function unsubscribeFromPush(): Promise<void> {
+  const token = getToken();
+  if (!token) throw new Error('Увійдіть у систему');
+
+  const registration = await navigator.serviceWorker.getRegistration();
+  const subscription = registration ? await registration.pushManager.getSubscription() : null;
+  if (!subscription) return;
+
+  const endpoint = subscription.endpoint;
+  await subscription.unsubscribe();
+  try {
+    await apiFetch('/notifications/subscribe', {
+      method: 'DELETE',
+      token,
+      body: JSON.stringify({ endpoint }),
+    });
+  } catch {
+    // local unsubscribe is enough if API fails
+  }
+}

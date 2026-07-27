@@ -1,24 +1,31 @@
-const COOKIE_NAME = 'dah_token';
+/** Soft session flag for Next middleware (not a secret). HttpOnly refresh lives on API. */
+const SESSION_FLAG = 'dah_session';
+const LEGACY_TOKEN_COOKIE = 'dah_token';
 const MAX_AGE_SEC = 60 * 60 * 24 * 7;
 
-export function setAuthCookie(accessToken: string): void {
+export function setSessionFlagCookie(): void {
   if (typeof document === 'undefined') return;
-  const value = encodeURIComponent(accessToken);
-  document.cookie = `${COOKIE_NAME}=${value}; path=/; SameSite=Lax; max-age=${MAX_AGE_SEC}`;
+  document.cookie = `${SESSION_FLAG}=1; path=/; SameSite=Lax; max-age=${MAX_AGE_SEC}`;
+}
+
+export function clearSessionFlagCookie(): void {
+  if (typeof document === 'undefined') return;
+  document.cookie = `${SESSION_FLAG}=; path=/; max-age=0`;
+  // Clear legacy non-HttpOnly JWT cookie if present
+  document.cookie = `${LEGACY_TOKEN_COOKIE}=; path=/; max-age=0`;
+}
+
+/** @deprecated Use setSessionFlagCookie — access JWT must not live in document.cookie */
+export function setAuthCookie(_accessToken: string): void {
+  setSessionFlagCookie();
 }
 
 export function clearAuthCookie(): void {
-  if (typeof document === 'undefined') return;
-  document.cookie = `${COOKIE_NAME}=; path=/; max-age=0`;
+  clearSessionFlagCookie();
 }
 
 export function getAuthCookie(): string | null {
   if (typeof document === 'undefined') return null;
-  const match = document.cookie.match(new RegExp(`(?:^|; )${COOKIE_NAME}=([^;]*)`));
-  if (!match) return null;
-  try {
-    return decodeURIComponent(match[1]);
-  } catch {
-    return match[1];
-  }
+  const match = document.cookie.match(new RegExp(`(?:^|; )${SESSION_FLAG}=([^;]*)`));
+  return match ? match[1] : null;
 }

@@ -1,6 +1,6 @@
 {
   "name": "@dah/web",
-  "version": "0.1.0",
+  "version": "1.5.1",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@dah/shared": "*",
+    "@tanstack/react-query": "^5.66.0",
     "next": "^15.1.7",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

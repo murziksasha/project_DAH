@@ -24,6 +24,13 @@ export class UpdateBuildingSettingsDto {
   @Max(90)
   defaultAccrualDueDays?: number;
 
+  @ApiPropertyOptional({ description: 'Days before due date for debt email reminders' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(30)
+  reminderDaysBeforeDue?: number;
+
   @ApiPropertyOptional({ enum: ['uk', 'ru'] })
   @IsOptional()
   @IsIn(['uk', 'ru'])

@@ -1,6 +1,6 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { RequestStatus } from '@prisma/client';
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
 
 export class UpdateRequestDto {
   @ApiPropertyOptional({ enum: RequestStatus })
@@ -12,4 +12,15 @@ export class UpdateRequestDto {
   @IsOptional()
   @IsString()
   assigneeId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  dueAt?: string | null;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  photoKeys?: string[];
 }

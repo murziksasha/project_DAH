@@ -20,7 +20,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: { sub: string }): Promise<AuthUser> {
+  async validate(payload: { sub: string; tenantId?: string | null }): Promise<AuthUser> {
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
       include: {
@@ -33,6 +33,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!user || user.status !== UserStatus.active) {
       throw new UnauthorizedException('Користувач не авторизований');
     }
+    if (user.tenantId) {
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: user.tenantId },
+        select: { isActive: true },
+      });
+      if (!tenant?.isActive) {
+        throw new UnauthorizedException('ОСББ (tenant) деактивовано');
+      }
+    }
     const apartmentIds = user.apartmentLinks.map((l) => l.apartmentId);
     return {
       id: user.id,
@@ -40,6 +49,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       role: user.role,
       apartmentId: user.apartmentId ?? apartmentIds[0] ?? null,
       apartmentIds,
+      tenantId: user.tenantId ?? payload.tenantId ?? null,
     };
   }
 }

@@ -35,6 +35,8 @@ interface ApartmentsSectionProps {
   onLinkUser: (apartmentId: string, userId: string) => Promise<void>;
   onUnlinkUser: (apartmentId: string, userId: string) => Promise<void>;
   onEditUser: (user: UserRow) => void;
+  onExportCsv?: () => void;
+  onImportCsv?: (csv: string) => Promise<void>;
 }
 
 export function ApartmentsSection({
@@ -47,12 +49,15 @@ export function ApartmentsSection({
   onLinkUser,
   onUnlinkUser,
   onEditUser,
+  onExportCsv,
+  onImportCsv,
 }: ApartmentsSectionProps) {
   const [search, setSearch] = useState('');
   const [form, setForm] = useState(emptyAptForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [linkUserId, setLinkUserId] = useState('');
+  const [importing, setImporting] = useState(false);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -121,13 +126,48 @@ export function ApartmentsSection({
     <section className="card">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
         <h2 style={{ margin: 0 }}>Квартири ({apartments.length})</h2>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+        {onExportCsv && (
+          <button type="button" className="btn btn-sm btn-ghost" onClick={onExportCsv}>
+            CSV ↓
+          </button>
+        )}
+        {onImportCsv && (
+          <label className="btn btn-sm btn-ghost" style={{ cursor: 'pointer' }}>
+            {importing ? 'Імпорт…' : 'CSV ↑'}
+            <input
+              type="file"
+              accept=".csv,text/csv,text/plain"
+              hidden
+              disabled={importing || saving}
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (!file || !onImportCsv) return;
+                setImporting(true);
+                try {
+                  const text = await file.text();
+                  await onImportCsv(text);
+                } finally {
+                  setImporting(false);
+                }
+              }}
+            />
+          </label>
+        )}
         <input
           placeholder="Пошук квартири…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           style={{ maxWidth: 220 }}
         />
+        </div>
       </div>
+      {onImportCsv && (
+        <p style={{ color: 'var(--muted)', fontSize: '0.8rem', marginBottom: '0.75rem' }}>
+          Імпорт CSV: <code>number,entrance,floor,area</code> (рядок заголовка опційний)
+        </p>
+      )}
 
       <form
         onSubmit={handleSubmit}

@@ -27,7 +27,9 @@ interface RequestItem {
 interface PollOption {
   id: string;
   text: string;
-  _count: { votes: number };
+  _count?: { votes: number };
+  voteCount?: number;
+  weightSum?: number;
 }
 
 interface Poll {
@@ -37,6 +39,12 @@ interface Poll {
   endsAt: string | null;
   options: PollOption[];
   _count: { votes: number };
+  voteWeight?: string;
+  stats?: {
+    participationPercent: number;
+    quorumPercent: number | null;
+    quorumMet: boolean;
+  };
 }
 
 type Section = 'announcements' | 'requests' | 'polls';
@@ -68,6 +76,10 @@ export default function CommunicationsPage() {
 
   const [pollQuestion, setPollQuestion] = useState('');
   const [pollOptions, setPollOptions] = useState(['', '']);
+  const [pollWeight, setPollWeight] = useState<'one_per_user' | 'one_per_apartment' | 'by_area'>(
+    'one_per_user',
+  );
+  const [pollQuorum, setPollQuorum] = useState('');
 
   async function load() {
     const token = getToken();
@@ -139,11 +151,18 @@ export default function CommunicationsPage() {
       await apiFetch('/communications/polls', {
         method: 'POST',
         token,
-        body: JSON.stringify({ question: pollQuestion, options }),
+        body: JSON.stringify({
+          question: pollQuestion,
+          options,
+          voteWeight: pollWeight,
+          quorumPercent: pollQuorum ? Number(pollQuorum) : undefined,
+        }),
       });
       setMessage('Опитування створено');
       setPollQuestion('');
       setPollOptions(['', '']);
+      setPollWeight('one_per_user');
+      setPollQuorum('');
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Помилка');
@@ -211,12 +230,38 @@ export default function CommunicationsPage() {
             <ul style={{ listStyle: 'none', display: 'grid', gap: '0.75rem' }}>
               {announcements.map((a) => (
                 <li key={a.id} style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem' }}>
-                  <div style={{ fontWeight: 600 }}>
-                    {a.isPinned && '📌 '}{a.title}
-                  </div>
-                  <p style={{ color: 'var(--muted)', fontSize: '0.9rem', margin: '0.25rem 0' }}>{a.body}</p>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
-                    {a.author.firstName} {a.author.lastName} · {new Date(a.createdAt).toLocaleDateString('uk-UA')}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>
+                        {a.isPinned && '📌 '}{a.title}
+                      </div>
+                      <p style={{ color: 'var(--muted)', fontSize: '0.9rem', margin: '0.25rem 0' }}>{a.body}</p>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
+                        {a.author.firstName} {a.author.lastName} ·{' '}
+                        {new Date(a.createdAt).toLocaleDateString('uk-UA')}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-ghost"
+                      onClick={async () => {
+                        if (!window.confirm('Видалити оголошення?')) return;
+                        const token = getToken();
+                        if (!token) return;
+                        try {
+                          await apiFetch(`/communications/announcements/${a.id}`, {
+                            method: 'DELETE',
+                            token,
+                          });
+                          await load();
+                          setMessage('Оголошення видалено');
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : 'Помилка');
+                        }
+                      }}
+                    >
+                      Видалити
+                    </button>
                   </div>
                 </li>
               ))}
@@ -226,41 +271,96 @@ export default function CommunicationsPage() {
       )}
 
       {section === 'requests' && (
-        <section className="card">
-          <h2 style={{ marginBottom: '1rem' }}>Заявки мешканців ({requests.length})</h2>
+        <section>
+          <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>
+            Заявки мешканців ({requests.length})
+          </h2>
           {requests.length === 0 ? (
-            <p style={{ color: 'var(--muted)' }}>Заявок немає</p>
+            <div className="card">
+              <p style={{ color: 'var(--muted)' }}>Заявок немає</p>
+            </div>
           ) : (
-            <ul style={{ listStyle: 'none', display: 'grid', gap: '0.75rem' }}>
-              {requests.map((r) => (
-                <li key={r.id} style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
-                    <div>
-                      <div style={{ fontWeight: 600 }}>{r.title}</div>
-                      <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>{r.description}</p>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
-                        {r.author.firstName} {r.author.lastName} · {REQUEST_CATEGORIES.find((c) => c.value === r.category)?.label ?? r.category}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '0.85rem', padding: '0.25rem 0.5rem', background: 'var(--surface-2)', borderRadius: '4px' }}>
-                        {STATUS_LABELS[r.status] ?? r.status}
-                      </span>
-                      {r.status === 'new' && (
-                        <button type="button" style={{ fontSize: '0.8rem' }} onClick={() => handleRequestStatus(r.id, 'in_progress')}>
-                          В роботу
-                        </button>
+            <div
+              style={{
+                display: 'grid',
+                gap: '1rem',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+              }}
+            >
+              {(['new', 'in_progress', 'done'] as const).map((status) => {
+                const col = requests.filter((r) => r.status === status);
+                return (
+                  <div key={status} className="card" style={{ minHeight: 120 }}>
+                    <h3 style={{ fontSize: '0.95rem', marginBottom: '0.75rem' }}>
+                      {STATUS_LABELS[status]} ({col.length})
+                    </h3>
+                    <ul style={{ listStyle: 'none', display: 'grid', gap: '0.65rem' }}>
+                      {col.map((r) => (
+                        <li
+                          key={r.id}
+                          style={{
+                            padding: '0.65rem',
+                            background: 'var(--surface-2)',
+                            borderRadius: 8,
+                          }}
+                        >
+                          <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{r.title}</div>
+                          <p style={{ color: 'var(--muted)', fontSize: '0.8rem', margin: '0.25rem 0' }}>
+                            {r.description.slice(0, 120)}
+                            {r.description.length > 120 ? '…' : ''}
+                          </p>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
+                            {r.author.firstName} {r.author.lastName} ·{' '}
+                            {REQUEST_CATEGORIES.find((c) => c.value === r.category)?.label ?? r.category}
+                          </div>
+                          <div style={{ display: 'flex', gap: '0.35rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                            {status === 'new' && (
+                              <button
+                                type="button"
+                                className="btn btn-sm"
+                                onClick={() => handleRequestStatus(r.id, 'in_progress')}
+                              >
+                                В роботу
+                              </button>
+                            )}
+                            {status === 'in_progress' && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm"
+                                  onClick={() => handleRequestStatus(r.id, 'done')}
+                                >
+                                  Виконано
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-ghost"
+                                  onClick={() => handleRequestStatus(r.id, 'new')}
+                                >
+                                  Повернути
+                                </button>
+                              </>
+                            )}
+                            {status === 'done' && (
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-ghost"
+                                onClick={() => handleRequestStatus(r.id, 'in_progress')}
+                              >
+                                Знову в роботу
+                              </button>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                      {col.length === 0 && (
+                        <li style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Порожньо</li>
                       )}
-                      {r.status === 'in_progress' && (
-                        <button type="button" style={{ fontSize: '0.8rem' }} onClick={() => handleRequestStatus(r.id, 'done')}>
-                          Виконано
-                        </button>
-                      )}
-                    </div>
+                    </ul>
                   </div>
-                </li>
-              ))}
-            </ul>
+                );
+              })}
+            </div>
           )}
         </section>
       )}
@@ -272,6 +372,30 @@ export default function CommunicationsPage() {
             <div>
               <label>Питання</label>
               <input value={pollQuestion} onChange={(e) => setPollQuestion(e.target.value)} required />
+            </div>
+            <div>
+              <label>Вага голосу</label>
+              <select
+                value={pollWeight}
+                onChange={(e) =>
+                  setPollWeight(e.target.value as 'one_per_user' | 'one_per_apartment' | 'by_area')
+                }
+              >
+                <option value="one_per_user">1 користувач = 1 голос</option>
+                <option value="one_per_apartment">1 квартира = 1 голос</option>
+                <option value="by_area">За площею (м²)</option>
+              </select>
+            </div>
+            <div>
+              <label>Кворум, % (опційно)</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={pollQuorum}
+                onChange={(e) => setPollQuorum(e.target.value)}
+                placeholder="напр. 50"
+              />
             </div>
             {pollOptions.map((opt, i) => (
               <div key={i}>
@@ -308,7 +432,10 @@ export default function CommunicationsPage() {
                     {p.options.map((o) => (
                       <li key={o.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
                         <span>{o.text}</span>
-                        <span style={{ color: 'var(--muted)' }}>{o._count.votes} гол.</span>
+                        <span style={{ color: 'var(--muted)' }}>
+                          {o.voteCount ?? o._count?.votes ?? 0}
+                          {o.weightSum != null ? ` (вага ${o.weightSum})` : ' гол.'}
+                        </span>
                       </li>
                     ))}
                   </ul>

@@ -48,13 +48,20 @@
 | **JWT + RBAC** | 5 ролей, stateless API |
 | **PWA** | Один кодбаз для web і «застосунку на телефоні» |
 
-## Поза scope MVP
+## v1.0 (поточна гілка)
 
-- Мультитенантність (кілька ОСМД на одному сервері)
-- SMS / email-розсилки (окрім Web Push)
+- Multi-building (кілька будинків одного ОСББ)
+- Accounting foundation: journal, advanceBalance, money minor units
+- Session hardening, ops health, backup markers
+- Опитування з вагою/кворумом; optional online pay webhook
+
+## Поза scope v1.0
+
+- Мультитенантність (кілька **різних** ОСМД на одному сервері / SaaS billing)
+- SMS-розсилки (email — через SMTP_*)
 - Нативні iOS/Android застосунки
 - Повний паритет з комерційним DAH
-- Банківські інтеграції / автоматичний імпорт виписок
+- Повна UI-інтеграція LiqPay/WayForPay (є skeleton intent/webhook)
 
 ## Демо-дані
 

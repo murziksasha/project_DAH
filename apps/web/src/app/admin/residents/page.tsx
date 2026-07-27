@@ -1,7 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
+import { formatDateUk } from '@/lib/money';
 
 interface PendingUser {
   id: string;
@@ -31,7 +34,7 @@ export default function ResidentsPage() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(true);
-  const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
   const canApprove = APPROVER_ROLES.includes(getCurrentUserRole() ?? '');
 
   const load = useCallback(async () => {
@@ -59,48 +62,75 @@ export default function ResidentsPage() {
   async function handleApprove(id: string) {
     const token = getToken();
     if (!token) return;
-    setApprovingId(id);
+    setBusyId(id);
     setMessage('');
     setError('');
     try {
       await apiFetch(`/auth/approve/${id}`, { method: 'PATCH', token });
       setUsers((prev) => prev.filter((u) => u.id !== id));
-      setMessage('Мешканця підтверджено');
+      setMessage('Мешканця підтверджено — можна входити в кабінет');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Помилка підтвердження');
     } finally {
-      setApprovingId(null);
+      setBusyId(null);
+    }
+  }
+
+  async function handleReject(id: string) {
+    const token = getToken();
+    if (!token) return;
+    const ok = window.confirm(
+      'Відхилити заявку? Обліковий запис буде заблоковано. Мешканець зможе звернутися до правління.',
+    );
+    if (!ok) return;
+    setBusyId(id);
+    setMessage('');
+    setError('');
+    try {
+      await apiFetch(`/auth/reject/${id}`, {
+        method: 'PATCH',
+        token,
+        body: JSON.stringify({ reason: 'Відхилено правлінням' }),
+      });
+      setUsers((prev) => prev.filter((u) => u.id !== id));
+      setMessage('Заявку відхилено');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Помилка відхилення');
+    } finally {
+      setBusyId(null);
     }
   }
 
   return (
     <main>
-      <h1 style={{ marginBottom: '0.5rem' }}>Заявки на реєстрацію</h1>
-      <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>
-        Мешканці, які очікують підтвердження від правління
-      </p>
+      <PageHeader
+        title="Заявки мешканців"
+        description="Підтвердження самостійної реєстрації (/register)"
+        actions={
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => load()} disabled={loading}>
+            {loading ? 'Оновлення…' : 'Оновити'}
+          </button>
+        }
+      />
 
       {!canApprove && (
         <p className="card" style={{ marginBottom: '1rem', color: 'var(--muted)', fontSize: '0.9rem' }}>
           Підтверджувати можуть лише голова правління або члени правління. Ви можете переглядати
-          список, але кнопка «Підтвердити» недоступна.
+          список.
         </p>
       )}
 
-      <div style={{ marginBottom: '1rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-        <button type="button" onClick={() => load()} disabled={loading}>
-          {loading ? 'Оновлення…' : 'Оновити'}
-        </button>
-      </div>
-
       {error && <p className="error">{error}</p>}
-      {message && <p style={{ color: 'var(--success)', marginBottom: '1rem' }}>{message}</p>}
+      {message && <p className="success-banner">{message}</p>}
 
       <section className="card">
         {loading && users.length === 0 ? (
           <p style={{ color: 'var(--muted)' }}>Завантаження…</p>
         ) : users.length === 0 ? (
-          <p style={{ color: 'var(--muted)' }}>Немає заявок на підтвердження</p>
+          <EmptyState
+            title="Немає заявок"
+            description="Коли мешканець зареєструється, заявка з’явиться тут."
+          />
         ) : (
           <ul style={{ listStyle: 'none', display: 'grid', gap: '1rem' }}>
             {users.map((user) => (
@@ -129,18 +159,27 @@ export default function ResidentsPage() {
                       ? `Під'їзд ${user.apartment.entrance}, кв. ${user.apartment.number}`
                       : 'Квартира не вказана'}
                     {' · '}
-                    {new Date(user.createdAt).toLocaleString('uk-UA')}
+                    {formatDateUk(user.createdAt)}
                   </div>
                 </div>
                 {canApprove && (
-                  <button
-                    type="button"
-                    onClick={() => handleApprove(user.id)}
-                    disabled={approvingId === user.id}
-                    style={{ flexShrink: 0 }}
-                  >
-                    {approvingId === user.id ? 'Підтвердження…' : 'Підтвердити'}
-                  </button>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      onClick={() => handleApprove(user.id)}
+                      disabled={busyId === user.id}
+                    >
+                      {busyId === user.id ? '…' : 'Підтвердити'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => handleReject(user.id)}
+                      disabled={busyId === user.id}
+                    >
+                      Відхилити
+                    </button>
+                  </div>
                 )}
               </li>
             ))}
