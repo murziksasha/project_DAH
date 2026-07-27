@@ -40,8 +40,14 @@ else
   echo "WARN: minio container not running, skipping files backup"
 fi
 
+FINISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cat > "$RUN_DIR/manifest.json" <<EOF
-{"timestamp":"$TIMESTAMP","postgres_db":"$POSTGRES_DB","s3_bucket":"$S3_BUCKET"}
+{"timestamp":"$TIMESTAMP","postgres_db":"$POSTGRES_DB","s3_bucket":"$S3_BUCKET","finishedAt":"$FINISHED_AT"}
+EOF
+
+# Marker for API health /admin/ops (BACKUP_STATUS_PATH)
+cat > "$BACKUP_DIR/last-backup.json" <<EOF
+{"finishedAt":"$FINISHED_AT","runDir":"$RUN_DIR","timestamp":"$TIMESTAMP"}
 EOF
 
 ln -sfn "$RUN_DIR" "$BACKUP_DIR/latest"

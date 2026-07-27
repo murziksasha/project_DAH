@@ -31,14 +31,25 @@ export class AuditService {
     cursor?: string;
     entityType?: string;
     action?: string;
+    from?: string;
+    to?: string;
   }) {
     const limit = Math.min(params.limit ?? 50, 200);
+    const createdAt: Prisma.DateTimeFilter = {};
+    if (params.from) createdAt.gte = new Date(params.from);
+    if (params.to) {
+      const end = new Date(params.to);
+      end.setHours(23, 59, 59, 999);
+      createdAt.lte = end;
+    }
+
     const items = await this.prisma.auditLog.findMany({
       take: limit + 1,
       ...(params.cursor ? { cursor: { id: params.cursor }, skip: 1 } : {}),
       where: {
         ...(params.entityType ? { entityType: params.entityType } : {}),
         ...(params.action ? { action: { contains: params.action } } : {}),
+        ...(Object.keys(createdAt).length ? { createdAt } : {}),
       },
       orderBy: { createdAt: 'desc' },
       include: {

@@ -223,7 +223,13 @@ export default function SetupPage() {
         const deferRoles = (['accountant', 'auditor'] as const).filter(
           (role) => isRoleDeferred(role) && !hasRoleFilled(role),
         );
-        const payload = (['chairman', 'accountant', 'auditor'] as const)
+        const payload: Array<{
+          email: string;
+          password: string;
+          firstName: string;
+          lastName: string;
+          role: 'chairman' | 'accountant' | 'auditor' | 'board';
+        }> = (['chairman', 'accountant', 'auditor'] as const)
           .filter((role) => !isRoleResolved(role))
           .map((role) => ({ ...users[role], role }));
         if (users.addBoard && users.boardEmail) {
@@ -232,7 +238,7 @@ export default function SetupPage() {
             password: users.boardPassword,
             firstName: users.boardFirstName,
             lastName: users.boardLastName,
-            role: 'board' as const,
+            role: 'board',
           });
         }
         await apiFetch('/setup/users', {

@@ -2,11 +2,21 @@
 
 import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken, uploadFile } from '@/lib/api';
 
-interface Fund { id: string; name: string }
-interface Category { id: string; name: string }
-interface Supplier { id: string; name: string }
+interface Fund {
+  id: string;
+  name: string;
+}
+interface Category {
+  id: string;
+  name: string;
+}
+interface Supplier {
+  id: string;
+  name: string;
+}
 
 export default function ExpensesPage() {
   const [funds, setFunds] = useState<Fund[]>([]);
@@ -23,6 +33,7 @@ export default function ExpensesPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [created, setCreated] = useState(false);
 
   useEffect(() => {
     const token = getToken();
@@ -81,6 +92,7 @@ export default function ExpensesPage() {
         }),
       });
       setMessage('Витрату зафіксовано');
+      setCreated(true);
       setAmount('');
       setDescription('');
       setDocumentKey(null);
@@ -94,49 +106,88 @@ export default function ExpensesPage() {
 
   return (
     <main>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-        <h1>Нова витрата</h1>
-        <Link href="/admin/expenses/list" className="btn" style={{ fontSize: '0.875rem', padding: '0.5rem 1rem' }}>
-          Список витрат
-        </Link>
-      </div>
-      <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>
-        Фіксація оплат за комунальні послуги, підрядників, зарплат
-      </p>
+      <PageHeader
+        title="Нова витрата"
+        description="Оплата підрядників, комунальних, зарплат — з документом"
+        actions={
+          <Link href="/admin/expenses/list" className="btn btn-sm btn-ghost">
+            Список витрат
+          </Link>
+        }
+      />
+
+      {created && (
+        <p className="success-banner">
+          Збережено.{' '}
+          <Link href="/admin/expenses/list">Відкрити список</Link>
+          {' · '}
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            onClick={() => setCreated(false)}
+            style={{ display: 'inline' }}
+          >
+            Додати ще
+          </button>
+        </p>
+      )}
 
       <form onSubmit={handleSubmit} className="card" style={{ display: 'grid', gap: '1rem' }}>
-        <div>
-          <label>Фонд</label>
-          <select value={fundId} onChange={(e) => setFundId(e.target.value)} required>
-            {funds.map((f) => (
-              <option key={f.id} value={f.id}>{f.name}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label>Категорія</label>
-          <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
+        <div className="grid-2">
+          <div>
+            <label>Фонд</label>
+            <select value={fundId} onChange={(e) => setFundId(e.target.value)} required>
+              {funds.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label>Категорія</label>
+            <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required>
+              {categories.length === 0 && <option value="">Немає категорій</option>}
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            {categories.length === 0 && (
+              <p style={{ fontSize: '0.8rem', marginTop: '0.35rem' }}>
+                <Link href="/admin/suppliers">Додайте категорію в Довідниках</Link>
+              </p>
+            )}
+          </div>
         </div>
         <div>
           <label>Постачальник</label>
           <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
             <option value="">— не вказано —</option>
             {suppliers.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
             ))}
           </select>
         </div>
-        <div>
-          <label>Сума (₴)</label>
-          <input type="number" step="0.01" min="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} required />
-        </div>
-        <div>
-          <label>Дата</label>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+        <div className="grid-2">
+          <div>
+            <label>Сума (₴)</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0.01"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              required
+            />
+          </div>
+          <div>
+            <label>Дата</label>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+          </div>
         </div>
         <div>
           <label>Опис</label>
@@ -156,9 +207,9 @@ export default function ExpensesPage() {
           )}
         </div>
         {error && <p className="error">{error}</p>}
-        {message && <p style={{ color: 'var(--success)' }}>{message}</p>}
-        <button type="submit" disabled={loading}>
-          {loading ? 'Збереження...' : 'Зберегти витрату'}
+        {message && !created && <p className="success-banner">{message}</p>}
+        <button type="submit" disabled={loading || !categoryId}>
+          {loading ? 'Збереження…' : 'Зберегти витрату'}
         </button>
       </form>
     </main>

@@ -1,5 +1,5 @@
 import { AccrualLineStatus } from '@prisma/client';
-import { roundMoney } from './money';
+import { minMinor, subMinor, toMajor, toMinor } from './money';
 
 export interface FifoLineInput {
   id: string;
@@ -18,38 +18,44 @@ export interface FifoAllocation {
   lineBalance: number;
 }
 
-export function planFifoAllocation(lines: FifoLineInput[], paymentAmount: number) {
-  let remaining = paymentAmount;
+/**
+ * Plan FIFO allocation. Inputs/outputs are major units (hryvnia);
+ * arithmetic runs in integer minor units (kopiiky).
+ */
+export function planFifoAllocation(lines: FifoLineInput[], paymentAmount: number | string) {
+  let remaining = toMinor(paymentAmount);
   const allocations: FifoAllocation[] = [];
 
   for (const line of lines) {
     if (remaining <= 0) break;
-    const due = roundMoney(Number(line.amount) - Number(line.paidAmount));
+    const due = subMinor(toMinor(line.amount), toMinor(line.paidAmount));
     if (due <= 0) continue;
-    const allocAmount = roundMoney(Math.min(remaining, due));
+    const allocMinor = minMinor(remaining, due);
     allocations.push({
       accrualLineId: line.id,
-      amount: allocAmount,
+      amount: toMajor(allocMinor),
       period: line.period,
       title: line.title,
-      lineBalance: due,
+      lineBalance: toMajor(due),
     });
-    remaining = roundMoney(remaining - allocAmount);
+    remaining = subMinor(remaining, allocMinor);
   }
 
   return {
     allocations,
-    advance: roundMoney(remaining),
+    advance: toMajor(remaining),
   };
 }
 
 export function resolveAccrualLineStatus(
-  lineAmount: number,
-  paidAmount: number,
+  lineAmount: number | string,
+  paidAmount: number | string,
   dueDate: Date | null,
 ): AccrualLineStatus {
-  if (paidAmount >= lineAmount) return AccrualLineStatus.paid;
-  if (paidAmount > 0) {
+  const lineMinor = toMinor(lineAmount);
+  const paidMinor = toMinor(paidAmount);
+  if (paidMinor >= lineMinor) return AccrualLineStatus.paid;
+  if (paidMinor > 0) {
     return dueDate && dueDate < new Date()
       ? AccrualLineStatus.overdue
       : AccrualLineStatus.partially_paid;

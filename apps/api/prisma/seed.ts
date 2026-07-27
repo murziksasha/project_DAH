@@ -8,36 +8,74 @@ import {
   UserStatus,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { existsSync } from 'fs';
+import { resolve } from 'path';
+
+// Optional local .env (CI supplies DATABASE_URL via the environment).
+const envPath = resolve(__dirname, '../../../.env');
+if (existsSync(envPath)) {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  require('dotenv').config({ path: envPath });
+}
 
 const prisma = new PrismaClient();
 
 async function main() {
+  const isProd =
+    process.env.NODE_ENV === 'production' || process.env.DAH_ENV === 'production';
+  if (isProd && process.env.ALLOW_SEED !== '1') {
+    throw new Error(
+      'Seed заборонено у production. Встановіть ALLOW_SEED=1 лише якщо свідомо перезаписуєте демо-дані.',
+    );
+  }
+
+  if (!process.env.DATABASE_URL) {
+    throw new Error(
+      'DATABASE_URL is required. Set it in the environment or in ../../.env',
+    );
+  }
+
   const buildingName = process.env.BUILDING_NAME ?? 'ОСББ вул. Прикладна 1';
 
   await prisma.auditLog.deleteMany();
+  await prisma.emailLog.deleteMany();
+  await prisma.reminder.deleteMany();
   await prisma.pushSubscription.deleteMany();
   await prisma.announcement.deleteMany();
   await prisma.request.deleteMany();
   await prisma.pollVote.deleteMany();
   await prisma.pollOption.deleteMany();
   await prisma.poll.deleteMany();
+  await prisma.meterReading.deleteMany();
+  await prisma.meter.deleteMany();
   await prisma.paymentAllocation.deleteMany();
   await prisma.payment.deleteMany();
   await prisma.accrualLine.deleteMany();
   await prisma.accrual.deleteMany();
   await prisma.accrualTemplate.deleteMany();
   await prisma.expense.deleteMany();
+  await prisma.journalLine.deleteMany();
+  await prisma.journalEntry.deleteMany();
+  await prisma.authSession.deleteMany();
+  await prisma.document.deleteMany();
   await prisma.supplier.deleteMany();
   await prisma.expenseCategory.deleteMany();
   await prisma.fund.deleteMany();
   await prisma.bankAccount.deleteMany();
+  await prisma.userApartment.deleteMany();
   await prisma.user.deleteMany();
   await prisma.resident.deleteMany();
   await prisma.apartment.deleteMany();
   await prisma.building.deleteMany();
+  await prisma.tenant.deleteMany();
+
+  const tenant = await prisma.tenant.create({
+    data: { name: buildingName, slug: 'default' },
+  });
 
   const building = await prisma.building.create({
     data: {
+      tenantId: tenant.id,
       name: buildingName,
       address: 'м. Київ, вул. Прикладна, 1',
       edrpou: '12345678',
@@ -147,6 +185,7 @@ async function main() {
       lastName: 'Адміністратор',
       role: UserRole.super_admin,
       status: UserStatus.active,
+      tenantId: null,
     },
   });
 
@@ -158,6 +197,7 @@ async function main() {
       lastName: 'Петренко',
       role: UserRole.chairman,
       status: UserStatus.active,
+      tenantId: tenant.id,
     },
   });
 
@@ -169,6 +209,7 @@ async function main() {
       lastName: 'Коваленко',
       role: UserRole.accountant,
       status: UserStatus.active,
+      tenantId: tenant.id,
     },
   });
 
@@ -180,6 +221,7 @@ async function main() {
       lastName: 'Мельник',
       role: UserRole.auditor,
       status: UserStatus.active,
+      tenantId: tenant.id,
     },
   });
 
@@ -191,6 +233,7 @@ async function main() {
       lastName: 'Шевченко',
       role: UserRole.resident,
       status: UserStatus.active,
+      tenantId: tenant.id,
       apartmentId: apartments[0].id,
       apartmentLinks: {
         create: { apartmentId: apartments[0].id, isPrimary: true },

@@ -20,12 +20,16 @@ export class AuditController {
     @Query('cursor') cursor?: string,
     @Query('entityType') entityType?: string,
     @Query('action') action?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
   ) {
     return this.audit.list({
       limit: limit ? Number(limit) : undefined,
       cursor,
       entityType,
       action,
+      from,
+      to,
     });
   }
 }

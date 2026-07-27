@@ -35,6 +35,15 @@ export class BootstrapService implements OnModuleInit {
       return;
     }
 
+    // Ensure default tenant exists (migration may have created it)
+    let tenant = await this.prisma.tenant.findFirst({ orderBy: { createdAt: 'asc' } });
+    if (!tenant) {
+      tenant = await this.prisma.tenant.create({
+        data: { name: 'Default OSBB', slug: 'default' },
+      });
+      this.logger.log(`Bootstrap: created default tenant ${tenant.slug}`);
+    }
+
     const passwordHash = await bcrypt.hash(password, 10);
     await this.prisma.user.create({
       data: {
@@ -44,6 +53,7 @@ export class BootstrapService implements OnModuleInit {
         lastName: 'Адміністратор',
         role: UserRole.super_admin,
         status: UserStatus.active,
+        tenantId: null,
       },
     });
 

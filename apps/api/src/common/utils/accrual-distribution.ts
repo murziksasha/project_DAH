@@ -4,6 +4,8 @@ import { roundMoney } from './money';
 export interface ApartmentInput {
   id: string;
   area: number;
+  /** Sum of meter consumption for period (by_meter). */
+  meterConsumption?: number;
 }
 
 export function calcAccrualLineAmount(
@@ -21,6 +23,11 @@ export function calcAccrualLineAmount(
     case AccrualDistribution.manual: {
       const manual = manualLines?.find((l) => l.apartmentId === apt.id);
       return manual ? roundMoney(manual.amount) : 0;
+    }
+    case AccrualDistribution.by_meter: {
+      const c = apt.meterConsumption ?? 0;
+      if (c <= 0) return 0;
+      return roundMoney(c * (rate ?? 0));
     }
     default:
       return 0;
@@ -44,6 +51,9 @@ export function validateAccrualDistribution(
   }
   if (distribution === AccrualDistribution.manual && !manualLines?.length) {
     return 'Для manual потрібні manualLines';
+  }
+  if (distribution === AccrualDistribution.by_meter && (rate === undefined || rate <= 0)) {
+    return 'Для by_meter потрібен тариф rate (грн/од.) > 0';
   }
   return null;
 }

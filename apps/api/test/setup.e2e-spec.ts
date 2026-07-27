@@ -269,8 +269,18 @@ describe('Setup resume (e2e)', () => {
     await resetTestDatabase();
     await seedSuperAdminOnly();
 
+    const tenant = await testPrisma.tenant.create({
+      data: { name: 'Partial Tenant', slug: 'partial-setup' },
+    });
+
     const building = await testPrisma.building.create({
-      data: { name: 'Partial OSBB', address: 'Partial st.', isInitialized: false, settings: {} },
+      data: {
+        tenantId: tenant.id,
+        name: 'Partial OSBB',
+        address: 'Partial st.',
+        isInitialized: false,
+        settings: {},
+      },
     });
 
     const bankAccount = await testPrisma.bankAccount.create({

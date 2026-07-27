@@ -23,6 +23,16 @@ describe('calcAccrualLineAmount', () => {
       ]),
     ).toBe(150);
   });
+
+  it('calculates by_meter from consumption * rate', () => {
+    expect(
+      calcAccrualLineAmount(
+        { ...apt, meterConsumption: 12.5 },
+        AccrualDistribution.by_meter,
+        20,
+      ),
+    ).toBe(250);
+  });
 });
 
 describe('validateAccrualDistribution', () => {
@@ -42,5 +52,9 @@ describe('validateAccrualDistribution', () => {
         { apartmentId: 'a', amount: 1 },
       ]),
     ).toBeNull();
+  });
+
+  it('requires rate for by_meter', () => {
+    expect(validateAccrualDistribution(AccrualDistribution.by_meter)).toContain('by_meter');
   });
 });

@@ -49,6 +49,26 @@ export class DocumentsService {
     };
   }
 
+  async setPublic(id: string, isPublic: boolean, userId: string) {
+    const doc = await this.prisma.document.findUnique({ where: { id } });
+    if (!doc) throw new NotFoundException('Документ не знайдено');
+    const updated = await this.prisma.document.update({
+      where: { id },
+      data: { isPublic },
+    });
+    await this.audit.log({
+      userId,
+      action: 'document.updated',
+      entityType: 'Document',
+      entityId: id,
+      payload: { isPublic },
+    });
+    return {
+      ...updated,
+      fileUrl: await this.storage.getDownloadUrl(updated.fileKey),
+    };
+  }
+
   async remove(id: string, userId: string) {
     const doc = await this.prisma.document.findUnique({ where: { id } });
     if (!doc) throw new NotFoundException('Документ не знайдено');

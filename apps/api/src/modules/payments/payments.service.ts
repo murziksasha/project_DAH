@@ -6,20 +6,29 @@ import {
 } from '@nestjs/common';
 import {
   AccrualLineStatus,
+  JournalEntryType,
   PaymentSource,
   Prisma,
   UserRole,
 } from '@prisma/client';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import {
+  matchStatementRows,
+  parseBankStatementCsv,
+} from '../../common/utils/bank-statement-import';
+import {
   FifoLineInput,
   planFifoAllocation,
   resolveAccrualLineStatus,
 } from '../../common/utils/fifo-allocation';
 import { roundMoney } from '../../common/utils/money';
+import { normalizePage, toPageResult } from '../../common/utils/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { JournalService } from '../journal/journal.service';
+import { MailService } from '../mail/mail.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import { ImportPaymentsDto } from './dto/import-payments.dto';
 
 export interface AllocationPlan {
   accrualLineId: string;
@@ -42,13 +51,34 @@ export class PaymentsService {
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
+    private mail: MailService,
+    private journal: JournalService,
   ) {}
 
-  listPayments(user: AuthUser, apartmentId?: string) {
+  async listPayments(
+    user: AuthUser,
+    opts?: {
+      apartmentId?: string;
+      from?: string;
+      to?: string;
+      page?: number;
+      limit?: number;
+      buildingId?: string;
+      tenantId?: string | null;
+    },
+  ) {
     const where: Prisma.PaymentWhereInput = { isVoided: false };
 
     if (PAYMENT_READ_ROLES.includes(user.role as UserRole)) {
-      if (apartmentId) where.apartmentId = apartmentId;
+      if (opts?.apartmentId) where.apartmentId = opts.apartmentId;
+      if (opts?.buildingId) {
+        where.apartment = {
+          buildingId: opts.buildingId,
+          ...(opts.tenantId ? { building: { tenantId: opts.tenantId } } : {}),
+        };
+      } else if (opts?.tenantId) {
+        where.apartment = { building: { tenantId: opts.tenantId } };
+      }
     } else {
       const ids = user.apartmentIds?.length
         ? user.apartmentIds
@@ -61,18 +91,32 @@ export class PaymentsService {
       where.apartmentId = { in: ids };
     }
 
-    return this.prisma.payment.findMany({
-      where,
-      include: {
-        apartment: true,
-        allocations: {
-          include: {
-            accrualLine: { include: { accrual: true } },
+    if (opts?.from || opts?.to) {
+      where.date = {};
+      if (opts.from) where.date.gte = new Date(opts.from);
+      if (opts.to) where.date.lte = new Date(opts.to);
+    }
+
+    const { page, limit, skip } = normalizePage(opts, 50, 200);
+    const [total, items] = await Promise.all([
+      this.prisma.payment.count({ where }),
+      this.prisma.payment.findMany({
+        where,
+        include: {
+          apartment: true,
+          allocations: {
+            include: {
+              accrualLine: { include: { accrual: true } },
+            },
           },
         },
-      },
-      orderBy: { date: 'desc' },
-    });
+        orderBy: { date: 'desc' },
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    return toPageResult(items, total, page, limit);
   }
 
   async getPayment(id: string, user: AuthUser) {
@@ -128,13 +172,41 @@ export class PaymentsService {
     });
     if (!apartment) throw new NotFoundException('Квартиру не знайдено');
 
-    const { allocations, openLines } = await this.planAllocation(
-      dto.apartmentId,
-      dto.amount,
-      true,
-    );
-
     const payment = await this.prisma.$transaction(async (tx) => {
+      // Row lock apartment + open accrual lines to prevent double-allocation races
+      await tx.$queryRaw`SELECT id FROM "Apartment" WHERE id = ${dto.apartmentId} FOR UPDATE`;
+      const lockedLines = await tx.$queryRaw<
+        Array<{
+          id: string;
+          amount: Prisma.Decimal;
+          paidAmount: Prisma.Decimal;
+          dueDate: Date | null;
+          period: string;
+          title: string;
+          fundId: string;
+        }>
+      >`
+        SELECT al.id, al.amount, al."paidAmount", al."dueDate",
+               a.period, a.title, a."fundId"
+        FROM "AccrualLine" al
+        JOIN "Accrual" a ON a.id = al."accrualId"
+        WHERE al."apartmentId" = ${dto.apartmentId}
+          AND al.status IN ('open', 'partially_paid', 'overdue')
+        ORDER BY al."dueDate" ASC NULLS LAST, al."createdAt" ASC
+        FOR UPDATE OF al
+      `;
+
+      const fifoLines: FifoLineInput[] = lockedLines.map((line) => ({
+        id: line.id,
+        amount: Number(line.amount),
+        paidAmount: Number(line.paidAmount),
+        dueDate: line.dueDate,
+        period: line.period,
+        title: line.title,
+      }));
+
+      const { allocations, advance } = planFifoAllocation(fifoLines, dto.amount);
+
       const created = await tx.payment.create({
         data: {
           apartmentId: dto.apartmentId,
@@ -154,7 +226,7 @@ export class PaymentsService {
           },
         });
 
-        const line = openLines.find((l) => l.id === alloc.accrualLineId)!;
+        const line = lockedLines.find((l) => l.id === alloc.accrualLineId)!;
         const newPaid = roundMoney(Number(line.paidAmount) + alloc.amount);
         const lineAmount = Number(line.amount);
         await tx.accrualLine.update({
@@ -165,6 +237,58 @@ export class PaymentsService {
           },
         });
       }
+
+      if (advance > 0) {
+        await tx.apartment.update({
+          where: { id: dto.apartmentId },
+          data: {
+            advanceBalance: {
+              increment: advance,
+            },
+          },
+        });
+      }
+
+      const totalAllocated = roundMoney(allocations.reduce((s, a) => s + a.amount, 0));
+      const fundId = lockedLines[0]?.fundId ?? null;
+
+      await this.journal.write(
+        {
+          type: JournalEntryType.payment,
+          refType: 'Payment',
+          refId: created.id,
+          description: `Платіж ${dto.amount} грн, кв. ${apartment.number}`,
+          buildingId: apartment.buildingId,
+          apartmentId: dto.apartmentId,
+          fundId,
+          createdById: userId,
+          lines: [
+            {
+              account: 'cash',
+              debit: dto.amount,
+              fundId,
+              apartmentId: dto.apartmentId,
+            },
+            {
+              account: 'receivable',
+              credit: totalAllocated,
+              fundId,
+              apartmentId: dto.apartmentId,
+            },
+            ...(advance > 0
+              ? [
+                  {
+                    account: 'advance',
+                    credit: advance,
+                    apartmentId: dto.apartmentId,
+                    fundId,
+                  },
+                ]
+              : []),
+          ],
+        },
+        tx,
+      );
 
       return created;
     });
@@ -177,9 +301,13 @@ export class PaymentsService {
       payload: {
         apartmentId: dto.apartmentId,
         amount: dto.amount,
-        allocationsCount: allocations.length,
       },
     });
+
+    void this.mail.notifyResidentsOfApartments([dto.apartmentId], 'payment.received', () => ({
+      amount: dto.amount,
+      apartmentNumber: apartment.number,
+    }));
 
     return this.getPayment(payment.id, user);
   }
@@ -187,12 +315,24 @@ export class PaymentsService {
   async voidPayment(id: string, reason: string, userId: string) {
     const payment = await this.prisma.payment.findUnique({
       where: { id },
-      include: { allocations: { include: { accrualLine: true } } },
+      include: {
+        allocations: { include: { accrualLine: { include: { accrual: true } } } },
+        apartment: true,
+      },
     });
     if (!payment) throw new NotFoundException('Платіж не знайдено');
     if (payment.isVoided) throw new BadRequestException('Платіж вже анульовано');
 
     await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Apartment" WHERE id = ${payment.apartmentId} FOR UPDATE`;
+
+      const lineIds = payment.allocations.map((a) => a.accrualLineId);
+      if (lineIds.length) {
+        await tx.$queryRaw`
+          SELECT id FROM "AccrualLine" WHERE id IN (${Prisma.join(lineIds)}) FOR UPDATE
+        `;
+      }
+
       for (const alloc of payment.allocations) {
         const line = alloc.accrualLine;
         const newPaid = roundMoney(Number(line.paidAmount) - Number(alloc.amount));
@@ -206,10 +346,60 @@ export class PaymentsService {
         });
       }
 
+      const allocated = payment.allocations.reduce((s, a) => s + Number(a.amount), 0);
+      const advancePart = roundMoney(Math.max(0, Number(payment.amount) - allocated));
+      if (advancePart > 0) {
+        const apt = await tx.apartment.findUnique({ where: { id: payment.apartmentId } });
+        const next = roundMoney(Math.max(0, Number(apt?.advanceBalance ?? 0) - advancePart));
+        await tx.apartment.update({
+          where: { id: payment.apartmentId },
+          data: { advanceBalance: next },
+        });
+      }
+
       await tx.payment.update({
         where: { id },
         data: { isVoided: true, voidReason: reason },
       });
+
+      const fundId = payment.allocations[0]?.accrualLine?.accrual?.fundId ?? null;
+      await this.journal.write(
+        {
+          type: JournalEntryType.void_payment,
+          refType: 'Payment',
+          refId: id,
+          description: `Анулювання платежу: ${reason}`,
+          buildingId: payment.apartment.buildingId,
+          apartmentId: payment.apartmentId,
+          fundId,
+          createdById: userId,
+          lines: [
+            {
+              account: 'cash',
+              credit: Number(payment.amount),
+              apartmentId: payment.apartmentId,
+              fundId,
+            },
+            {
+              account: 'receivable',
+              debit: allocated,
+              apartmentId: payment.apartmentId,
+              fundId,
+            },
+            ...(advancePart > 0
+              ? [
+                  {
+                    account: 'advance',
+                    debit: advancePart,
+                    apartmentId: payment.apartmentId,
+                    fundId,
+                  },
+                ]
+              : []),
+          ],
+        },
+        tx,
+      );
     });
 
     await this.audit.log({
@@ -223,13 +413,142 @@ export class PaymentsService {
     return { id, isVoided: true };
   }
 
-  async getDebtorsReport() {
+  async previewBankImport(csv: string, buildingId?: string) {
+    if (!csv?.trim()) {
+      throw new BadRequestException('Порожній CSV');
+    }
+
+    const apartments = await this.prisma.apartment.findMany({
+      where: buildingId ? { buildingId } : undefined,
+      select: { id: true, number: true, entrance: true },
+      orderBy: [{ entrance: 'asc' }, { number: 'asc' }],
+    });
+
+    const parsed = parseBankStatementCsv(csv);
+    const rows = matchStatementRows(parsed, apartments);
+
+    const matchedRefs = rows
+      .filter((r) => r.status === 'matched' && r.reference)
+      .map((r) => r.reference);
+
+    const existing =
+      matchedRefs.length > 0
+        ? await this.prisma.payment.findMany({
+            where: {
+              isVoided: false,
+              reference: { in: matchedRefs },
+            },
+            select: { reference: true, amount: true, date: true, apartmentId: true },
+          })
+        : [];
+
+    const enriched = rows.map((row) => {
+      if (row.status !== 'matched' || !row.reference) return row;
+      const dup = existing.find(
+        (p) =>
+          p.reference === row.reference &&
+          Number(p.amount) === row.amount &&
+          p.date.toISOString().slice(0, 10) === row.date &&
+          p.apartmentId === row.apartmentId,
+      );
+      if (!dup) return row;
+      return {
+        ...row,
+        status: 'skipped' as const,
+        message: 'Схожий платіж уже є в системі (той самий референс/сума/дата)',
+      };
+    });
+
+    const summary = {
+      total: enriched.length,
+      matched: enriched.filter((r) => r.status === 'matched').length,
+      unmatched: enriched.filter((r) => r.status === 'unmatched').length,
+      skipped: enriched.filter((r) => r.status === 'skipped').length,
+      invalid: enriched.filter((r) => r.status === 'invalid').length,
+      totalAmount: roundMoney(
+        enriched
+          .filter((r) => r.status === 'matched' && r.amount != null)
+          .reduce((s, r) => s + (r.amount ?? 0), 0),
+      ),
+    };
+
+    return { rows: enriched, summary };
+  }
+
+  async importPayments(dto: ImportPaymentsDto, user: AuthUser) {
+    if (!dto.rows?.length) {
+      throw new BadRequestException('Немає рядків для імпорту');
+    }
+
+    const source = dto.source ?? PaymentSource.bank;
+    const created: string[] = [];
+    const errors: Array<{ index: number; message: string }> = [];
+
+    for (let i = 0; i < dto.rows.length; i++) {
+      const row = dto.rows[i];
+      try {
+        const payment = await this.createPayment(
+          {
+            apartmentId: row.apartmentId,
+            amount: row.amount,
+            date: row.date,
+            source,
+            reference: row.reference,
+          },
+          user,
+        );
+        created.push(payment.id);
+      } catch (err) {
+        errors.push({
+          index: i,
+          message: err instanceof Error ? err.message : 'Помилка імпорту',
+        });
+      }
+    }
+
+    await this.audit.log({
+      userId: user.id,
+      action: 'payment.import',
+      entityType: 'Payment',
+      entityId: created[0] ?? 'batch',
+      payload: {
+        requested: dto.rows.length,
+        created: created.length,
+        errors: errors.length,
+      },
+    });
+
+    return {
+      created: created.length,
+      failed: errors.length,
+      paymentIds: created,
+      errors,
+    };
+  }
+
+  async getDebtorsReport(buildingId?: string, tenantId?: string | null) {
     const lines = await this.prisma.accrualLine.findMany({
       where: {
-        status: { in: [AccrualLineStatus.open, AccrualLineStatus.partially_paid, AccrualLineStatus.overdue] },
+        status: {
+          in: [
+            AccrualLineStatus.open,
+            AccrualLineStatus.partially_paid,
+            AccrualLineStatus.overdue,
+          ],
+        },
+        ...(buildingId
+          ? {
+              apartment: {
+                buildingId,
+                ...(tenantId ? { building: { tenantId } } : {}),
+              },
+            }
+          : tenantId
+            ? { apartment: { building: { tenantId } } }
+            : {}),
       },
       include: {
-        apartment: { select: { number: true, entrance: true } },
+        apartment: { select: { number: true, entrance: true, buildingId: true } },
         accrual: true,
       },
       orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
@@ -241,6 +560,7 @@ export class PaymentsService {
         apartmentId: string;
         number: string;
         entrance: number;
+        buildingId: string;
         debt: number;
         oldestDue: Date | null;
         lines: number;
@@ -256,6 +576,7 @@ export class PaymentsService {
         apartmentId: line.apartmentId,
         number: line.apartment.number,
         entrance: line.apartment.entrance,
+        buildingId: line.apartment.buildingId,
         debt: 0,
         oldestDue: null,
         lines: 0,

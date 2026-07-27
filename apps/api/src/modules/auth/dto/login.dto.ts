@@ -1,14 +1,21 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsEmail, IsOptional, IsString, Length, MaxLength, MinLength } from 'class-validator';
 
 export class LoginDto {
-  @ApiProperty({ example: 'chairman@osbb.local' })
+  @ApiProperty()
   @IsEmail()
   email!: string;
 
-  @ApiProperty({ example: 'password123' })
+  @ApiProperty()
   @IsString()
   @MinLength(8)
   @MaxLength(128)
   password!: string;
+
+  /** Optional TOTP when 2FA is already known (skip second step). */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Length(6, 6)
+  code?: string;
 }

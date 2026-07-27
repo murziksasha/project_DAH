@@ -25,4 +25,9 @@ export class CreateSupplierDto {
   @IsOptional()
   @IsString()
   serviceType?: string;
+
+  @ApiPropertyOptional({ description: 'Target building (defaults to first)' })
+  @IsOptional()
+  @IsString()
+  buildingId?: string;
 }

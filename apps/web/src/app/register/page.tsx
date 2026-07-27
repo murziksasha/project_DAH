@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 
 interface Apartment {
@@ -23,10 +23,12 @@ export default function RegisterPage() {
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
   const [apartmentId, setApartmentId] = useState('');
+  const [aptQuery, setAptQuery] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingApartments, setLoadingApartments] = useState(true);
+  const [registrationClosed, setRegistrationClosed] = useState(false);
 
   useEffect(() => {
     apiFetch<Apartment[]>('/auth/apartments')
@@ -34,9 +36,21 @@ export default function RegisterPage() {
         setApartments(list);
         if (list.length > 0) setApartmentId(list[0].id);
       })
-      .catch(() => setError('Не вдалося завантажити список квартир'))
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : 'Не вдалося завантажити список квартир';
+        setError(msg);
+        if (/вимкнен|disabled|заборонен/i.test(msg)) setRegistrationClosed(true);
+      })
       .finally(() => setLoadingApartments(false));
   }, []);
+
+  const filtered = useMemo(() => {
+    const q = aptQuery.trim().toLowerCase();
+    if (!q) return apartments;
+    return apartments.filter(
+      (a) => a.number.toLowerCase().includes(q) || String(a.entrance).includes(q),
+    );
+  }, [apartments, aptQuery]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -57,7 +71,9 @@ export default function RegisterPage() {
       });
       setSuccess(data.message);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка реєстрації');
+      const msg = err instanceof Error ? err.message : 'Помилка реєстрації';
+      setError(msg);
+      if (/вимкнен/i.test(msg)) setRegistrationClosed(true);
     } finally {
       setLoading(false);
     }
@@ -65,37 +81,54 @@ export default function RegisterPage() {
 
   return (
     <main style={{ maxWidth: 420, margin: '0 auto', padding: '2rem 1rem' }}>
-      <h1 style={{ marginBottom: '0.5rem' }}>Реєстрація</h1>
+      <h1 style={{ marginBottom: '0.5rem' }}>Реєстрація мешканця</h1>
       <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>
-        Мешканець: вкажіть квартиру та очікуйте підтвердження від правління
+        Вкажіть квартиру. Після підтвердження правлінням зможете увійти в кабінет.
       </p>
 
-      {success ? (
+      {registrationClosed && !success ? (
+        <div className="card">
+          <p style={{ marginBottom: '0.75rem' }}>
+            Самостійна реєстрація зараз вимкнена. Зверніться до голови правління або бухгалтера ОСМД.
+          </p>
+          <Link href="/login" className="btn btn-sm">
+            На сторінку входу
+          </Link>
+        </div>
+      ) : success ? (
         <div className="card" style={{ display: 'grid', gap: '1rem' }}>
-          <p style={{ color: 'var(--success)' }}>{success}</p>
+          <p style={{ color: 'var(--success)', fontWeight: 600 }}>Заявку прийнято</p>
+          <p style={{ color: 'var(--muted)', fontSize: '0.95rem' }}>{success}</p>
+          <p style={{ fontSize: '0.9rem' }}>
+            Зазвичай підтвердження займає 1–2 робочі дні. Після цього увійдіть з email і паролем.
+          </p>
           <Link href="/login" className="btn" style={{ textAlign: 'center' }}>
             Перейти до входу
           </Link>
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="card" style={{ display: 'grid', gap: '1rem' }}>
-          <div>
-            <label htmlFor="firstName">Ім&apos;я</label>
-            <input
-              id="firstName"
-              value={firstName}
-              onChange={(e) => setFirstName(e.target.value)}
-              required
-            />
-          </div>
-          <div>
-            <label htmlFor="lastName">Прізвище</label>
-            <input
-              id="lastName"
-              value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
-              required
-            />
+          <div className="grid-2">
+            <div>
+              <label htmlFor="firstName">Ім&apos;я</label>
+              <input
+                id="firstName"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                required
+                autoComplete="given-name"
+              />
+            </div>
+            <div>
+              <label htmlFor="lastName">Прізвище</label>
+              <input
+                id="lastName"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                required
+                autoComplete="family-name"
+              />
+            </div>
           </div>
           <div>
             <label htmlFor="email">Email</label>
@@ -105,14 +138,21 @@ export default function RegisterPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              autoComplete="email"
             />
           </div>
           <div>
             <label htmlFor="phone">Телефон (необов&apos;язково)</label>
-            <input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
+            <input
+              id="phone"
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              autoComplete="tel"
+            />
           </div>
           <div>
-            <label htmlFor="password">Пароль (мін. 6 символів)</label>
+            <label htmlFor="password">Пароль (мін. 8 символів)</label>
             <input
               id="password"
               type="password"
@@ -120,6 +160,17 @@ export default function RegisterPage() {
               onChange={(e) => setPassword(e.target.value)}
               minLength={8}
               required
+              autoComplete="new-password"
+            />
+          </div>
+          <div>
+            <label htmlFor="apt-q">Пошук квартири</label>
+            <input
+              id="apt-q"
+              value={aptQuery}
+              onChange={(e) => setAptQuery(e.target.value)}
+              placeholder="Номер квартири"
+              disabled={loadingApartments}
             />
           </div>
           <div>
@@ -129,10 +180,13 @@ export default function RegisterPage() {
               value={apartmentId}
               onChange={(e) => setApartmentId(e.target.value)}
               required
-              disabled={loadingApartments}
+              disabled={loadingApartments || filtered.length === 0}
             >
-              {loadingApartments && <option value="">Завантаження...</option>}
-              {apartments.map((apt) => (
+              {loadingApartments && <option value="">Завантаження…</option>}
+              {!loadingApartments && filtered.length === 0 && (
+                <option value="">Квартир не знайдено</option>
+              )}
+              {filtered.map((apt) => (
                 <option key={apt.id} value={apt.id}>
                   Під&apos;їзд {apt.entrance}, кв. {apt.number}
                 </option>
@@ -141,7 +195,7 @@ export default function RegisterPage() {
           </div>
           {error && <p className="error">{error}</p>}
           <button type="submit" disabled={loading || loadingApartments || !apartmentId}>
-            {loading ? 'Реєстрація...' : 'Зареєструватися'}
+            {loading ? 'Надсилання…' : 'Надіслати заявку'}
           </button>
         </form>
       )}

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
@@ -10,6 +10,7 @@ import { CreateApartmentDto } from './dto/create-apartment.dto';
 import { CreateResidentDto } from './dto/create-resident.dto';
 import { UpdateApartmentDto } from './dto/update-apartment.dto';
 import { UpdateResidentDto } from './dto/update-resident.dto';
+import { UpdateBuildingDto } from './dto/update-building.dto';
 import { UpdateBuildingSettingsDto } from './dto/update-settings.dto';
 
 @ApiTags('building')
@@ -20,13 +21,46 @@ export class BuildingController {
   constructor(private building: BuildingService) {}
 
   @Get()
-  getBuilding() {
-    return this.building.getBuilding();
+  getBuilding(@CurrentUser() user: AuthUser) {
+    return this.building.getBuilding(undefined, user.role === 'super_admin' ? null : user.tenantId);
+  }
+
+  @Get('list')
+  listBuildings(@CurrentUser() user: AuthUser) {
+    return this.building.listBuildings(user.role === 'super_admin' ? null : user.tenantId);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.super_admin, UserRole.chairman)
+  @Post('create')
+  createBuilding(
+    @Body() body: { name: string; address: string; edrpou?: string | null; tenantId?: string },
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.building.createBuilding(body, user.id, user.tenantId);
+  }
+
+  @Get('by/:id')
+  getBuildingById(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.building.getBuilding(id, user.role === 'super_admin' ? null : user.tenantId);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.super_admin, UserRole.chairman, UserRole.board)
+  @Patch()
+  updateBuilding(@Body() dto: UpdateBuildingDto, @CurrentUser() user: AuthUser) {
+    return this.building.updateBuildingProfile(dto, user.id);
   }
 
   @Get('apartments')
-  listApartments() {
-    return this.building.listApartments();
+  listApartments(
+    @Query('buildingId') buildingId: string | undefined,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.building.listApartments(
+      buildingId,
+      user.role === 'super_admin' ? null : user.tenantId,
+    );
   }
 
   @Get('apartments/:id')
@@ -40,6 +74,19 @@ export class BuildingController {
   }
 
   @UseGuards(RolesGuard)
+  @Roles(
+    UserRole.super_admin,
+    UserRole.chairman,
+    UserRole.accountant,
+    UserRole.board,
+    UserRole.auditor,
+  )
+  @Get('ops-summary')
+  opsSummary(@Query('buildingId') buildingId?: string) {
+    return this.building.getOpsSummary(buildingId);
+  }
+
+  @UseGuards(RolesGuard)
   @Roles(UserRole.super_admin, UserRole.chairman, UserRole.board)
   @Patch('settings')
   updateSettings(@Body() dto: UpdateBuildingSettingsDto, @CurrentUser() user: AuthUser) {
@@ -50,7 +97,18 @@ export class BuildingController {
   @Roles(UserRole.super_admin, UserRole.chairman)
   @Post('apartments')
   createApartment(@Body() dto: CreateApartmentDto, @CurrentUser() user: AuthUser) {
-    return this.building.createApartment(dto, user.id);
+    return this.building.createApartment(
+      dto,
+      user.id,
+      user.role === 'super_admin' ? null : user.tenantId,
+    );
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.super_admin, UserRole.chairman)
+  @Post('apartments/import')
+  importApartments(@Body() body: { csv: string }, @CurrentUser() user: AuthUser) {
+    return this.building.importApartmentsCsv(body.csv ?? '', user.id);
   }
 
   @UseGuards(RolesGuard)

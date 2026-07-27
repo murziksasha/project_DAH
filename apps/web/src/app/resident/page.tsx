@@ -1,7 +1,13 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { Badge } from '@/components/ui/Badge';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { SkeletonCards } from '@/components/ui/Skeleton';
+import { StatCard } from '@/components/ui/StatCard';
 import { apiFetch, downloadReceipt, getToken } from '@/lib/api';
+import { formatDateUk, formatMoney } from '@/lib/money';
 
 type Tab = 'account' | 'building' | 'documents' | 'debtors' | 'communications';
 
@@ -16,15 +22,38 @@ interface AccountLine {
   status: string;
 }
 
+interface TimelineEvent {
+  id: string;
+  kind: 'accrual' | 'payment';
+  at: string;
+  title: string;
+  amount: number;
+  meta?: Record<string, unknown>;
+}
+
 interface Account {
   apartment: { number: string; buildingName: string };
   summary: { totalAccrued: number; totalPaid: number; debt: number; advance: number };
   lines: AccountLine[];
   payments: Array<{ id: string; amount: number; date: string; source: string }>;
+  timeline?: TimelineEvent[];
+}
+
+interface BankAccount {
+  id: string;
+  bankName: string;
+  iban: string;
+  description: string | null;
 }
 
 interface Transparency {
-  building: { name: string; showDebtorsToResidents: boolean } | null;
+  building: {
+    name: string;
+    address?: string;
+    edrpou?: string | null;
+    showDebtorsToResidents: boolean;
+    showBankDetailsToResidents?: boolean;
+  } | null;
   expenseSummary: {
     total: number;
     byCategory: Array<{ name: string; total: number }>;
@@ -38,6 +67,7 @@ interface Transparency {
   };
   documents: Array<{ id: string; title: string; description: string | null; fileUrl: string }>;
   debtors: Array<{ number: string; debt: number; isOverdue: boolean }> | null;
+  bankAccounts: BankAccount[] | null;
 }
 
 interface Announcement {
@@ -61,7 +91,9 @@ interface RequestItem {
 interface PollOption {
   id: string;
   text: string;
-  _count: { votes: number };
+  _count?: { votes: number };
+  voteCount?: number;
+  weightSum?: number;
 }
 
 interface Poll {
@@ -72,6 +104,14 @@ interface Poll {
   options: PollOption[];
   _count: { votes: number };
   userVote?: string | null;
+  voteWeight?: string;
+  stats?: {
+    participationPercent: number;
+    quorumPercent: number | null;
+    quorumMet: boolean;
+    votedWeight: number;
+    eligibleWeight: number;
+  };
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -90,7 +130,7 @@ const REQUEST_STATUS: Record<string, string> = {
 const TABS: { id: Tab; label: string }[] = [
   { id: 'account', label: 'Рахунок' },
   { id: 'communications', label: 'Новини' },
-  { id: 'building', label: 'Витрати дому' },
+  { id: 'building', label: 'Прозорість' },
   { id: 'documents', label: 'Документи' },
   { id: 'debtors', label: 'Боржники' },
 ];
@@ -104,10 +144,14 @@ export default function ResidentPage() {
   const [polls, setPolls] = useState<Poll[]>([]);
   const [userName, setUserName] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
   const [reqTitle, setReqTitle] = useState('');
   const [reqDesc, setReqDesc] = useState('');
   const [reqCategory, setReqCategory] = useState('other');
   const [commsMessage, setCommsMessage] = useState('');
+  const [copied, setCopied] = useState('');
+  const [onlinePayEnabled, setOnlinePayEnabled] = useState(false);
+  const [payBusy, setPayBusy] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -131,16 +175,34 @@ export default function ResidentPage() {
       apiFetch<Announcement[]>('/communications/announcements', { token }),
       apiFetch<RequestItem[]>('/communications/requests', { token }),
       apiFetch<Poll[]>('/communications/polls', { token }),
+      apiFetch<{ enabled: boolean }>('/payments/online/status', { skipAuth: true }).catch(() => ({
+        enabled: false,
+      })),
     ])
-      .then(([a, t, ann, req, pol]) => {
+      .then(([a, t, ann, req, pol, pay]) => {
         setAccount(a);
         setTransparency(t);
         setAnnouncements(ann);
         setRequests(req);
         setPolls(pol);
+        setOnlinePayEnabled(Boolean(pay?.enabled));
       })
-      .catch((err) => setError(err.message));
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
   }, []);
+
+  const paymentPurpose = useMemo(() => {
+    if (!account) return 'Оплата внесків ОСМД';
+    return `Оплата внесків ОСМД, кв. ${account.apartment.number}`;
+  }, [account]);
+
+  const openLineForReceipt = useMemo(() => {
+    if (!account?.lines?.length) return null;
+    return (
+      account.lines.find((l) => l.balance > 0) ??
+      account.lines[0]
+    );
+  }, [account]);
 
   async function handleRequest(e: FormEvent) {
     e.preventDefault();
@@ -190,118 +252,350 @@ export default function ResidentPage() {
     }
   }
 
+  async function handleOnlinePay() {
+    const token = getToken();
+    if (!token || !account) return;
+    const amount = account.summary.debt;
+    if (amount <= 0) {
+      setError('Немає боргу для оплати');
+      return;
+    }
+    // apartment id from user storage
+    const raw = localStorage.getItem('dah_user');
+    let apartmentId = '';
+    try {
+      apartmentId = raw ? (JSON.parse(raw) as { apartmentId?: string }).apartmentId ?? '' : '';
+    } catch {
+      apartmentId = '';
+    }
+    if (!apartmentId) {
+      setError('Квартиру не привʼязано');
+      return;
+    }
+    setPayBusy(true);
+    setError('');
+    try {
+      // Sandbox: immediately post payment + FIFO when ONLINE_PAYMENTS_SANDBOX/generic
+      try {
+        const paid = await apiFetch<{
+          ok: boolean;
+          paymentId?: string;
+          orderId?: string;
+          sandbox?: boolean;
+        }>('/payments/online/sandbox-complete', {
+          method: 'POST',
+          token,
+          body: JSON.stringify({ apartmentId, amount }),
+        });
+        setCommsMessage(
+          paid.ok
+            ? `Оплату зараховано${paid.sandbox ? ' (sandbox)' : ''}: ${paid.paymentId?.slice(-8) ?? paid.orderId}`
+            : 'Платіж не створено',
+        );
+        const refreshed = await apiFetch<Account>('/accruals/my-account', { token });
+        setAccount(refreshed);
+      } catch {
+        const intent = await apiFetch<{
+          checkoutUrl: string;
+          orderId: string;
+          message?: string;
+          formAction?: string;
+          form?: Record<string, string>;
+          provider?: string;
+        }>('/payments/online/intent', {
+          method: 'POST',
+          token,
+          body: JSON.stringify({ apartmentId, amount }),
+        });
+        if (intent.formAction && intent.form) {
+          const f = document.createElement('form');
+          f.method = 'POST';
+          f.action = intent.formAction;
+          f.acceptCharset = 'utf-8';
+          for (const [k, v] of Object.entries(intent.form)) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = k;
+            input.value = v;
+            f.appendChild(input);
+          }
+          document.body.appendChild(f);
+          f.submit();
+          return;
+        }
+        setCommsMessage(intent.message ?? `Створено замовлення ${intent.orderId}`);
+        if (intent.checkoutUrl) {
+          window.open(intent.checkoutUrl, '_blank', 'noopener,noreferrer');
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Помилка онлайн-оплати');
+    } finally {
+      setPayBusy(false);
+    }
+  }
+
+  async function copyText(label: string, text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(label);
+      setTimeout(() => setCopied(''), 2000);
+    } catch {
+      setError('Не вдалося скопіювати');
+    }
+  }
+
   const visibleTabs = TABS.filter(
     (t) => t.id !== 'debtors' || transparency?.debtors !== null,
   );
 
+  const debt = account?.summary.debt ?? 0;
+  const advance = account?.summary.advance ?? 0;
+  const heroTone = debt > 0 ? 'var(--danger)' : 'var(--success)';
+  const heroLabel = debt > 0 ? 'До сплати' : advance > 0 ? 'Переплата' : 'Борг відсутній';
+  const heroAmount = debt > 0 ? debt : advance > 0 ? advance : 0;
+
   return (
     <main>
-      {(userName || account) && (
-        <p style={{ color: 'var(--muted)', marginBottom: '1rem' }}>
-          {userName && `Вітаємо, ${userName}`}
-          {account ? ` · кв. ${account.apartment.number}` : ''}
-        </p>
+      <PageHeader
+        title="Кабінет мешканця"
+        description={
+          userName || account
+            ? [userName && `Вітаємо, ${userName}`, account && `кв. ${account.apartment.number}`]
+                .filter(Boolean)
+                .join(' · ')
+            : 'Особовий рахунок та прозорість будинку'
+        }
+      />
+
+      {error && <p className="error" style={{ marginBottom: '0.75rem' }}>{error}</p>}
+
+      {loading && <SkeletonCards count={2} />}
+
+      {!loading && account && (
+        <section className="resident-hero">
+          <div className="resident-hero-label">{heroLabel}</div>
+          <div className="resident-hero-amount" style={{ color: heroTone }}>
+            {formatMoney(heroAmount)}
+          </div>
+          <div className="resident-hero-actions">
+            {openLineForReceipt && (
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => handleReceipt(openLineForReceipt.id)}
+              >
+                PDF квитанція
+              </button>
+            )}
+            {onlinePayEnabled && debt > 0 && (
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={payBusy}
+                onClick={() => void handleOnlinePay()}
+              >
+                {payBusy ? 'Оплата…' : 'Сплатити онлайн'}
+              </button>
+            )}
+            {transparency?.bankAccounts && transparency.bankAccounts.length > 0 && (
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                onClick={() => {
+                  setTab('account');
+                  document.getElementById('bank-details')?.scrollIntoView({ behavior: 'smooth' });
+                }}
+              >
+                Реквізити для оплати
+              </button>
+            )}
+          </div>
+        </section>
       )}
 
-      <nav className="nav-scroll">
+      <nav className="nav-scroll" aria-label="Розділи кабінету">
         {visibleTabs.map((t) => (
           <button
             key={t.id}
             type="button"
+            className={`tab-btn${tab === t.id ? ' active' : ''}`}
             onClick={() => setTab(t.id)}
-            style={{
-              background: tab === t.id ? 'var(--primary)' : 'var(--surface-2)',
-              padding: '0.5rem 1rem',
-              fontSize: '0.875rem',
-            }}
           >
             {t.label}
           </button>
         ))}
       </nav>
 
-      {error && <p className="error">{error}</p>}
-
-      {tab === 'account' && account && (
+      {tab === 'account' && !loading && account && (
         <section>
           <div className="grid-2" style={{ marginBottom: '1rem' }}>
-            <div className="card">
-              <div className="stat-label">Борг</div>
-              <div className="stat-value" style={{ color: account.summary.debt > 0 ? 'var(--danger)' : 'var(--success)' }}>
-                {account.summary.debt.toLocaleString('uk-UA')} ₴
-              </div>
-            </div>
-            <div className="card">
-              <div className="stat-label">Сплачено</div>
-              <div className="stat-value">{account.summary.totalPaid.toLocaleString('uk-UA')} ₴</div>
-            </div>
+            <StatCard label="Борг" value={formatMoney(account.summary.debt)} tone={account.summary.debt > 0 ? 'danger' : 'success'} />
+            <StatCard label="Сплачено" value={formatMoney(account.summary.totalPaid)} />
           </div>
-          <div className="card">
-            <h2 style={{ marginBottom: '1rem' }}>Нарахування</h2>
-            <ul style={{ listStyle: 'none', display: 'grid', gap: '0.75rem' }}>
-              {account.lines.map((line) => (
-                <li key={line.id} style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+
+          {account.timeline && account.timeline.length > 0 && (
+            <div className="card" style={{ marginBottom: '1rem' }}>
+              <h2 style={{ marginBottom: '0.75rem', fontSize: '1.1rem' }}>Історія рахунку</h2>
+              <ul style={{ listStyle: 'none', display: 'grid', gap: '0.65rem' }}>
+                {account.timeline.slice(0, 30).map((ev) => (
+                  <li
+                    key={ev.id}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                      borderBottom: '1px solid var(--border)',
+                      paddingBottom: 8,
+                      fontSize: '0.9rem',
+                    }}
+                  >
                     <div>
-                      <div style={{ fontWeight: 600 }}>{line.title}</div>
-                      <div style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>
-                        {line.period} · {STATUS_LABELS[line.status] ?? line.status}
+                      <Badge tone={ev.kind === 'payment' ? 'success' : 'primary'}>
+                        {ev.kind === 'payment' ? 'Платіж' : 'Нарахування'}
+                      </Badge>{' '}
+                      <strong>{ev.title}</strong>
+                      <div style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>
+                        {formatDateUk(ev.at)}
                       </div>
                     </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontWeight: 700 }}>
-                        {(line.balance > 0 ? line.balance : line.amount).toLocaleString('uk-UA')} ₴
-                      </div>
+                    <div style={{ fontWeight: 600 }}>{formatMoney(ev.amount)}</div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {transparency?.bankAccounts && transparency.bankAccounts.length > 0 && (
+            <div className="card" id="bank-details" style={{ marginBottom: '1rem' }}>
+              <h2 style={{ marginBottom: '0.75rem', fontSize: '1.1rem' }}>Реквізити для оплати</h2>
+              <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
+                Сплатіть внесок за реквізитами ОСМД. У призначенні платежу вкажіть квартиру.
+              </p>
+              {transparency.bankAccounts.map((b) => (
+                <div key={b.id} style={{ marginBottom: '1rem' }}>
+                  <dl className="bank-details">
+                    <dt>Банк</dt>
+                    <dd>{b.bankName}</dd>
+                    <dt>IBAN</dt>
+                    <dd>
+                      {b.iban}{' '}
                       <button
                         type="button"
-                        onClick={() => handleReceipt(line.id)}
-                        style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem', marginTop: '0.25rem' }}
+                        className="btn btn-sm btn-ghost"
+                        onClick={() => copyText('iban', b.iban)}
                       >
-                        PDF
+                        {copied === 'iban' ? 'Скопійовано' : 'Копіювати'}
                       </button>
-                    </div>
-                  </div>
-                </li>
+                    </dd>
+                    {b.description && (
+                      <>
+                        <dt>Опис</dt>
+                        <dd style={{ fontFamily: 'inherit', fontWeight: 500 }}>{b.description}</dd>
+                      </>
+                    )}
+                    {transparency.building?.edrpou && (
+                      <>
+                        <dt>ЄДРПОУ</dt>
+                        <dd>{transparency.building.edrpou}</dd>
+                      </>
+                    )}
+                    <dt>Призначення платежу</dt>
+                    <dd>
+                      {paymentPurpose}{' '}
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-ghost"
+                        onClick={() => copyText('purpose', paymentPurpose)}
+                      >
+                        {copied === 'purpose' ? 'Скопійовано' : 'Копіювати'}
+                      </button>
+                    </dd>
+                  </dl>
+                </div>
               ))}
-            </ul>
+            </div>
+          )}
+
+          <div className="card">
+            <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>Нарахування</h2>
+            {account.lines.length === 0 ? (
+              <EmptyState
+                title="Нарахувань ще немає"
+                description="Коли правління згенерує внески, вони з’являться тут."
+              />
+            ) : (
+              <ul style={{ listStyle: 'none', display: 'grid', gap: '0.75rem' }}>
+                {account.lines.map((line) => (
+                  <li key={line.id} style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{line.title}</div>
+                        <div style={{ color: 'var(--muted)', fontSize: '0.85rem', display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                          <span>{line.period}</span>
+                          <Badge
+                            tone={
+                              line.status === 'paid'
+                                ? 'success'
+                                : line.status === 'overdue'
+                                  ? 'danger'
+                                  : 'muted'
+                            }
+                          >
+                            {STATUS_LABELS[line.status] ?? line.status}
+                          </Badge>
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontWeight: 700 }}>
+                          {formatMoney(line.balance > 0 ? line.balance : line.amount)}
+                        </div>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-ghost"
+                          onClick={() => handleReceipt(line.id)}
+                          style={{ marginTop: '0.25rem' }}
+                        >
+                          PDF
+                        </button>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </section>
       )}
 
-      {tab === 'building' && transparency && (
+      {tab === 'building' && !loading && transparency && (
         <section>
           <div className="grid-2" style={{ marginBottom: '1rem' }}>
-            <div className="card">
-              <div className="stat-label">Витрати ОСМД</div>
-              <div className="stat-value" style={{ color: 'var(--danger)' }}>
-                {transparency.expenseSummary.total.toLocaleString('uk-UA')} ₴
-              </div>
-            </div>
-            <div className="card">
-              <div className="stat-label">Надходження</div>
-              <div className="stat-value" style={{ color: 'var(--success)' }}>
-                {transparency.cashFlow.totalIncome.toLocaleString('uk-UA')} ₴
-              </div>
-            </div>
+            <StatCard label="Витрати ОСМД" value={formatMoney(transparency.expenseSummary.total)} tone="danger" />
+            <StatCard label="Надходження" value={formatMoney(transparency.cashFlow.totalIncome)} tone="success" />
           </div>
           <div className="card" style={{ marginBottom: '1rem' }}>
-            <h2 style={{ marginBottom: '1rem' }}>По категоріях</h2>
-            <ul style={{ listStyle: 'none', display: 'grid', gap: '0.5rem' }}>
-              {transparency.expenseSummary.byCategory.map((c) => (
-                <li key={c.name} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>{c.name}</span>
-                  <span style={{ fontWeight: 600 }}>{c.total.toLocaleString('uk-UA')} ₴</span>
-                </li>
-              ))}
-            </ul>
+            <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>По категоріях</h2>
+            {transparency.expenseSummary.byCategory.length === 0 ? (
+              <p style={{ color: 'var(--muted)' }}>Немає даних</p>
+            ) : (
+              <ul style={{ listStyle: 'none', display: 'grid', gap: '0.5rem' }}>
+                {transparency.expenseSummary.byCategory.map((c) => (
+                  <li key={c.name} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>{c.name}</span>
+                    <span style={{ fontWeight: 600 }}>{formatMoney(c.total)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
           <div className="card">
-            <h2 style={{ marginBottom: '1rem' }}>Баланс фондів</h2>
+            <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>Баланс фондів</h2>
             <ul style={{ listStyle: 'none', display: 'grid', gap: '0.5rem' }}>
               {transparency.cashFlow.fundBalances.map((f) => (
                 <li key={f.fundName} style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span>{f.fundName}</span>
-                  <span style={{ fontWeight: 600 }}>{f.balance.toLocaleString('uk-UA')} ₴</span>
+                  <span style={{ fontWeight: 600 }}>{formatMoney(f.balance)}</span>
                 </li>
               ))}
             </ul>
@@ -309,12 +603,12 @@ export default function ResidentPage() {
         </section>
       )}
 
-      {tab === 'communications' && (
+      {tab === 'communications' && !loading && (
         <section>
-          {commsMessage && <p style={{ color: 'var(--success)', marginBottom: '1rem' }}>{commsMessage}</p>}
+          {commsMessage && <p className="success-banner">{commsMessage}</p>}
 
           <div className="card" style={{ marginBottom: '1rem' }}>
-            <h2 style={{ marginBottom: '1rem' }}>Оголошення</h2>
+            <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>Оголошення</h2>
             {announcements.length === 0 ? (
               <p style={{ color: 'var(--muted)' }}>Оголошень немає</p>
             ) : (
@@ -324,7 +618,7 @@ export default function ResidentPage() {
                     <div style={{ fontWeight: 600 }}>{a.isPinned && '📌 '}{a.title}</div>
                     <p style={{ color: 'var(--muted)', fontSize: '0.9rem', margin: '0.25rem 0' }}>{a.body}</p>
                     <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
-                      {new Date(a.createdAt).toLocaleDateString('uk-UA')}
+                      {formatDateUk(a.createdAt)}
                     </div>
                   </li>
                 ))}
@@ -333,7 +627,7 @@ export default function ResidentPage() {
           </div>
 
           <div className="card" style={{ marginBottom: '1rem' }}>
-            <h2 style={{ marginBottom: '1rem' }}>Опитування</h2>
+            <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>Опитування</h2>
             {polls.filter((p) => p.isActive).length === 0 ? (
               <p style={{ color: 'var(--muted)' }}>Активних опитувань немає</p>
             ) : (
@@ -352,21 +646,36 @@ export default function ResidentPage() {
                               width: '100%',
                               textAlign: 'left',
                               background: p.userVote === o.id ? 'var(--primary)' : 'var(--surface-2)',
+                              color: p.userVote === o.id ? '#fff' : 'var(--text)',
                               fontSize: '0.9rem',
                               padding: '0.5rem 0.75rem',
                             }}
                           >
                             {o.text}
-                            {p._count.votes > 0 && (
+                            {(o.voteCount ?? o._count?.votes ?? 0) > 0 && p._count.votes > 0 && (
                               <span style={{ float: 'right', opacity: 0.7 }}>
-                                {Math.round((o._count.votes / p._count.votes) * 100)}%
+                                {o.weightSum != null
+                                  ? `${o.weightSum}`
+                                  : `${Math.round(((o.voteCount ?? o._count?.votes ?? 0) / p._count.votes) * 100)}%`}
                               </span>
                             )}
                           </button>
                         </li>
                       ))}
                     </ul>
-                    {p.userVote && <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '0.25rem' }}>Дякуємо за голос!</p>}
+                    {p.stats && (
+                      <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '0.35rem' }}>
+                        Явка {p.stats.participationPercent}%
+                        {p.stats.quorumPercent != null
+                          ? ` · кворум ${p.stats.quorumPercent}% (${p.stats.quorumMet ? 'є' : 'немає'})`
+                          : ''}
+                      </p>
+                    )}
+                    {p.userVote && (
+                      <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '0.25rem' }}>
+                        Дякуємо за голос!
+                      </p>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -374,18 +683,18 @@ export default function ResidentPage() {
           </div>
 
           <form onSubmit={handleRequest} className="card" style={{ display: 'grid', gap: '1rem', marginBottom: '1rem' }}>
-            <h2>Нова заявка</h2>
+            <h2 style={{ fontSize: '1.1rem' }}>Нова заявка</h2>
             <div>
-              <label>Тема</label>
-              <input value={reqTitle} onChange={(e) => setReqTitle(e.target.value)} required />
+              <label htmlFor="req-title">Тема</label>
+              <input id="req-title" value={reqTitle} onChange={(e) => setReqTitle(e.target.value)} required />
             </div>
             <div>
-              <label>Опис</label>
-              <textarea rows={3} value={reqDesc} onChange={(e) => setReqDesc(e.target.value)} required />
+              <label htmlFor="req-desc">Опис</label>
+              <textarea id="req-desc" rows={3} value={reqDesc} onChange={(e) => setReqDesc(e.target.value)} required />
             </div>
             <div>
-              <label>Категорія</label>
-              <select value={reqCategory} onChange={(e) => setReqCategory(e.target.value)}>
+              <label htmlFor="req-cat">Категорія</label>
+              <select id="req-cat" value={reqCategory} onChange={(e) => setReqCategory(e.target.value)}>
                 <option value="sanitary">Сантехніка</option>
                 <option value="electric">Електрика</option>
                 <option value="cleaning">Прибирання</option>
@@ -397,13 +706,13 @@ export default function ResidentPage() {
 
           {requests.length > 0 && (
             <div className="card">
-              <h2 style={{ marginBottom: '1rem' }}>Мої заявки</h2>
+              <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>Мої заявки</h2>
               <ul style={{ listStyle: 'none', display: 'grid', gap: '0.75rem' }}>
                 {requests.map((r) => (
                   <li key={r.id} style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem' }}>
                     <div style={{ fontWeight: 600 }}>{r.title}</div>
                     <div style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
-                      {REQUEST_STATUS[r.status] ?? r.status} · {new Date(r.createdAt).toLocaleDateString('uk-UA')}
+                      {REQUEST_STATUS[r.status] ?? r.status} · {formatDateUk(r.createdAt)}
                     </div>
                   </li>
                 ))}
@@ -413,11 +722,11 @@ export default function ResidentPage() {
         </section>
       )}
 
-      {tab === 'documents' && transparency && (
+      {tab === 'documents' && !loading && transparency && (
         <section className="card">
-          <h2 style={{ marginBottom: '1rem' }}>Документи ОСМД</h2>
+          <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>Документи ОСМД</h2>
           {transparency.documents.length === 0 ? (
-            <p style={{ color: 'var(--muted)' }}>Публічних документів немає</p>
+            <EmptyState title="Публічних документів немає" />
           ) : (
             <ul style={{ listStyle: 'none', display: 'grid', gap: '0.75rem' }}>
               {transparency.documents.map((d) => (
@@ -435,32 +744,35 @@ export default function ResidentPage() {
         </section>
       )}
 
-      {tab === 'debtors' && transparency?.debtors && (
+      {tab === 'debtors' && !loading && transparency?.debtors && (
         <section className="card">
-          <h2 style={{ marginBottom: '1rem' }}>Боржники ({transparency.debtors.length})</h2>
-          <table style={{ width: '100%', fontSize: '0.9rem', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left' }}>
-                <th style={{ padding: '0.5rem' }}>Кв.</th>
-                <th style={{ padding: '0.5rem' }}>Борг ₴</th>
-                <th style={{ padding: '0.5rem' }}>Статус</th>
-              </tr>
-            </thead>
-            <tbody>
-              {transparency.debtors.map((d) => (
-                <tr key={d.number} style={{ borderBottom: '1px solid var(--border)' }}>
-                  <td style={{ padding: '0.5rem' }}>{d.number}</td>
-                  <td style={{ padding: '0.5rem' }}>{d.debt.toLocaleString('uk-UA')}</td>
-                  <td style={{ padding: '0.5rem', color: d.isOverdue ? 'var(--danger)' : 'var(--muted)' }}>
-                    {d.isOverdue ? 'Прострочено' : 'До сплати'}
-                  </td>
+          <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>
+            Боржники ({transparency.debtors.length})
+          </h2>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Кв.</th>
+                  <th>Борг</th>
+                  <th>Статус</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {transparency.debtors.map((d) => (
+                  <tr key={d.number}>
+                    <td>{d.number}</td>
+                    <td>{formatMoney(d.debt)}</td>
+                    <td style={{ color: d.isOverdue ? 'var(--danger)' : 'var(--muted)' }}>
+                      {d.isOverdue ? 'Прострочено' : 'До сплати'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
-
     </main>
   );
 }

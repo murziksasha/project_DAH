@@ -19,6 +19,15 @@ export enum AccrualDistribution {
   BY_AREA = 'by_area',
   FIXED_PER_APARTMENT = 'fixed_per_apartment',
   MANUAL = 'manual',
+  BY_METER = 'by_meter',
+}
+
+export enum MeterType {
+  COLD_WATER = 'cold_water',
+  HOT_WATER = 'hot_water',
+  HEATING = 'heating',
+  ELECTRICITY = 'electricity',
+  OTHER = 'other',
 }
 
 export enum AccrualLineStatus {
@@ -38,6 +47,21 @@ export enum RequestStatus {
   NEW = 'new',
   IN_PROGRESS = 'in_progress',
   DONE = 'done',
+}
+
+export enum VoteWeightMode {
+  ONE_PER_USER = 'one_per_user',
+  ONE_PER_APARTMENT = 'one_per_apartment',
+  BY_AREA = 'by_area',
+}
+
+export enum JournalEntryType {
+  ACCRUAL = 'accrual',
+  PAYMENT = 'payment',
+  EXPENSE = 'expense',
+  VOID_PAYMENT = 'void_payment',
+  VOID_EXPENSE = 'void_expense',
+  OPENING = 'opening',
 }
 
 export const FUND_LABELS: Record<FundType, { uk: string; ru: string }> = {

@@ -75,21 +75,24 @@ export class UsersService {
     private audit: AuditService,
   ) {}
 
-  async listUsers(query: ListUsersQueryDto) {
+  async listUsers(query: ListUsersQueryDto, tenantId?: string | null) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const search = query.search?.trim();
 
-    const where: Prisma.UserWhereInput = search
-      ? {
-          OR: [
-            { firstName: { contains: search, mode: 'insensitive' } },
-            { lastName: { contains: search, mode: 'insensitive' } },
-            { email: { contains: search, mode: 'insensitive' } },
-            { phone: { contains: search, mode: 'insensitive' } },
-          ],
-        }
-      : {};
+    const where: Prisma.UserWhereInput = {
+      ...(tenantId ? { tenantId } : {}),
+      ...(search
+        ? {
+            OR: [
+              { firstName: { contains: search, mode: 'insensitive' } },
+              { lastName: { contains: search, mode: 'insensitive' } },
+              { email: { contains: search, mode: 'insensitive' } },
+              { phone: { contains: search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
 
     const [total, users] = await Promise.all([
       this.prisma.user.count({ where }),
@@ -118,6 +121,15 @@ export class UsersService {
       throw new BadRequestException('Недозволена роль для створення');
     }
 
+    const actor = await this.prisma.user.findUnique({
+      where: { id: actorId },
+      select: { tenantId: true },
+    });
+    const tenantId =
+      actor?.tenantId ??
+      (await this.prisma.tenant.findFirst({ orderBy: { createdAt: 'asc' } }))?.id ??
+      null;
+
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const user = await this.prisma.user.create({
       data: {
@@ -128,6 +140,7 @@ export class UsersService {
         phone: dto.phone,
         role: dto.role,
         status: UserStatus.active,
+        tenantId,
       },
       select: {
         id: true,
@@ -199,6 +212,10 @@ export class UsersService {
       data.refreshToken = null;
     }
 
+    const shouldRevokeSessions = Boolean(dto.password) ||
+      (dto.email !== undefined && dto.email !== user.email) ||
+      dto.status === UserStatus.blocked;
+
     if (dto.role !== undefined && dto.role !== UserRole.resident && user.role === UserRole.resident) {
       await syncUserApartments(this.prisma, id, []);
     }
@@ -210,6 +227,13 @@ export class UsersService {
     await this.prisma.$transaction(async (tx) => {
       if (Object.keys(data).length) {
         await tx.user.update({ where: { id }, data });
+      }
+
+      if (shouldRevokeSessions) {
+        await tx.authSession.updateMany({
+          where: { userId: id, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
       }
 
       if (dto.apartmentIds !== undefined && nextRole === UserRole.resident) {
@@ -264,10 +288,17 @@ export class UsersService {
       throw new BadRequestException('Неможливо заблокувати супер-адміністратора');
     }
 
-    const updated = await this.prisma.user.update({
-      where: { id },
-      data: { status: UserStatus.blocked, refreshToken: null },
-      select: { id: true, email: true, status: true },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.user.update({
+        where: { id },
+        data: { status: UserStatus.blocked, refreshToken: null },
+        select: { id: true, email: true, status: true },
+      });
+      await tx.authSession.updateMany({
+        where: { userId: id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      return row;
     });
 
     await this.audit.log({

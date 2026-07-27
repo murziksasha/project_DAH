@@ -17,6 +17,7 @@ const config: Config = {
   testEnvironment: 'node',
   moduleNameMapper: {
     '^@dah/shared$': '<rootDir>/../../packages/shared/src/index.ts',
+    '^@dah/money$': '<rootDir>/../../packages/money/src/index.ts',
   },
 };
 

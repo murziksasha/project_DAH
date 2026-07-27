@@ -4,14 +4,17 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AccrualDistribution, AccrualLineStatus, Prisma } from '@prisma/client';
+import { AccrualDistribution, AccrualLineStatus, JournalEntryType, Prisma } from '@prisma/client';
 import {
   calcAccrualLineAmount,
   validateAccrualDistribution,
 } from '../../common/utils/accrual-distribution';
 import { roundMoney } from '../../common/utils/money';
+import { createZipStore } from '../../common/utils/zip-store';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { JournalService } from '../journal/journal.service';
+import { MailService } from '../mail/mail.service';
 import { CreateAccrualDto } from './dto/create-accrual.dto';
 import { CreateAccrualTemplateDto } from './dto/create-accrual-template.dto';
 import { ReceiptPdfService } from './receipt-pdf.service';
@@ -22,10 +25,22 @@ export class AccrualsService {
     private prisma: PrismaService,
     private receiptPdf: ReceiptPdfService,
     private audit: AuditService,
+    private mail: MailService,
+    private journal: JournalService,
   ) {}
 
-  listTemplates() {
+  listTemplates(buildingId?: string, tenantId?: string | null) {
     return this.prisma.accrualTemplate.findMany({
+      where: buildingId
+        ? {
+            fund: {
+              buildingId,
+              ...(tenantId ? { building: { tenantId } } : {}),
+            },
+          }
+        : tenantId
+          ? { fund: { building: { tenantId } } }
+          : undefined,
       include: { fund: true },
       orderBy: { name: 'asc' },
     });
@@ -47,9 +62,35 @@ export class AccrualsService {
     });
   }
 
-  listAccruals(period?: string) {
+  async deleteTemplate(id: string) {
+    const tpl = await this.prisma.accrualTemplate.findUnique({
+      where: { id },
+      include: { _count: { select: { accruals: true } } },
+    });
+    if (!tpl) throw new NotFoundException('Шаблон не знайдено');
+    if (tpl._count.accruals > 0) {
+      // soft-deactivate if used
+      return this.prisma.accrualTemplate.update({
+        where: { id },
+        data: { isActive: false },
+        include: { fund: true },
+      });
+    }
+    await this.prisma.accrualTemplate.delete({ where: { id } });
+    return { id, deleted: true };
+  }
+
+  listAccruals(period?: string, buildingId?: string, tenantId?: string | null) {
     const where: Prisma.AccrualWhereInput = {};
     if (period) where.period = period;
+    if (buildingId) {
+      where.fund = {
+        buildingId,
+        ...(tenantId ? { building: { tenantId } } : {}),
+      };
+    } else if (tenantId) {
+      where.fund = { building: { tenantId } };
+    }
 
     return this.prisma.accrual.findMany({
       where,
@@ -78,18 +119,47 @@ export class AccrualsService {
     });
   }
 
-  async previewAmounts(dto: Pick<CreateAccrualDto, 'distribution' | 'rate' | 'fixedAmount' | 'manualLines'>) {
+  async previewAmounts(
+    dto: Pick<
+      CreateAccrualDto,
+      'distribution' | 'rate' | 'fixedAmount' | 'manualLines' | 'fundId' | 'period' | 'meterType'
+    >,
+  ) {
+    let buildingId: string | undefined;
+    if (dto.fundId) {
+      const fund = await this.prisma.fund.findUnique({ where: { id: dto.fundId } });
+      buildingId = fund?.buildingId;
+    }
     const apartments = await this.prisma.apartment.findMany({
+      where: buildingId ? { buildingId } : undefined,
       orderBy: [{ entrance: 'asc' }, { number: 'asc' }],
     });
+    const consumptionByApt =
+      dto.distribution === AccrualDistribution.by_meter && dto.period
+        ? await this.meterConsumptionByApartment(
+            apartments.map((a) => a.id),
+            dto.period,
+            dto.meterType,
+          )
+        : new Map<string, number>();
 
-    return apartments.map((apt) => ({
-      apartmentId: apt.id,
-      number: apt.number,
-      entrance: apt.entrance,
-      area: apt.area,
-      amount: calcAccrualLineAmount(apt, dto.distribution, dto.rate, dto.fixedAmount, dto.manualLines),
-    }));
+    return apartments.map((apt) => {
+      const meterConsumption = consumptionByApt.get(apt.id) ?? 0;
+      return {
+        apartmentId: apt.id,
+        number: apt.number,
+        entrance: apt.entrance,
+        area: apt.area,
+        meterConsumption,
+        amount: calcAccrualLineAmount(
+          { ...apt, meterConsumption },
+          dto.distribution,
+          dto.rate,
+          dto.fixedAmount,
+          dto.manualLines,
+        ),
+      };
+    });
   }
 
   async createAccrual(dto: CreateAccrualDto, userId: string) {
@@ -105,8 +175,18 @@ export class AccrualsService {
 
     this.assertValidDistribution(dto.distribution, dto.rate, dto.fixedAmount, dto.manualLines);
 
-    const apartments = await this.prisma.apartment.findMany();
+    const apartments = await this.prisma.apartment.findMany({
+      where: { buildingId: fund.buildingId },
+    });
     const dueDate = dto.dueDate ? new Date(dto.dueDate) : this.defaultDueDate(dto.period);
+    const consumptionByApt =
+      dto.distribution === AccrualDistribution.by_meter
+        ? await this.meterConsumptionByApartment(
+            apartments.map((a) => a.id),
+            dto.period,
+            dto.meterType,
+          )
+        : new Map<string, number>();
 
     let lines: { apartmentId: string; amount: number }[];
 
@@ -119,7 +199,13 @@ export class AccrualsService {
       lines = apartments
         .map((apt) => ({
           apartmentId: apt.id,
-          amount: calcAccrualLineAmount(apt, dto.distribution, dto.rate, dto.fixedAmount, dto.manualLines),
+          amount: calcAccrualLineAmount(
+            { ...apt, meterConsumption: consumptionByApt.get(apt.id) ?? 0 },
+            dto.distribution,
+            dto.rate,
+            dto.fixedAmount,
+            dto.manualLines,
+          ),
         }))
         .filter((l) => l.amount > 0);
     }
@@ -127,6 +213,9 @@ export class AccrualsService {
     if (lines.length === 0) {
       throw new BadRequestException('Немає рядків для нарахування');
     }
+
+    const total = roundMoney(lines.reduce((s, l) => s + l.amount, 0));
+    const buildingId = apartments[0]?.buildingId ?? fund.buildingId;
 
     const accrual = await this.prisma.$transaction(async (tx) => {
       const created = await tx.accrual.create({
@@ -148,6 +237,31 @@ export class AccrualsService {
         })),
       });
 
+      await this.journal.write(
+        {
+          type: JournalEntryType.accrual,
+          refType: 'Accrual',
+          refId: created.id,
+          description: `${dto.title} (${dto.period})`,
+          buildingId,
+          fundId: dto.fundId,
+          createdById: userId,
+          lines: [
+            {
+              account: 'receivable',
+              debit: total,
+              fundId: dto.fundId,
+            },
+            {
+              account: 'fund_balance',
+              credit: total,
+              fundId: dto.fundId,
+            },
+          ],
+        },
+        tx,
+      );
+
       return created;
     });
 
@@ -163,6 +277,18 @@ export class AccrualsService {
         total: lines.reduce((s, l) => s + l.amount, 0),
       },
     });
+
+    const aptIds = lines.map((l) => l.apartmentId);
+    const amountByApt = new Map(lines.map((l) => [l.apartmentId, l.amount]));
+    const numberById = new Map(apartments.map((a) => [a.id, a.number]));
+    const dueLabel = dueDate.toLocaleDateString('uk-UA');
+    void this.mail.notifyResidentsOfApartments(aptIds, 'accrual.created', (apartmentId) => ({
+      title: dto.title,
+      period: dto.period,
+      amount: amountByApt.get(apartmentId),
+      dueDate: dueLabel,
+      apartmentNumber: numberById.get(apartmentId),
+    }));
 
     return this.getAccrual(accrual.id);
   }
@@ -211,10 +337,13 @@ export class AccrualsService {
     const totalPaidOnLines = lines.reduce((s, l) => s + l.paidAmount, 0);
     const debt = lines.reduce((s, l) => s + Math.max(0, l.balance), 0);
 
-    const advance = apartment.payments.reduce((s, p) => {
+    const advanceStored = roundMoney(Number(apartment.advanceBalance));
+    const advanceFromPayments = apartment.payments.reduce((s, p) => {
       const allocated = p.allocations.reduce((a, x) => a + Number(x.amount), 0);
       return s + Math.max(0, Number(p.amount) - allocated);
     }, 0);
+
+    const timeline = this.buildTimeline(apartment);
 
     return {
       apartment: {
@@ -222,13 +351,15 @@ export class AccrualsService {
         number: apartment.number,
         entrance: apartment.entrance,
         area: apartment.area,
+        buildingId: apartment.buildingId,
         buildingName: apartment.building.name,
       },
       summary: {
         totalAccrued: roundMoney(totalAccrued),
         totalPaid: roundMoney(totalPaidOnLines),
         debt: roundMoney(debt),
-        advance: roundMoney(advance),
+        advance: advanceStored,
+        advanceComputed: roundMoney(advanceFromPayments),
       },
       lines,
       payments: apartment.payments.map((p) => {
@@ -243,6 +374,7 @@ export class AccrualsService {
           reference: p.reference,
         };
       }),
+      timeline,
     };
   }
 
@@ -251,6 +383,68 @@ export class AccrualsService {
       throw new ForbiddenException('Квартиру не прив\'язано до облікового запису');
     }
     return this.getApartmentAccount(apartmentId);
+  }
+
+  /** Unified accrual/payment timeline for resident UX. */
+  private buildTimeline(apartment: {
+    accrualLines: Array<{
+      id: string;
+      amount: Prisma.Decimal | number;
+      paidAmount: Prisma.Decimal | number;
+      dueDate: Date | null;
+      createdAt: Date;
+      accrual: { period: string; title: string; fund: { name: string } };
+    }>;
+    payments: Array<{
+      id: string;
+      amount: Prisma.Decimal | number;
+      date: Date;
+      source: string;
+      reference: string | null;
+      allocations: Array<{ amount: Prisma.Decimal | number }>;
+    }>;
+  }) {
+    type Event = {
+      id: string;
+      kind: 'accrual' | 'payment';
+      at: string;
+      title: string;
+      amount: number;
+      meta?: Record<string, unknown>;
+    };
+    const events: Event[] = [];
+
+    for (const line of apartment.accrualLines) {
+      events.push({
+        id: `accrual-${line.id}`,
+        kind: 'accrual',
+        at: line.createdAt.toISOString(),
+        title: `${line.accrual.title} (${line.accrual.period})`,
+        amount: Number(line.amount),
+        meta: {
+          fundName: line.accrual.fund.name,
+          paidAmount: Number(line.paidAmount),
+          dueDate: line.dueDate,
+          lineId: line.id,
+        },
+      });
+    }
+    for (const p of apartment.payments) {
+      events.push({
+        id: `payment-${p.id}`,
+        kind: 'payment',
+        at: p.date.toISOString(),
+        title: p.reference ? `Платіж ${p.reference}` : 'Платіж',
+        amount: Number(p.amount),
+        meta: {
+          source: p.source,
+          allocated: p.allocations.reduce((s, a) => s + Number(a.amount), 0),
+          paymentId: p.id,
+        },
+      });
+    }
+
+    return events.sort((a, b) => (a.at < b.at ? 1 : -1));
   }
 
   async generateReceipt(
@@ -289,6 +483,156 @@ export class AccrualsService {
       lineId: line.id,
       createdAt: line.createdAt,
     });
+  }
+
+  /** ZIP with one PDF receipt per apartment line of an accrual. */
+  async generateAccrualReceiptsZip(accrualId: string): Promise<{ buffer: Buffer; filename: string }> {
+    const accrual = await this.prisma.accrual.findUnique({
+      where: { id: accrualId },
+      include: {
+        fund: true,
+        lines: {
+          include: {
+            apartment: { include: { building: true } },
+          },
+          orderBy: { apartment: { number: 'asc' } },
+        },
+      },
+    });
+    if (!accrual) throw new NotFoundException('Нарахування не знайдено');
+    if (!accrual.lines.length) {
+      throw new BadRequestException('Немає рядків для квитанцій');
+    }
+
+    const files: Array<{ name: string; data: Buffer }> = [];
+    for (const line of accrual.lines) {
+      const amount = Number(line.amount);
+      const paid = Number(line.paidAmount);
+      const pdf = await this.receiptPdf.generate({
+        buildingName: line.apartment.building.name,
+        buildingAddress: line.apartment.building.address,
+        apartmentNumber: line.apartment.number,
+        period: accrual.period,
+        title: accrual.title,
+        fundName: accrual.fund.name,
+        amount,
+        paidAmount: paid,
+        balance: roundMoney(amount - paid),
+        dueDate: line.dueDate?.toISOString() ?? null,
+        lineId: line.id,
+        createdAt: line.createdAt,
+      });
+      const safeNum = String(line.apartment.number).replace(/[^\w.-]+/g, '_');
+      files.push({
+        name: `kvytantsiia-${accrual.period}-kv-${safeNum}.pdf`,
+        data: pdf,
+      });
+    }
+
+    const buffer = createZipStore(files);
+    const filename = `kvytantsii-${accrual.period}-${accrual.id.slice(-6)}.zip`;
+    return { buffer, filename };
+  }
+
+  /** Print-friendly multi-page PDF (all lines). */
+  async generateAccrualReceiptsPdf(accrualId: string): Promise<{ buffer: Buffer; filename: string }> {
+    const accrual = await this.prisma.accrual.findUnique({
+      where: { id: accrualId },
+      include: {
+        fund: true,
+        lines: {
+          include: {
+            apartment: { include: { building: true } },
+          },
+          orderBy: { apartment: { number: 'asc' } },
+        },
+      },
+    });
+    if (!accrual) throw new NotFoundException('Нарахування не знайдено');
+    if (!accrual.lines.length) {
+      throw new BadRequestException('Немає рядків для квитанцій');
+    }
+
+    const pages = accrual.lines.map((line) => {
+      const amount = Number(line.amount);
+      const paid = Number(line.paidAmount);
+      return {
+        buildingName: line.apartment.building.name,
+        buildingAddress: line.apartment.building.address,
+        apartmentNumber: line.apartment.number,
+        period: accrual.period,
+        title: accrual.title,
+        fundName: accrual.fund.name,
+        amount,
+        paidAmount: paid,
+        balance: roundMoney(amount - paid),
+        dueDate: line.dueDate?.toISOString() ?? null,
+        lineId: line.id,
+        createdAt: line.createdAt,
+      };
+    });
+
+    const buffer = await this.receiptPdf.generateMany(pages);
+    return {
+      buffer,
+      filename: `kvytantsii-${accrual.period}-${accrual.id.slice(-6)}.pdf`,
+    };
+  }
+
+  private async meterConsumptionByApartment(
+    apartmentIds: string[],
+    period: string,
+    meterType?: string,
+  ): Promise<Map<string, number>> {
+    if (!apartmentIds.length) return new Map();
+    const meters = await this.prisma.meter.findMany({
+      where: {
+        apartmentId: { in: apartmentIds },
+        isActive: true,
+        ...(meterType ? { type: meterType as never } : {}),
+      },
+      include: {
+        readings: { where: { period }, take: 1 },
+      },
+    });
+    const map = new Map<string, number>();
+    for (const m of meters) {
+      const c = m.readings[0] ? Number(m.readings[0].consumption) : 0;
+      map.set(m.apartmentId, roundMoney((map.get(m.apartmentId) ?? 0) + c));
+    }
+    return map;
+  }
+
+  /** CSV statement for apartment (export pack). */
+  async exportApartmentStatementCsv(apartmentId: string) {
+    const account = await this.getApartmentAccount(apartmentId);
+    const lines = [
+      'type;date;title;amount;paid;balance;status',
+      ...account.timeline.map((e) => {
+        const amount = e.amount;
+        const meta = e.meta ?? {};
+        return [
+          e.kind,
+          e.at.slice(0, 10),
+          `"${e.title.replace(/"/g, '""')}"`,
+          amount,
+          meta.paidAmount ?? '',
+          e.kind === 'accrual' && typeof meta.paidAmount === 'number'
+            ? roundMoney(amount - Number(meta.paidAmount))
+            : '',
+          '',
+        ].join(';');
+      }),
+      '',
+      `summary;debt;${account.summary.debt}`,
+      `summary;advance;${account.summary.advance}`,
+      `summary;totalAccrued;${account.summary.totalAccrued}`,
+      `summary;totalPaid;${account.summary.totalPaid}`,
+    ];
+    return {
+      filename: `account-kv-${account.apartment.number}.csv`,
+      csv: '\uFEFF' + lines.join('\n'),
+    };
   }
 
   private assertValidDistribution(
