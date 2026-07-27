@@ -8,6 +8,15 @@ import {
   UserStatus,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { existsSync } from 'fs';
+import { resolve } from 'path';
+
+// Optional local .env (CI supplies DATABASE_URL via the environment).
+const envPath = resolve(__dirname, '../../../.env');
+if (existsSync(envPath)) {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  require('dotenv').config({ path: envPath });
+}
 
 const prisma = new PrismaClient();
 
@@ -17,6 +26,12 @@ async function main() {
   if (isProd && process.env.ALLOW_SEED !== '1') {
     throw new Error(
       'Seed заборонено у production. Встановіть ALLOW_SEED=1 лише якщо свідомо перезаписуєте демо-дані.',
+    );
+  }
+
+  if (!process.env.DATABASE_URL) {
+    throw new Error(
+      'DATABASE_URL is required. Set it in the environment or in ../../.env',
     );
   }
 
@@ -31,12 +46,17 @@ async function main() {
   await prisma.pollVote.deleteMany();
   await prisma.pollOption.deleteMany();
   await prisma.poll.deleteMany();
+  await prisma.meterReading.deleteMany();
+  await prisma.meter.deleteMany();
   await prisma.paymentAllocation.deleteMany();
   await prisma.payment.deleteMany();
   await prisma.accrualLine.deleteMany();
   await prisma.accrual.deleteMany();
   await prisma.accrualTemplate.deleteMany();
   await prisma.expense.deleteMany();
+  await prisma.journalLine.deleteMany();
+  await prisma.journalEntry.deleteMany();
+  await prisma.authSession.deleteMany();
   await prisma.document.deleteMany();
   await prisma.supplier.deleteMany();
   await prisma.expenseCategory.deleteMany();

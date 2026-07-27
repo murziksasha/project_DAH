@@ -12,10 +12,10 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:e2e": "jest --config ./test/jest-e2e.json --runInBand",
-    "test:e2e:setup": "cross-env DATABASE_URL=postgresql://dah:dah_secret_change_me@localhost:5432/dah_test prisma migrate deploy",
+    "test:e2e:setup": "prisma migrate deploy",
     "db:migrate": "dotenv -e ../../.env -- prisma migrate deploy",
     "db:migrate:dev": "dotenv -e ../../.env -- prisma migrate dev",
-    "db:seed": "dotenv -e ../../.env -- ts-node prisma/seed.ts",
+    "db:seed": "ts-node prisma/seed.ts",
     "db:super-admin": "dotenv -e ../../.env -- ts-node prisma/create-super-admin.ts",
     "db:generate": "prisma generate"
   },

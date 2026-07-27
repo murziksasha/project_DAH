@@ -86,6 +86,9 @@ describe('Finance + Accruals (e2e)', () => {
       .post('/api/accruals/preview')
       .set('Authorization', `Bearer ${token}`)
       .send({
+        fundId,
+        period: '2026-07',
+        title: 'E2E preview',
         distribution: 'by_area',
         rate: 10,
       });

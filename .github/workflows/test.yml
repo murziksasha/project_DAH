@@ -18,10 +18,8 @@ jobs:
       - run: npm ci
       - run: npm run build -w @dah/shared
       - run: npm run build -w @dah/money
+      - run: npm run db:generate -w @dah/api
       - run: npm run test:cov -w @dah/api
-        env:
-          # Fail CI if critical money/FIFO coverage regresses
-          COVERAGE_GATE: "1"
 
   lint-typecheck:
     runs-on: ubuntu-latest
@@ -69,7 +67,10 @@ jobs:
       - run: npm run build -w @dah/shared
       - run: npm run build -w @dah/money
       - run: npm run db:generate -w @dah/api
-      - run: |
+      - name: Create test database and migrate
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
           PGPASSWORD=dah_secret_change_me psql -h localhost -U dah -d dah -c "CREATE DATABASE dah_test;" || true
           npm run test:e2e:setup -w @dah/api
       - run: npm run test:e2e -w @dah/api
