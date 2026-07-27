@@ -13,6 +13,9 @@ import {
 
 export default function ResidentSecurityPage() {
   const [emailNotify, setEmailNotify] = useState(true);
+  const [phone, setPhone] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newPassword2, setNewPassword2] = useState('');
@@ -33,12 +36,21 @@ export default function ResidentSecurityPage() {
       return;
     }
     try {
-      const [s, p] = await Promise.all([
+      const [s, p, profile] = await Promise.all([
         apiFetch<{ emailNotifyEnabled: boolean }>('/auth/2fa/status', { token }),
         getPushSubscriptionStatus(),
+        apiFetch<{
+          phone: string | null;
+          firstName: string;
+          lastName: string;
+          emailNotifyEnabled?: boolean;
+        }>('/auth/profile', { token }),
       ]);
       setEmailNotify(s.emailNotifyEnabled);
       setPushStatus(p);
+      setPhone(profile.phone ?? '');
+      setFirstName(profile.firstName);
+      setLastName(profile.lastName);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Помилка');
     }
@@ -62,6 +74,53 @@ export default function ResidentSecurityPage() {
       setMessage(next ? 'Email увімкнено' : 'Email вимкнено');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Помилка');
+    }
+  }
+
+  async function saveProfile(e: FormEvent) {
+    e.preventDefault();
+    const token = getToken();
+    if (!token) return;
+    setLoading(true);
+    setError('');
+    try {
+      const updated = await apiFetch<{
+        firstName: string;
+        lastName: string;
+        phone: string | null;
+        email: string;
+        role: string;
+        id: string;
+      }>('/auth/profile', {
+        method: 'PATCH',
+        token,
+        body: JSON.stringify({
+          firstName,
+          lastName,
+          phone: phone.trim() || null,
+        }),
+      });
+      setMessage('Профіль збережено');
+      const prev = localStorage.getItem('dah_user');
+      if (prev) {
+        try {
+          const u = JSON.parse(prev) as Record<string, unknown>;
+          localStorage.setItem(
+            'dah_user',
+            JSON.stringify({
+              ...u,
+              firstName: updated.firstName,
+              lastName: updated.lastName,
+            }),
+          );
+        } catch {
+          /* ignore */
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Помилка');
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -91,9 +150,38 @@ export default function ResidentSecurityPage() {
 
   return (
     <main>
-      <PageHeader title="Безпека" description="Пароль і сповіщення" />
+      <PageHeader title="Безпека" description="Профіль, телефон для SMS-входу, пароль" />
       {error && <p className="error">{error}</p>}
       {message && <p className="success-banner">{message}</p>}
+
+      <section className="card" style={{ marginBottom: '1rem' }}>
+        <h2 style={{ fontSize: '1.05rem', marginBottom: '0.75rem' }}>Профіль і телефон</h2>
+        <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+          Телефон потрібен для входу по SMS (якщо увімкнено на сервері).
+        </p>
+        <form onSubmit={saveProfile} style={{ display: 'grid', gap: '0.75rem' }}>
+          <div>
+            <label>Імʼя</label>
+            <input value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
+          </div>
+          <div>
+            <label>Прізвище</label>
+            <input value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+          </div>
+          <div>
+            <label>Телефон</label>
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+380501112233"
+            />
+          </div>
+          <button type="submit" disabled={loading}>
+            Зберегти профіль
+          </button>
+        </form>
+      </section>
 
       <section className="card" style={{ marginBottom: '1rem' }}>
         <h2 style={{ fontSize: '1.05rem', marginBottom: '0.75rem' }}>Зміна пароля</h2>

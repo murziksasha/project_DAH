@@ -1,5 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsDateString, IsOptional, IsString, MinLength } from 'class-validator';
+import { VoteWeightMode } from '@prisma/client';
+import {
+  IsArray,
+  IsDateString,
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+  MinLength,
+} from 'class-validator';
 
 export class CreatePollDto {
   @ApiProperty()
@@ -16,4 +27,16 @@ export class CreatePollDto {
   @IsOptional()
   @IsDateString()
   endsAt?: string;
+
+  @ApiPropertyOptional({ enum: VoteWeightMode, default: VoteWeightMode.one_per_user })
+  @IsOptional()
+  @IsEnum(VoteWeightMode)
+  voteWeight?: VoteWeightMode;
+
+  @ApiPropertyOptional({ description: 'Quorum percent of eligible weight (0-100)' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  quorumPercent?: number;
 }

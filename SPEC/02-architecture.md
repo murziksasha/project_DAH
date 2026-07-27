@@ -77,18 +77,42 @@ Layouts не використовують server-side auth (middleware вимк�
 
 | Модуль | Prefix | Відповідальність |
 |--------|--------|------------------|
-| auth | `/api/auth` | JWT, реєстрація, login |
-| building | `/api/building` | Будинок, квартири, налаштування |
+| auth | `/api/auth` | JWT, реєстрація, login, sessions |
+| building | `/api/building` | Будинки (multi), квартири, налаштування |
 | finance | `/api/finance` | Фонди, витрати, постачальники, звіти |
-| accruals | `/api/accruals` | Нарахування, квитанції PDF |
-| payments | `/api/payments` | Платежі, FIFO, боржники |
+| accruals | `/api/accruals` | Нарахування, квитанції PDF, timeline |
+| payments | `/api/payments` | Платежі, FIFO, боржники, online webhook |
+| journal | `/api/journal` | Immutable ledger + reconcile |
 | documents | `/api/documents` | Публічні документи ОСМД |
 | transparency | `/api/transparency` | Дашборд прозорості |
-| communications | `/api/communications` | Оголошення, заявки, опитування |
+| communications | `/api/communications` | Оголошення, заявки, опитування (вага/кворум) |
 | notifications | `/api/notifications` | Web Push підписки |
 | audit | `/api/audit` | Журнал аудиту |
 | files | `/api/files` | Завантаження в MinIO |
-| health | `/api/health` | Health check |
+| health | `/api/health` | Health check (DB/Redis/MinIO/backup) |
+
+### Shared packages (v1.0)
+
+| Package | Призначення |
+|---------|-------------|
+| `@dah/shared` | enums, permissions, labels |
+| `@dah/money` | minor units arithmetic |
+| `@dah/api-client` | shared TS API types |
+
+### Multi-building
+
+Один **tenant** (юридичне ОСББ) = **N будинків**. Клієнт передає `buildingId` (query/body); web switcher зберігає вибір у `localStorage`.
+
+### Multi-tenant (v1.5+)
+
+| Сутність | Поле |
+|----------|------|
+| `Tenant` | name, slug, isActive |
+| `Building` | `tenantId` (обовʼязково) |
+| `User` | `tenantId` (null = platform `super_admin`) |
+
+JWT містить `tenantId`. Не-super_admin бачить лише свої buildings/apartments.  
+`GET/POST /tenants` — лише super_admin (`/admin/tenants`).
 
 ## Ключові утиліти (бізнес-логіка)
 

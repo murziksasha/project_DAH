@@ -1,6 +1,8 @@
 # DAH — платформа управління ОСМД
 
-Self-hosted аналог [ДАХ](https://dah-online.com/) для одного ОСМД/ОСББ: фінанси, внески, прозорість для мешканців, PWA замість нативного застосунку.
+**v1.0.0** — self-hosted платформа для ОСМД/ОСББ: фінанси, внески, прозорість, PWA, multi-building.
+
+Self-hosted аналог [ДАХ](https://dah-online.com/) для одного ОСББ (один або кілька будинків).
 
 ## Швидкий старт (Docker)
 
@@ -70,17 +72,14 @@ npm run backup                              # швидкий dump БД
 ./infra/scripts/backup.sh                   # БД + файли MinIO
 ```
 
-## MVP roadmap
+## Roadmap
 
-- [x] Фаза 0: scaffold, Docker, auth, seed
-- [x] Фаза 1: CRUD витрат + MinIO
-- [x] Фаза 2: нарахування, лицеві рахунки, квитанції PDF
-- [x] Фаза 3: платежі, розноска FIFO, звіти (боржники)
-- [x] Фаза 4: прозорість жильця (дашборд, документи, боржники)
-- [x] Фаза 5: комунікації + Web Push + PWA
-- [x] Фаза 6: backup, аудит, HTTPS, deploy docs
-- [x] Фаза 7: тестування (Jest unit/e2e, Playwright, CI)
-- [x] Фаза 8: документація (SPEC/)
+- [x] MVP фази 0–8 (див. SPEC/11-roadmap.md)
+- [x] **v1.0–1.5.1** план глибокого поліпшення — **завершено**  
+  (sessions, journal, multi-building, meters, export, SMS, Diia mock, multi-tenant + full scope)
+
+Поточна версія: **1.5.1**. Деталі: [SPEC/11-roadmap.md](SPEC/11-roadmap.md), [CHANGELOG.md](CHANGELOG.md).  
+Оновлення з 0.9: [docs/UPGRADE-0.9-to-1.0.md](docs/UPGRADE-0.9-to-1.0.md)
 
 ## Тестування
 

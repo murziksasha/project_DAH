@@ -47,9 +47,15 @@ async function main() {
   await prisma.resident.deleteMany();
   await prisma.apartment.deleteMany();
   await prisma.building.deleteMany();
+  await prisma.tenant.deleteMany();
+
+  const tenant = await prisma.tenant.create({
+    data: { name: buildingName, slug: 'default' },
+  });
 
   const building = await prisma.building.create({
     data: {
+      tenantId: tenant.id,
       name: buildingName,
       address: 'м. Київ, вул. Прикладна, 1',
       edrpou: '12345678',
@@ -159,6 +165,7 @@ async function main() {
       lastName: 'Адміністратор',
       role: UserRole.super_admin,
       status: UserStatus.active,
+      tenantId: null,
     },
   });
 
@@ -170,6 +177,7 @@ async function main() {
       lastName: 'Петренко',
       role: UserRole.chairman,
       status: UserStatus.active,
+      tenantId: tenant.id,
     },
   });
 
@@ -181,6 +189,7 @@ async function main() {
       lastName: 'Коваленко',
       role: UserRole.accountant,
       status: UserStatus.active,
+      tenantId: tenant.id,
     },
   });
 
@@ -192,6 +201,7 @@ async function main() {
       lastName: 'Мельник',
       role: UserRole.auditor,
       status: UserStatus.active,
+      tenantId: tenant.id,
     },
   });
 
@@ -203,6 +213,7 @@ async function main() {
       lastName: 'Шевченко',
       role: UserRole.resident,
       status: UserStatus.active,
+      tenantId: tenant.id,
       apartmentId: apartments[0].id,
       apartmentLinks: {
         create: { apartmentId: apartments[0].id, isPrimary: true },

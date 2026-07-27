@@ -36,6 +36,7 @@ export function getNavGroups(role: string, isInitialized = true): NavGroup[] {
   if (role === 'super_admin') {
     const items: NavItem[] = [
       { href: '/admin/setup', label: 'Майстер налаштування' },
+      { href: '/admin/tenants', label: 'ОСББ (tenants)' },
       { href: '/admin/organization', label: 'Організація' },
       instructionsItem(role),
     ];
@@ -49,6 +50,7 @@ export function getNavGroups(role: string, isInitialized = true): NavGroup[] {
         label: 'Кабінет',
         items: [
           { href: '/resident', label: 'Мій рахунок' },
+          { href: '/resident/meters', label: 'Лічильники' },
           { href: '/resident/security', label: 'Безпека' },
           instructionsItem(role),
         ],
@@ -82,6 +84,7 @@ export function getNavGroups(role: string, isInitialized = true): NavGroup[] {
         { href: '/admin/accruals', label: 'Нарахування' },
         { href: '/admin/accruals/list', label: 'Історія нарахувань' },
         { href: '/admin/payments', label: 'Платежі' },
+        { href: '/admin/meters', label: 'Лічильники' },
       );
     } else {
       finance.push(

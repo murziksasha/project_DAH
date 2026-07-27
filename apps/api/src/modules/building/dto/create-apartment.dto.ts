@@ -2,6 +2,11 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsInt, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreateApartmentDto {
+  @ApiPropertyOptional({ description: 'Target building (defaults to first)' })
+  @IsOptional()
+  @IsString()
+  buildingId?: string;
+
   @ApiProperty()
   @IsString()
   number!: string;

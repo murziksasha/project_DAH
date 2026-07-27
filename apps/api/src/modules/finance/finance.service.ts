@@ -3,9 +3,17 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { JournalEntryType, Prisma } from '@prisma/client';
+import { resolveBuildingId } from '../../common/utils/building-scope';
+import { bomCsv, toCsv } from '../../common/utils/csv-export';
+import {
+  viaApartmentTenant,
+  viaBuildingTenant,
+} from '../../common/utils/tenant-scope';
+import { createZipStore } from '../../common/utils/zip-store';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { JournalService } from '../journal/journal.service';
 import { StorageService } from '../files/storage.service';
 import { PaymentsService } from '../payments/payments.service';
 import { BoardReportPdfService } from './board-report-pdf.service';
@@ -20,13 +28,70 @@ export class FinanceService {
     private audit: AuditService,
     private payments: PaymentsService,
     private boardPdf: BoardReportPdfService,
+    private journal: JournalService,
   ) {}
 
-  listFunds() {
+  listFunds(buildingId?: string, tenantId?: string | null) {
     return this.prisma.fund.findMany({
+      where: buildingId
+        ? { buildingId, ...viaBuildingTenant(tenantId) }
+        : viaBuildingTenant(tenantId),
       include: { bankAccount: true },
       orderBy: { name: 'asc' },
     });
+  }
+
+  async createFund(
+    dto: {
+      name: string;
+      type: string;
+      openingBalance?: number;
+      bankAccountId?: string | null;
+      buildingId?: string;
+    },
+    userId: string,
+    tenantId?: string | null,
+  ) {
+    const buildingId = await resolveBuildingId(this.prisma, dto.buildingId, tenantId);
+    if (dto.bankAccountId) {
+      const ba = await this.prisma.bankAccount.findUnique({ where: { id: dto.bankAccountId } });
+      if (!ba || ba.buildingId !== buildingId) {
+        throw new BadRequestException('Банківський рахунок не знайдено для цього будинку');
+      }
+    }
+    const created = await this.prisma.fund.create({
+      data: {
+        buildingId,
+        name: dto.name.trim(),
+        type: dto.type as 'maintenance' | 'capital_repair' | 'special',
+        openingBalance: dto.openingBalance ?? 0,
+        bankAccountId: dto.bankAccountId || null,
+      },
+      include: { bankAccount: true },
+    });
+    await this.audit.log({
+      userId,
+      action: 'fund.created',
+      entityType: 'Fund',
+      entityId: created.id,
+      payload: { name: created.name, type: created.type, buildingId },
+    });
+    if (Number(created.openingBalance) !== 0) {
+      await this.journal.write({
+        type: JournalEntryType.opening,
+        refType: 'Fund',
+        refId: created.id,
+        description: `Початковий залишок: ${created.name}`,
+        buildingId,
+        fundId: created.id,
+        createdById: userId,
+        lines: [
+          { account: 'cash', debit: Number(created.openingBalance), fundId: created.id },
+          { account: 'fund_balance', credit: Number(created.openingBalance), fundId: created.id },
+        ],
+      });
+    }
+    return created;
   }
 
   async updateFund(
@@ -63,21 +128,26 @@ export class FinanceService {
     return updated;
   }
 
-  listBankAccounts() {
-    return this.prisma.bankAccount.findMany({ orderBy: { createdAt: 'asc' } });
+  listBankAccounts(buildingId?: string, tenantId?: string | null) {
+    return this.prisma.bankAccount.findMany({
+      where: buildingId
+        ? { buildingId, ...viaBuildingTenant(tenantId) }
+        : viaBuildingTenant(tenantId),
+      orderBy: { createdAt: 'asc' },
+    });
   }
 
   async createBankAccount(
-    dto: { bankName: string; iban: string; description?: string },
+    dto: { bankName: string; iban: string; description?: string; buildingId?: string },
     userId: string,
+    tenantId?: string | null,
   ) {
-    const building = await this.prisma.building.findFirst();
-    if (!building) throw new BadRequestException('Будинок не налаштовано');
+    const buildingId = await resolveBuildingId(this.prisma, dto.buildingId ?? undefined, tenantId);
 
     const iban = dto.iban.replace(/\s+/g, '').toUpperCase();
     const created = await this.prisma.bankAccount.create({
       data: {
-        buildingId: building.id,
+        buildingId,
         bankName: dto.bankName.trim(),
         iban,
         description: dto.description?.trim() || null,
@@ -194,17 +264,21 @@ export class FinanceService {
     return { id, deleted: true };
   }
 
-  listSuppliers() {
-    return this.prisma.supplier.findMany({ orderBy: { name: 'asc' } });
+  listSuppliers(buildingId?: string, tenantId?: string | null) {
+    return this.prisma.supplier.findMany({
+      where: buildingId
+        ? { buildingId, ...viaBuildingTenant(tenantId) }
+        : viaBuildingTenant(tenantId),
+      orderBy: { name: 'asc' },
+    });
   }
 
-  async createSupplier(dto: CreateSupplierDto) {
-    const building = await this.prisma.building.findFirst();
-    if (!building) throw new BadRequestException('Будинок не налаштовано');
+  async createSupplier(dto: CreateSupplierDto & { buildingId?: string }, tenantId?: string | null) {
+    const buildingId = await resolveBuildingId(this.prisma, dto.buildingId, tenantId);
 
     return this.prisma.supplier.create({
       data: {
-        buildingId: building.id,
+        buildingId,
         name: dto.name,
         edrpou: dto.edrpou,
         iban: dto.iban,
@@ -236,9 +310,19 @@ export class FinanceService {
     to?: string;
     page?: number;
     limit?: number;
+    buildingId?: string;
+    tenantId?: string | null;
   }) {
     const where: Prisma.ExpenseWhereInput = { isVoided: false };
     if (params?.fundId) where.fundId = params.fundId;
+    if (params?.buildingId) {
+      where.fund = {
+        buildingId: params.buildingId,
+        ...(params.tenantId ? { building: { tenantId: params.tenantId } } : {}),
+      };
+    } else if (params?.tenantId) {
+      where.fund = { building: { tenantId: params.tenantId } };
+    }
     if (params?.from || params?.to) {
       where.date = {};
       if (params.from) where.date.gte = new Date(params.from);
@@ -307,18 +391,39 @@ export class FinanceService {
     const fund = await this.prisma.fund.findUnique({ where: { id: dto.fundId } });
     if (!fund) throw new NotFoundException('Фонд не знайдено');
 
-    const expense = await this.prisma.expense.create({
-      data: {
-        fundId: dto.fundId,
-        categoryId: dto.categoryId,
-        supplierId: dto.supplierId,
-        amount: dto.amount,
-        date: new Date(dto.date),
-        description: dto.description,
-        documentKey: dto.documentKey,
-        createdById: userId,
-      },
-      include: { fund: true, category: true, supplier: true },
+    const expense = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.expense.create({
+        data: {
+          fundId: dto.fundId,
+          categoryId: dto.categoryId,
+          supplierId: dto.supplierId,
+          amount: dto.amount,
+          date: new Date(dto.date),
+          description: dto.description,
+          documentKey: dto.documentKey,
+          createdById: userId,
+        },
+        include: { fund: true, category: true, supplier: true },
+      });
+
+      await this.journal.write(
+        {
+          type: JournalEntryType.expense,
+          refType: 'Expense',
+          refId: created.id,
+          description: dto.description ?? `Витрата ${dto.amount}`,
+          buildingId: fund.buildingId,
+          fundId: dto.fundId,
+          createdById: userId,
+          lines: [
+            { account: 'expense', debit: dto.amount, fundId: dto.fundId },
+            { account: 'cash', credit: dto.amount, fundId: dto.fundId },
+          ],
+        },
+        tx,
+      );
+
+      return created;
     });
 
     await this.audit.log({
@@ -338,13 +443,35 @@ export class FinanceService {
   }
 
   async voidExpense(id: string, reason: string, userId: string) {
-    const expense = await this.prisma.expense.findUnique({ where: { id } });
+    const expense = await this.prisma.expense.findUnique({
+      where: { id },
+      include: { fund: true },
+    });
     if (!expense) throw new NotFoundException('Витрату не знайдено');
     if (expense.isVoided) throw new BadRequestException('Витрату вже анульовано');
 
-    const updated = await this.prisma.expense.update({
-      where: { id },
-      data: { isVoided: true, voidReason: reason },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.expense.update({
+        where: { id },
+        data: { isVoided: true, voidReason: reason },
+      });
+      await this.journal.write(
+        {
+          type: JournalEntryType.void_expense,
+          refType: 'Expense',
+          refId: id,
+          description: `Анулювання витрати: ${reason}`,
+          buildingId: expense.fund.buildingId,
+          fundId: expense.fundId,
+          createdById: userId,
+          lines: [
+            { account: 'cash', debit: Number(expense.amount), fundId: expense.fundId },
+            { account: 'expense', credit: Number(expense.amount), fundId: expense.fundId },
+          ],
+        },
+        tx,
+      );
+      return row;
     });
 
     await this.audit.log({
@@ -358,21 +485,38 @@ export class FinanceService {
     return updated;
   }
 
-  async getCashFlowReport(from?: string, to?: string) {
+  async getCashFlowReport(
+    from?: string,
+    to?: string,
+    buildingId?: string,
+    tenantId?: string | null,
+  ) {
     const dateFilter: Prisma.DateTimeFilter = {};
     if (from) dateFilter.gte = new Date(from);
     if (to) dateFilter.lte = new Date(to);
+    const dateWhere = Object.keys(dateFilter).length ? { date: dateFilter } : {};
+    const fundScope = buildingId
+      ? { fund: { buildingId, ...(tenantId ? { building: { tenantId } } : {}) } }
+      : tenantId
+        ? { fund: { building: { tenantId } } }
+        : {};
+    const aptScope = buildingId
+      ? { apartment: { buildingId, ...(tenantId ? { building: { tenantId } } : {}) } }
+      : viaApartmentTenant(tenantId);
 
     const [expenses, payments, funds] = await Promise.all([
       this.prisma.expense.aggregate({
-        where: { isVoided: false, ...(Object.keys(dateFilter).length ? { date: dateFilter } : {}) },
+        where: { isVoided: false, ...dateWhere, ...fundScope },
         _sum: { amount: true },
       }),
       this.prisma.payment.aggregate({
-        where: { isVoided: false, ...(Object.keys(dateFilter).length ? { date: dateFilter } : {}) },
+        where: { isVoided: false, ...dateWhere, ...aptScope },
         _sum: { amount: true },
       }),
       this.prisma.fund.findMany({
+        where: buildingId
+          ? { buildingId, ...viaBuildingTenant(tenantId) }
+          : viaBuildingTenant(tenantId),
         include: {
           expenses: { where: { isVoided: false } },
           accruals: { include: { lines: { include: { allocations: true } } } },
@@ -405,8 +549,21 @@ export class FinanceService {
     };
   }
 
-  async getExpensesSummary(from?: string, to?: string) {
+  async getExpensesSummary(
+    from?: string,
+    to?: string,
+    buildingId?: string,
+    tenantId?: string | null,
+  ) {
     const where: Prisma.ExpenseWhereInput = { isVoided: false };
+    if (buildingId) {
+      where.fund = {
+        buildingId,
+        ...(tenantId ? { building: { tenantId } } : {}),
+      };
+    } else if (tenantId) {
+      where.fund = { building: { tenantId } };
+    }
     if (from || to) {
       where.date = {};
       if (from) where.date.gte = new Date(from);
@@ -443,12 +600,23 @@ export class FinanceService {
     };
   }
 
-  async generateBoardReportPdf(from?: string, to?: string) {
-    const building = await this.prisma.building.findFirst();
+  async generateBoardReportPdf(
+    from?: string,
+    to?: string,
+    buildingId?: string,
+    tenantId?: string | null,
+  ) {
+    const building = buildingId
+      ? await this.prisma.building.findFirst({
+          where: { id: buildingId, ...(tenantId ? { tenantId } : {}) },
+        })
+      : await this.prisma.building.findFirst({
+          where: tenantId ? { tenantId } : undefined,
+        });
     const [cashFlow, expensesSummary, debtors] = await Promise.all([
-      this.getCashFlowReport(from, to),
-      this.getExpensesSummary(from, to),
-      this.payments.getDebtorsReport(),
+      this.getCashFlowReport(from, to, buildingId, tenantId),
+      this.getExpensesSummary(from, to, buildingId, tenantId),
+      this.payments.getDebtorsReport(buildingId, tenantId),
     ]);
 
     const buffer = await this.boardPdf.generate({
@@ -481,5 +649,137 @@ export class FinanceService {
 
     const stamp = new Date().toISOString().slice(0, 10);
     return { buffer, filename: `zvit-osmd-${stamp}.pdf` };
+  }
+
+  /**
+   * Excel-friendly export pack (ZIP of UTF-8 CSV with BOM).
+   * Files open in Excel / LibreOffice; 1c_transactions.csv for accountant import.
+   */
+  async generateExportPack(
+    from?: string,
+    to?: string,
+    buildingId?: string,
+    tenantId?: string | null,
+  ) {
+    const [cashFlow, expensesSummary, debtors, expensePage] = await Promise.all([
+      this.getCashFlowReport(from, to, buildingId, tenantId),
+      this.getExpensesSummary(from, to, buildingId, tenantId),
+      this.payments.getDebtorsReport(buildingId, tenantId),
+      this.listExpenses({ from, to, buildingId, tenantId, page: 1, limit: 200 }),
+    ]);
+
+    const dateFilter: Prisma.DateTimeFilter = {};
+    if (from) dateFilter.gte = new Date(from);
+    if (to) dateFilter.lte = new Date(to);
+    const payments = await this.prisma.payment.findMany({
+      where: {
+        isVoided: false,
+        ...(Object.keys(dateFilter).length ? { date: dateFilter } : {}),
+        ...(buildingId
+          ? { apartment: { buildingId, ...(tenantId ? { building: { tenantId } } : {}) } }
+          : viaApartmentTenant(tenantId)),
+      },
+      include: { apartment: true },
+      orderBy: { date: 'asc' },
+      take: 2000,
+    });
+
+    const cashFlowCsv = toCsv([
+      ['period_from', from ?? ''],
+      ['period_to', to ?? ''],
+      ['total_income', cashFlow.totalIncome],
+      ['total_expenses', cashFlow.totalExpenses],
+      ['net_flow', cashFlow.netFlow],
+      [],
+      ['fund', 'balance', 'income', 'expenses'],
+      ...cashFlow.fundBalances.map((f) => [f.fundName, f.balance, f.income, f.expenses]),
+    ]);
+
+    const debtorsCsv = toCsv([
+      ['apartment', 'entrance', 'debt', 'lines', 'oldest_due', 'overdue'],
+      ...debtors.map((d) => [
+        d.number,
+        d.entrance,
+        d.debt,
+        d.lines,
+        d.oldestDue ? d.oldestDue.toISOString().slice(0, 10) : '',
+        d.isOverdue ? 1 : 0,
+      ]),
+    ]);
+
+    const expensesCsv = toCsv([
+      ['date', 'amount', 'fund', 'category', 'supplier', 'description', 'voided'],
+      ...expensePage.items.map((e) => [
+        new Date(e.date).toISOString().slice(0, 10),
+        Number(e.amount),
+        e.fund?.name ?? '',
+        e.category?.name ?? '',
+        e.supplier?.name ?? '',
+        e.description ?? '',
+        e.isVoided ? 1 : 0,
+      ]),
+    ]);
+
+    // 1C-style flat journal of money movement
+    const txRows: Array<Array<string | number>> = [
+      ['date', 'type', 'amount', 'debit_account', 'credit_account', 'counterpart', 'ref', 'note'],
+    ];
+    for (const p of payments) {
+      txRows.push([
+        p.date.toISOString().slice(0, 10),
+        'payment',
+        Number(p.amount),
+        'cash',
+        'receivable',
+        `kv.${p.apartment.number}`,
+        p.reference ?? p.id,
+        'incoming payment',
+      ]);
+    }
+    for (const e of expensePage.items) {
+      txRows.push([
+        new Date(e.date).toISOString().slice(0, 10),
+        'expense',
+        Number(e.amount),
+        'expense',
+        'cash',
+        e.supplier?.name ?? e.category?.name ?? '',
+        e.id,
+        e.description ?? '',
+      ]);
+    }
+    const oneCCsv = toCsv(txRows);
+
+    const summaryCsv = toCsv([
+      ['metric', 'value'],
+      ['expenses_total', expensesSummary.total],
+      ['expenses_count', expensesSummary.count],
+      ...expensesSummary.byCategory.map((c) => [`category:${c.name}`, c.total]),
+    ]);
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    const buffer = createZipStore([
+      { name: 'cash-flow.csv', data: bomCsv(cashFlowCsv) },
+      { name: 'debtors.csv', data: bomCsv(debtorsCsv) },
+      { name: 'expenses.csv', data: bomCsv(expensesCsv) },
+      { name: '1c_transactions.csv', data: bomCsv(oneCCsv) },
+      { name: 'expenses-summary.csv', data: bomCsv(summaryCsv) },
+      {
+        name: 'README.txt',
+        data: Buffer.from(
+          [
+            'DAH export pack (Excel-friendly CSV, UTF-8 BOM)',
+            `Generated: ${new Date().toISOString()}`,
+            `Period: ${from ?? '…'} – ${to ?? '…'}`,
+            '',
+            'Open CSV in Excel: Data → From Text/CSV, delimiter ";"',
+            '1c_transactions.csv — flat money movement for accountant import.',
+          ].join('\n'),
+          'utf8',
+        ),
+      },
+    ]);
+
+    return { buffer, filename: `dah-export-${stamp}.zip` };
   }
 }

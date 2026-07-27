@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateUk, formatMoney } from '@/lib/money';
+import { useApartmentsQuery } from '@/lib/queries';
 
 interface Apartment {
   id: string;
@@ -100,8 +101,11 @@ export default function PaymentsPage() {
       if (histFrom) qs.set('from', histFrom);
       if (histTo) qs.set('to', histTo);
       const q = qs.toString();
-      const data = await apiFetch<PaymentRow[]>(`/payments${q ? `?${q}` : ''}`, { token });
-      setHistory(data);
+      const data = await apiFetch<{ items: PaymentRow[] } | PaymentRow[]>(
+        `/payments${q ? `?${q}` : ''}`,
+        { token },
+      );
+      setHistory(Array.isArray(data) ? data : data.items);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Помилка історії');
     } finally {
@@ -109,17 +113,20 @@ export default function PaymentsPage() {
     }
   }, [histFrom, histTo]);
 
+  const apartmentsQuery = useApartmentsQuery(Boolean(getToken()));
+
   useEffect(() => {
-    const token = getToken();
-    if (!token) {
+    if (!getToken()) {
       window.location.href = '/login';
       return;
     }
-    apiFetch<Apartment[]>('/building/apartments', { token }).then((data) => {
-      setApartments(data);
-      if (data[0]) setApartmentId(data[0].id);
-    });
   }, []);
+
+  useEffect(() => {
+    const data = (apartmentsQuery.data ?? []) as Apartment[];
+    setApartments(data);
+    if (data[0] && !apartmentId) setApartmentId(data[0].id);
+  }, [apartmentsQuery.data, apartmentId]);
 
   useEffect(() => {
     if (tab === 'history') {

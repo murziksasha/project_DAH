@@ -227,7 +227,13 @@ export default function OrganizationPage() {
     setSaving(true);
     setError('');
     try {
-      await apiFetch('/building/apartments', { method: 'POST', token, body: JSON.stringify(data) });
+      const buildingId =
+        typeof window !== 'undefined' ? localStorage.getItem('dah_building_id') : null;
+      await apiFetch('/building/apartments', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({ ...data, ...(buildingId ? { buildingId } : {}) }),
+      });
       setMessage('Квартиру додано');
       await reload();
     } catch (err) {

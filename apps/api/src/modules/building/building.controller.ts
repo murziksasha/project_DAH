@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
@@ -21,8 +21,28 @@ export class BuildingController {
   constructor(private building: BuildingService) {}
 
   @Get()
-  getBuilding() {
-    return this.building.getBuilding();
+  getBuilding(@CurrentUser() user: AuthUser) {
+    return this.building.getBuilding(undefined, user.role === 'super_admin' ? null : user.tenantId);
+  }
+
+  @Get('list')
+  listBuildings(@CurrentUser() user: AuthUser) {
+    return this.building.listBuildings(user.role === 'super_admin' ? null : user.tenantId);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.super_admin, UserRole.chairman)
+  @Post('create')
+  createBuilding(
+    @Body() body: { name: string; address: string; edrpou?: string | null; tenantId?: string },
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.building.createBuilding(body, user.id, user.tenantId);
+  }
+
+  @Get('by/:id')
+  getBuildingById(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.building.getBuilding(id, user.role === 'super_admin' ? null : user.tenantId);
   }
 
   @UseGuards(RolesGuard)
@@ -33,8 +53,14 @@ export class BuildingController {
   }
 
   @Get('apartments')
-  listApartments() {
-    return this.building.listApartments();
+  listApartments(
+    @Query('buildingId') buildingId: string | undefined,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.building.listApartments(
+      buildingId,
+      user.role === 'super_admin' ? null : user.tenantId,
+    );
   }
 
   @Get('apartments/:id')
@@ -56,8 +82,8 @@ export class BuildingController {
     UserRole.auditor,
   )
   @Get('ops-summary')
-  opsSummary() {
-    return this.building.getOpsSummary();
+  opsSummary(@Query('buildingId') buildingId?: string) {
+    return this.building.getOpsSummary(buildingId);
   }
 
   @UseGuards(RolesGuard)
@@ -71,7 +97,11 @@ export class BuildingController {
   @Roles(UserRole.super_admin, UserRole.chairman)
   @Post('apartments')
   createApartment(@Body() dto: CreateApartmentDto, @CurrentUser() user: AuthUser) {
-    return this.building.createApartment(dto, user.id);
+    return this.building.createApartment(
+      dto,
+      user.id,
+      user.role === 'super_admin' ? null : user.tenantId,
+    );
   }
 
   @UseGuards(RolesGuard)

@@ -22,11 +22,21 @@ interface AccountLine {
   status: string;
 }
 
+interface TimelineEvent {
+  id: string;
+  kind: 'accrual' | 'payment';
+  at: string;
+  title: string;
+  amount: number;
+  meta?: Record<string, unknown>;
+}
+
 interface Account {
   apartment: { number: string; buildingName: string };
   summary: { totalAccrued: number; totalPaid: number; debt: number; advance: number };
   lines: AccountLine[];
   payments: Array<{ id: string; amount: number; date: string; source: string }>;
+  timeline?: TimelineEvent[];
 }
 
 interface BankAccount {
@@ -81,7 +91,9 @@ interface RequestItem {
 interface PollOption {
   id: string;
   text: string;
-  _count: { votes: number };
+  _count?: { votes: number };
+  voteCount?: number;
+  weightSum?: number;
 }
 
 interface Poll {
@@ -92,6 +104,14 @@ interface Poll {
   options: PollOption[];
   _count: { votes: number };
   userVote?: string | null;
+  voteWeight?: string;
+  stats?: {
+    participationPercent: number;
+    quorumPercent: number | null;
+    quorumMet: boolean;
+    votedWeight: number;
+    eligibleWeight: number;
+  };
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -130,6 +150,8 @@ export default function ResidentPage() {
   const [reqCategory, setReqCategory] = useState('other');
   const [commsMessage, setCommsMessage] = useState('');
   const [copied, setCopied] = useState('');
+  const [onlinePayEnabled, setOnlinePayEnabled] = useState(false);
+  const [payBusy, setPayBusy] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -153,13 +175,17 @@ export default function ResidentPage() {
       apiFetch<Announcement[]>('/communications/announcements', { token }),
       apiFetch<RequestItem[]>('/communications/requests', { token }),
       apiFetch<Poll[]>('/communications/polls', { token }),
+      apiFetch<{ enabled: boolean }>('/payments/online/status', { skipAuth: true }).catch(() => ({
+        enabled: false,
+      })),
     ])
-      .then(([a, t, ann, req, pol]) => {
+      .then(([a, t, ann, req, pol, pay]) => {
         setAccount(a);
         setTransparency(t);
         setAnnouncements(ann);
         setRequests(req);
         setPolls(pol);
+        setOnlinePayEnabled(Boolean(pay?.enabled));
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -226,6 +252,89 @@ export default function ResidentPage() {
     }
   }
 
+  async function handleOnlinePay() {
+    const token = getToken();
+    if (!token || !account) return;
+    const amount = account.summary.debt;
+    if (amount <= 0) {
+      setError('Немає боргу для оплати');
+      return;
+    }
+    // apartment id from user storage
+    const raw = localStorage.getItem('dah_user');
+    let apartmentId = '';
+    try {
+      apartmentId = raw ? (JSON.parse(raw) as { apartmentId?: string }).apartmentId ?? '' : '';
+    } catch {
+      apartmentId = '';
+    }
+    if (!apartmentId) {
+      setError('Квартиру не привʼязано');
+      return;
+    }
+    setPayBusy(true);
+    setError('');
+    try {
+      // Sandbox: immediately post payment + FIFO when ONLINE_PAYMENTS_SANDBOX/generic
+      try {
+        const paid = await apiFetch<{
+          ok: boolean;
+          paymentId?: string;
+          orderId?: string;
+          sandbox?: boolean;
+        }>('/payments/online/sandbox-complete', {
+          method: 'POST',
+          token,
+          body: JSON.stringify({ apartmentId, amount }),
+        });
+        setCommsMessage(
+          paid.ok
+            ? `Оплату зараховано${paid.sandbox ? ' (sandbox)' : ''}: ${paid.paymentId?.slice(-8) ?? paid.orderId}`
+            : 'Платіж не створено',
+        );
+        const refreshed = await apiFetch<Account>('/accruals/my-account', { token });
+        setAccount(refreshed);
+      } catch {
+        const intent = await apiFetch<{
+          checkoutUrl: string;
+          orderId: string;
+          message?: string;
+          formAction?: string;
+          form?: Record<string, string>;
+          provider?: string;
+        }>('/payments/online/intent', {
+          method: 'POST',
+          token,
+          body: JSON.stringify({ apartmentId, amount }),
+        });
+        if (intent.formAction && intent.form) {
+          const f = document.createElement('form');
+          f.method = 'POST';
+          f.action = intent.formAction;
+          f.acceptCharset = 'utf-8';
+          for (const [k, v] of Object.entries(intent.form)) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = k;
+            input.value = v;
+            f.appendChild(input);
+          }
+          document.body.appendChild(f);
+          f.submit();
+          return;
+        }
+        setCommsMessage(intent.message ?? `Створено замовлення ${intent.orderId}`);
+        if (intent.checkoutUrl) {
+          window.open(intent.checkoutUrl, '_blank', 'noopener,noreferrer');
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Помилка онлайн-оплати');
+    } finally {
+      setPayBusy(false);
+    }
+  }
+
   async function copyText(label: string, text: string) {
     try {
       await navigator.clipboard.writeText(text);
@@ -279,6 +388,16 @@ export default function ResidentPage() {
                 PDF квитанція
               </button>
             )}
+            {onlinePayEnabled && debt > 0 && (
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={payBusy}
+                onClick={() => void handleOnlinePay()}
+              >
+                {payBusy ? 'Оплата…' : 'Сплатити онлайн'}
+              </button>
+            )}
             {transparency?.bankAccounts && transparency.bankAccounts.length > 0 && (
               <button
                 type="button"
@@ -314,6 +433,38 @@ export default function ResidentPage() {
             <StatCard label="Борг" value={formatMoney(account.summary.debt)} tone={account.summary.debt > 0 ? 'danger' : 'success'} />
             <StatCard label="Сплачено" value={formatMoney(account.summary.totalPaid)} />
           </div>
+
+          {account.timeline && account.timeline.length > 0 && (
+            <div className="card" style={{ marginBottom: '1rem' }}>
+              <h2 style={{ marginBottom: '0.75rem', fontSize: '1.1rem' }}>Історія рахунку</h2>
+              <ul style={{ listStyle: 'none', display: 'grid', gap: '0.65rem' }}>
+                {account.timeline.slice(0, 30).map((ev) => (
+                  <li
+                    key={ev.id}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                      borderBottom: '1px solid var(--border)',
+                      paddingBottom: 8,
+                      fontSize: '0.9rem',
+                    }}
+                  >
+                    <div>
+                      <Badge tone={ev.kind === 'payment' ? 'success' : 'primary'}>
+                        {ev.kind === 'payment' ? 'Платіж' : 'Нарахування'}
+                      </Badge>{' '}
+                      <strong>{ev.title}</strong>
+                      <div style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>
+                        {formatDateUk(ev.at)}
+                      </div>
+                    </div>
+                    <div style={{ fontWeight: 600 }}>{formatMoney(ev.amount)}</div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {transparency?.bankAccounts && transparency.bankAccounts.length > 0 && (
             <div className="card" id="bank-details" style={{ marginBottom: '1rem' }}>
@@ -501,15 +652,25 @@ export default function ResidentPage() {
                             }}
                           >
                             {o.text}
-                            {p._count.votes > 0 && (
+                            {(o.voteCount ?? o._count?.votes ?? 0) > 0 && p._count.votes > 0 && (
                               <span style={{ float: 'right', opacity: 0.7 }}>
-                                {Math.round((o._count.votes / p._count.votes) * 100)}%
+                                {o.weightSum != null
+                                  ? `${o.weightSum}`
+                                  : `${Math.round(((o.voteCount ?? o._count?.votes ?? 0) / p._count.votes) * 100)}%`}
                               </span>
                             )}
                           </button>
                         </li>
                       ))}
                     </ul>
+                    {p.stats && (
+                      <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '0.35rem' }}>
+                        Явка {p.stats.participationPercent}%
+                        {p.stats.quorumPercent != null
+                          ? ` · кворум ${p.stats.quorumPercent}% (${p.stats.quorumMet ? 'є' : 'немає'})`
+                          : ''}
+                      </p>
+                    )}
                     {p.userVote && (
                       <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '0.25rem' }}>
                         Дякуємо за голос!

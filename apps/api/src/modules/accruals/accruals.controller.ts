@@ -15,6 +15,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { Response } from 'express';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
+import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { AccrualsService } from './accruals.service';
@@ -37,8 +38,11 @@ export class AccrualsController {
   constructor(private accruals: AccrualsService) {}
 
   @Get('templates')
-  listTemplates() {
-    return this.accruals.listTemplates();
+  listTemplates(
+    @Query('buildingId') buildingId?: string,
+    @TenantId() tenantId?: string | null,
+  ) {
+    return this.accruals.listTemplates(buildingId, tenantId);
   }
 
   @UseGuards(RolesGuard)
@@ -56,8 +60,12 @@ export class AccrualsController {
   }
 
   @Get()
-  listAccruals(@Query('period') period?: string) {
-    return this.accruals.listAccruals(period);
+  listAccruals(
+    @Query('period') period?: string,
+    @Query('buildingId') buildingId?: string,
+    @TenantId() tenantId?: string | null,
+  ) {
+    return this.accruals.listAccruals(period, buildingId, tenantId);
   }
 
   @Get('my-account')
@@ -70,6 +78,31 @@ export class AccrualsController {
   @Get('apartments/:apartmentId/account')
   apartmentAccount(@Param('apartmentId') apartmentId: string) {
     return this.accruals.getApartmentAccount(apartmentId);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(...ADMIN_ROLES, UserRole.resident)
+  @Get('apartments/:apartmentId/statement.csv')
+  async apartmentStatement(
+    @Param('apartmentId') apartmentId: string,
+    @CurrentUser() user: AuthUser,
+    @Res() res: Response,
+  ) {
+    if (user.role === UserRole.resident) {
+      const ids = user.apartmentIds?.length
+        ? user.apartmentIds
+        : user.apartmentId
+          ? [user.apartmentId]
+          : [];
+      if (!ids.includes(apartmentId)) {
+        res.status(403).send('Forbidden');
+        return;
+      }
+    }
+    const { csv, filename } = await this.accruals.exportApartmentStatementCsv(apartmentId);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
   }
 
   @UseGuards(RolesGuard)

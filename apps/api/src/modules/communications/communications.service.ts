@@ -4,8 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { RequestStatus, UserRole } from '@prisma/client';
+import { RequestStatus, UserRole, VoteWeightMode } from '@prisma/client';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
+import { roundMoney } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { MailService } from '../mail/mail.service';
@@ -113,6 +114,8 @@ export class CommunicationsService {
         description: dto.description,
         category: dto.category,
         authorId,
+        dueAt: dto.dueAt ? new Date(dto.dueAt) : undefined,
+        photoKeys: dto.photoKeys ?? [],
       },
       include: {
         author: { select: { id: true, firstName: true, lastName: true } },
@@ -123,7 +126,7 @@ export class CommunicationsService {
       action: 'request.created',
       entityType: 'Request',
       entityId: request.id,
-      payload: { title: dto.title, category: dto.category },
+      payload: { title: dto.title, category: dto.category, dueAt: dto.dueAt ?? null },
     });
 
     void this.mail.notifyAdmins('request.created', {
@@ -152,6 +155,10 @@ export class CommunicationsService {
       data: {
         status: dto.status,
         assigneeId: dto.assigneeId,
+        ...(dto.dueAt !== undefined
+          ? { dueAt: dto.dueAt ? new Date(dto.dueAt) : null }
+          : {}),
+        ...(dto.photoKeys !== undefined ? { photoKeys: dto.photoKeys } : {}),
       },
       include: {
         author: {
@@ -186,7 +193,7 @@ export class CommunicationsService {
       action: 'request.updated',
       entityType: 'Request',
       entityId: id,
-      payload: { status: dto.status, assigneeId: dto.assigneeId },
+      payload: { status: dto.status, assigneeId: dto.assigneeId, dueAt: dto.dueAt },
     });
     return updated;
   }
@@ -196,17 +203,43 @@ export class CommunicationsService {
       orderBy: { createdAt: 'desc' },
       include: {
         options: {
-          include: { _count: { select: { votes: true } } },
+          include: {
+            votes: { select: { weight: true } },
+            _count: { select: { votes: true } },
+          },
         },
-        votes: userId ? { where: { userId }, select: { optionId: true } } : false,
+        votes: userId
+          ? { where: { userId }, select: { optionId: true, weight: true } }
+          : false,
         _count: { select: { votes: true } },
       },
     });
 
-    return polls.map(({ votes, ...poll }) => ({
-      ...poll,
-      userVote: votes?.[0]?.optionId ?? null,
-    }));
+    return Promise.all(
+      polls.map(async (poll) => {
+        const stats = await this.pollStats(poll.id, poll.voteWeight, poll.quorumPercent);
+        const userVotes = userId ? (poll.votes as Array<{ optionId: string }>) : [];
+        return {
+          id: poll.id,
+          question: poll.question,
+          isActive: poll.isActive,
+          endsAt: poll.endsAt,
+          voteWeight: poll.voteWeight,
+          quorumPercent: poll.quorumPercent,
+          createdAt: poll.createdAt,
+          _count: poll._count,
+          options: poll.options.map((o) => ({
+            id: o.id,
+            text: o.text,
+            pollId: o.pollId,
+            voteCount: o._count.votes,
+            weightSum: roundMoney(o.votes.reduce((s, v) => s + Number(v.weight), 0)),
+          })),
+          userVote: userVotes[0]?.optionId ?? null,
+          stats,
+        };
+      }),
+    );
   }
 
   async getPoll(id: string, userId: string) {
@@ -214,17 +247,37 @@ export class CommunicationsService {
       where: { id },
       include: {
         options: {
-          include: { _count: { select: { votes: true } } },
+          include: {
+            votes: { select: { weight: true } },
+            _count: { select: { votes: true } },
+          },
         },
-        votes: { where: { userId }, select: { optionId: true } },
+        votes: { where: { userId }, select: { optionId: true, weight: true } },
         _count: { select: { votes: true } },
       },
     });
     if (!poll) throw new NotFoundException('Опитування не знайдено');
 
     const userVote = poll.votes[0]?.optionId ?? null;
-    const { votes: _votes, ...rest } = poll;
-    return { ...rest, userVote };
+    const stats = await this.pollStats(id, poll.voteWeight, poll.quorumPercent);
+    return {
+      id: poll.id,
+      question: poll.question,
+      isActive: poll.isActive,
+      endsAt: poll.endsAt,
+      voteWeight: poll.voteWeight,
+      quorumPercent: poll.quorumPercent,
+      createdAt: poll.createdAt,
+      options: poll.options.map((o) => ({
+        id: o.id,
+        text: o.text,
+        voteCount: o._count.votes,
+        weightSum: roundMoney(o.votes.reduce((s, v) => s + Number(v.weight), 0)),
+      })),
+      _count: poll._count,
+      userVote,
+      stats,
+    };
   }
 
   async createPoll(dto: CreatePollDto, userId: string) {
@@ -235,6 +288,8 @@ export class CommunicationsService {
       data: {
         question: dto.question,
         endsAt: dto.endsAt ? new Date(dto.endsAt) : undefined,
+        voteWeight: dto.voteWeight ?? VoteWeightMode.one_per_user,
+        quorumPercent: dto.quorumPercent,
         options: { create: dto.options.map((text) => ({ text })) },
       },
       include: {
@@ -247,7 +302,12 @@ export class CommunicationsService {
       action: 'poll.created',
       entityType: 'Poll',
       entityId: poll.id,
-      payload: { question: dto.question, optionsCount: dto.options.length },
+      payload: {
+        question: dto.question,
+        optionsCount: dto.options.length,
+        voteWeight: dto.voteWeight ?? VoteWeightMode.one_per_user,
+        quorumPercent: dto.quorumPercent ?? null,
+      },
     });
     return poll;
   }
@@ -271,8 +331,52 @@ export class CommunicationsService {
     });
     if (existing) throw new ForbiddenException('Ви вже проголосували');
 
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        apartmentLinks: { include: { apartment: true }, orderBy: { isPrimary: 'desc' } },
+        primaryApartment: true,
+      },
+    });
+    if (!user) throw new NotFoundException('Користувача не знайдено');
+
+    const apartment =
+      user.apartmentLinks.find((l) => l.isPrimary)?.apartment ??
+      user.primaryApartment ??
+      user.apartmentLinks[0]?.apartment ??
+      null;
+
+    let weight = 1;
+    let apartmentId: string | null = apartment?.id ?? null;
+
+    if (poll.voteWeight === VoteWeightMode.one_per_apartment) {
+      if (!apartment) {
+        throw new BadRequestException('Для голосування потрібна привʼязка до квартири');
+      }
+      const already = await this.prisma.pollVote.findFirst({
+        where: { pollId, apartmentId: apartment.id },
+      });
+      if (already) {
+        throw new ForbiddenException('Від цієї квартири вже проголосували');
+      }
+      weight = 1;
+      apartmentId = apartment.id;
+    } else if (poll.voteWeight === VoteWeightMode.by_area) {
+      if (!apartment) {
+        throw new BadRequestException('Для голосування за площею потрібна квартира');
+      }
+      const already = await this.prisma.pollVote.findFirst({
+        where: { pollId, apartmentId: apartment.id },
+      });
+      if (already) {
+        throw new ForbiddenException('Від цієї квартири вже проголосували');
+      }
+      weight = roundMoney(apartment.area);
+      apartmentId = apartment.id;
+    }
+
     await this.prisma.pollVote.create({
-      data: { pollId, optionId, userId },
+      data: { pollId, optionId, userId, apartmentId, weight },
     });
 
     return this.getPoll(pollId, userId);
@@ -281,6 +385,7 @@ export class CommunicationsService {
   async closePoll(id: string, userId: string) {
     const poll = await this.prisma.poll.findUnique({ where: { id } });
     if (!poll) throw new NotFoundException('Опитування не знайдено');
+    const stats = await this.pollStats(id, poll.voteWeight, poll.quorumPercent);
     const updated = await this.prisma.poll.update({
       where: { id },
       data: { isActive: false },
@@ -294,8 +399,51 @@ export class CommunicationsService {
       action: 'poll.closed',
       entityType: 'Poll',
       entityId: id,
-      payload: { question: poll.question },
+      payload: { question: poll.question, stats },
     });
-    return updated;
+    return { ...updated, stats };
+  }
+
+  private async pollStats(
+    pollId: string,
+    voteWeight: VoteWeightMode,
+    quorumPercent: { toNumber?: () => number } | number | null,
+  ) {
+    const votes = await this.prisma.pollVote.findMany({
+      where: { pollId },
+      select: { weight: true, optionId: true },
+    });
+    const votedWeight = roundMoney(votes.reduce((s, v) => s + Number(v.weight), 0));
+
+    let eligibleWeight = 0;
+    if (voteWeight === VoteWeightMode.one_per_user) {
+      eligibleWeight = await this.prisma.user.count({
+        where: { status: 'active', role: 'resident' },
+      });
+    } else if (voteWeight === VoteWeightMode.one_per_apartment) {
+      eligibleWeight = await this.prisma.apartment.count();
+    } else {
+      const areas = await this.prisma.apartment.aggregate({ _sum: { area: true } });
+      eligibleWeight = roundMoney(areas._sum.area ?? 0);
+    }
+
+    const q =
+      quorumPercent == null
+        ? null
+        : typeof quorumPercent === 'number'
+          ? quorumPercent
+          : Number(quorumPercent);
+    const participation =
+      eligibleWeight > 0 ? roundMoney((votedWeight / eligibleWeight) * 100) : 0;
+    const quorumMet = q == null ? true : participation >= q;
+
+    return {
+      votedWeight,
+      eligibleWeight,
+      participationPercent: participation,
+      quorumPercent: q,
+      quorumMet,
+      voteCount: votes.length,
+    };
   }
 }

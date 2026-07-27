@@ -36,8 +36,13 @@ mc mirror --overwrite local/$S3Bucket /backup
 "@ -v "${filesDir}:/backup"
     }
 
-    @{ timestamp = $Timestamp; postgres_db = $PgDb; s3_bucket = $S3Bucket } |
+    $finishedAt = (Get-Date).ToUniversalTime().ToString("o")
+    @{ timestamp = $Timestamp; postgres_db = $PgDb; s3_bucket = $S3Bucket; finishedAt = $finishedAt } |
         ConvertTo-Json | Set-Content (Join-Path $RunDir "manifest.json")
+
+    # Marker for API health /admin/ops (BACKUP_STATUS_PATH)
+    @{ finishedAt = $finishedAt; runDir = $RunDir; timestamp = $Timestamp } |
+        ConvertTo-Json | Set-Content (Join-Path $OutputDir "last-backup.json")
 
     Write-Host "==> Done: $RunDir"
 }

@@ -1,17 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { Pagination } from '@/components/ui/Pagination';
 import { apiFetch, getToken } from '@/lib/api';
 import { downloadCsv } from '@/lib/csv';
 import { formatDateUk, formatMoney } from '@/lib/money';
-
-interface Fund {
-  id: string;
-  name: string;
-}
+import { useExpensesPageQuery, useFundsQuery } from '@/lib/queries';
 
 interface Expense {
   id: string;
@@ -24,68 +21,36 @@ interface Expense {
   supplier: { name: string } | null;
 }
 
-interface ExpensesPage {
-  items: Expense[];
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
-
 export default function ExpensesListPage() {
-  const [funds, setFunds] = useState<Fund[]>([]);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [fundId, setFundId] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const [loading, setLoading] = useState(true);
   const [voidingId, setVoidingId] = useState<string | null>(null);
 
-  const loadExpenses = useCallback(async () => {
-    const token = getToken();
-    if (!token) {
-      window.location.href = '/login';
-      return;
-    }
-    setLoading(true);
-    setError('');
-    try {
-      const params = new URLSearchParams();
-      if (fundId) params.set('fundId', fundId);
-      if (from) params.set('from', from);
-      if (to) params.set('to', to);
-      params.set('page', String(page));
-      params.set('limit', '30');
-      const data = await apiFetch<ExpensesPage>(`/finance/expenses?${params}`, { token });
-      setExpenses(data.items);
-      setTotal(data.total);
-      setTotalPages(data.totalPages);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
-    } finally {
-      setLoading(false);
-    }
-  }, [fundId, from, to, page]);
+  const fundsQuery = useFundsQuery(Boolean(getToken()));
+  const expensesQuery = useExpensesPageQuery(
+    { fundId: fundId || undefined, from: from || undefined, to: to || undefined, page, limit: 30 },
+    Boolean(getToken()),
+  );
+
+  const funds = fundsQuery.data ?? [];
+  const expenses = (expensesQuery.data?.items ?? []) as Expense[];
+  const total = expensesQuery.data?.total ?? 0;
+  const totalPages = expensesQuery.data?.totalPages ?? 1;
+  const loading = expensesQuery.isLoading || expensesQuery.isFetching;
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) {
-      window.location.href = '/login';
-      return;
-    }
-    apiFetch<Fund[]>('/finance/funds', { token })
-      .then(setFunds)
-      .catch((err) => setError(err.message));
+    if (!getToken()) window.location.href = '/login';
   }, []);
 
   useEffect(() => {
-    loadExpenses().catch(() => undefined);
-  }, [loadExpenses]);
+    if (expensesQuery.error) {
+      setError(expensesQuery.error instanceof Error ? expensesQuery.error.message : 'Помилка');
+    }
+  }, [expensesQuery.error]);
 
   async function voidExpense(id: string) {
     const reason = window.prompt('Причина анулювання витрати?');
@@ -101,7 +66,7 @@ export default function ExpensesListPage() {
         body: JSON.stringify({ reason: reason.trim() }),
       });
       setMessage('Витрату анульовано');
-      await loadExpenses();
+      await expensesQuery.refetch();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Помилка анулювання');
     } finally {
@@ -195,8 +160,12 @@ export default function ExpensesListPage() {
           />
         </div>
         <div style={{ alignSelf: 'end' }}>
-          <button type="button" onClick={() => loadExpenses()} style={{ width: '100%' }}>
-            Застосувати
+          <button
+            type="button"
+            onClick={() => void expensesQuery.refetch()}
+            style={{ width: '100%' }}
+          >
+            Оновити
           </button>
         </div>
       </div>

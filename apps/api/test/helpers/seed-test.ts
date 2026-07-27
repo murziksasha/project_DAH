@@ -20,12 +20,17 @@ export async function resetTestDatabase() {
   await prisma.poll.deleteMany();
   await prisma.announcement.deleteMany();
   await prisma.request.deleteMany();
+  await prisma.meterReading.deleteMany();
+  await prisma.meter.deleteMany();
   await prisma.paymentAllocation.deleteMany();
   await prisma.payment.deleteMany();
   await prisma.accrualLine.deleteMany();
   await prisma.accrual.deleteMany();
   await prisma.accrualTemplate.deleteMany();
   await prisma.expense.deleteMany();
+  await prisma.journalLine.deleteMany();
+  await prisma.journalEntry.deleteMany();
+  await prisma.authSession.deleteMany();
   await prisma.document.deleteMany();
   await prisma.supplier.deleteMany();
   await prisma.expenseCategory.deleteMany();
@@ -36,11 +41,16 @@ export async function resetTestDatabase() {
   await prisma.resident.deleteMany();
   await prisma.apartment.deleteMany();
   await prisma.building.deleteMany();
+  await prisma.tenant.deleteMany();
 }
 
 export async function seedTestFixtures() {
+  const tenant = await prisma.tenant.create({
+    data: { id: 'test_tenant', name: 'Test Tenant', slug: 'test' },
+  });
+
   const building = await prisma.building.create({
-    data: { name: 'Test OSBB', address: 'Test st. 1' },
+    data: { name: 'Test OSBB', address: 'Test st. 1', tenantId: tenant.id },
   });
 
   const fund = await prisma.fund.create({
@@ -71,6 +81,7 @@ export async function seedTestFixtures() {
       lastName: 'Admin',
       role: UserRole.super_admin,
       status: UserStatus.active,
+      tenantId: null,
     },
   });
 
@@ -82,6 +93,7 @@ export async function seedTestFixtures() {
       lastName: 'Chairman',
       role: UserRole.chairman,
       status: UserStatus.active,
+      tenantId: tenant.id,
     },
   });
 
@@ -93,6 +105,7 @@ export async function seedTestFixtures() {
       lastName: 'Resident',
       role: UserRole.resident,
       status: UserStatus.active,
+      tenantId: tenant.id,
       apartmentId: apartment.id,
       apartmentLinks: {
         create: { apartmentId: apartment.id, isPrimary: true },

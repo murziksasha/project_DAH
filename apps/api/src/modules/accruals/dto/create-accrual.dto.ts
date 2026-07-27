@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { AccrualDistribution } from '@prisma/client';
+import { AccrualDistribution, MeterType } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsArray,
@@ -73,4 +73,10 @@ export class CreateAccrualDto {
   @ValidateNested({ each: true })
   @Type(() => ManualAccrualLineDto)
   manualLines?: ManualAccrualLineDto[];
+
+  /** For by_meter: filter meters by type (optional = all types). */
+  @ApiPropertyOptional({ enum: MeterType })
+  @IsOptional()
+  @IsEnum(MeterType)
+  meterType?: MeterType;
 }

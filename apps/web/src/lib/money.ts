@@ -14,6 +14,11 @@ export function formatMoney(value: number | string, options?: { signed?: boolean
   return `${abs} ₴`;
 }
 
+/** Round major units to 2 dp (display/input hygiene; server is source of truth). */
+export function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 export function formatDateUk(value: string | Date): string {
   const d = typeof value === 'string' ? new Date(value) : value;
   if (Number.isNaN(d.getTime())) return '—';

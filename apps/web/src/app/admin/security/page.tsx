@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
-import { logout } from '@/lib/auth';
+import { logout, logoutAll } from '@/lib/auth';
 import {
   canUsePush,
   getPushSubscriptionStatus,
@@ -24,6 +24,7 @@ interface MailStatus {
 }
 
 export default function SecurityPage() {
+  const [phone, setPhone] = useState('');
   const [status, setStatus] = useState<TwoFaStatus | null>(null);
   const [mail, setMail] = useState<MailStatus | null>(null);
   const [setup, setSetup] = useState<{ secret: string; otpauthUrl: string; qrUrl: string } | null>(
@@ -51,14 +52,18 @@ export default function SecurityPage() {
       return;
     }
     try {
-      const [s, m, p] = await Promise.all([
+      const [s, m, p, profile] = await Promise.all([
         apiFetch<TwoFaStatus>('/auth/2fa/status', { token }),
         apiFetch<MailStatus>('/mail/status', { token }).catch(() => null),
         getPushSubscriptionStatus(),
+        apiFetch<{ phone: string | null }>('/auth/profile', { token }).catch(() => ({
+          phone: null as string | null,
+        })),
       ]);
       setStatus(s);
       setMail(m);
       setPushStatus(p);
+      setPhone(profile.phone ?? '');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Помилка');
     }
@@ -227,6 +232,64 @@ export default function SecurityPage() {
 
       {error && <p className="error">{error}</p>}
       {message && <p className="success-banner">{message}</p>}
+
+      <section className="card" style={{ marginBottom: '1rem' }}>
+        <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>Телефон (SMS-вхід)</h2>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'end' }}>
+          <div style={{ flex: 1, minWidth: 180 }}>
+            <label htmlFor="phone">Номер</label>
+            <input
+              id="phone"
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+380..."
+            />
+          </div>
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={loading}
+            onClick={async () => {
+              const token = getToken();
+              if (!token) return;
+              setLoading(true);
+              try {
+                await apiFetch('/auth/profile', {
+                  method: 'PATCH',
+                  token,
+                  body: JSON.stringify({ phone: phone.trim() || null }),
+                });
+                setMessage('Телефон збережено');
+              } catch (err) {
+                setError(err instanceof Error ? err.message : 'Помилка');
+              } finally {
+                setLoading(false);
+              }
+            }}
+          >
+            Зберегти
+          </button>
+        </div>
+      </section>
+
+      <section className="card" style={{ marginBottom: '1rem' }}>
+        <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>Сесії</h2>
+        <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
+          Refresh-токени з ротацією (HttpOnly cookie). Завершіть усі сесії на інших пристроях.
+        </p>
+        <button
+          type="button"
+          className="btn btn-sm btn-ghost"
+          disabled={loading}
+          onClick={() => {
+            setLoading(true);
+            void logoutAll().finally(() => setLoading(false));
+          }}
+        >
+          Вийти скрізь
+        </button>
+      </section>
 
       <section className="card" style={{ marginBottom: '1rem' }}>
         <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>Зміна пароля</h2>

@@ -26,6 +26,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [publicUrl, setPublicUrl] = useState('');
   const [copied, setCopied] = useState(false);
+  const [newBuilding, setNewBuilding] = useState({ name: '', address: '' });
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -116,6 +117,27 @@ export default function SettingsPage() {
     }
   }
 
+  async function createBuilding(e: FormEvent) {
+    e.preventDefault();
+    const token = getToken();
+    if (!token) return;
+    setSaving(true);
+    setError('');
+    try {
+      await apiFetch('/building/create', {
+        method: 'POST',
+        token,
+        body: JSON.stringify(newBuilding),
+      });
+      setMessage('Будинок додано — оберіть його у перемикачі в шапці');
+      setNewBuilding({ name: '', address: '' });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Помилка');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (!settings) {
     return (
       <main>
@@ -134,6 +156,38 @@ export default function SettingsPage() {
 
       {error && <p className="error">{error}</p>}
       {message && <p className="success-banner">{message}</p>}
+
+      <form
+        onSubmit={createBuilding}
+        className="card"
+        style={{ display: 'grid', gap: '0.75rem', marginBottom: '1rem' }}
+      >
+        <h2 style={{ fontSize: '1rem' }}>Додати будинок (ЖК / multi-building)</h2>
+        <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: 0 }}>
+          Одне ОСББ може мати кілька будинків. Перемикач зʼявиться в шапці, якщо будинків ≥ 2.
+        </p>
+        <div>
+          <label htmlFor="nb-name">Назва будинку</label>
+          <input
+            id="nb-name"
+            value={newBuilding.name}
+            onChange={(e) => setNewBuilding({ ...newBuilding, name: e.target.value })}
+            required
+          />
+        </div>
+        <div>
+          <label htmlFor="nb-addr">Адреса</label>
+          <input
+            id="nb-addr"
+            value={newBuilding.address}
+            onChange={(e) => setNewBuilding({ ...newBuilding, address: e.target.value })}
+            required
+          />
+        </div>
+        <button type="submit" disabled={saving}>
+          Додати будинок
+        </button>
+      </form>
 
       <form
         onSubmit={saveProfile}

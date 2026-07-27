@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { AuthCookieSync } from '@/components/AuthCookieSync';
 import { PwaPrompt } from '@/components/PwaPrompt';
+import { QueryProvider } from '@/components/QueryProvider';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -33,9 +34,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
-        <AuthCookieSync />
-        {children}
-        <PwaPrompt />
+        <QueryProvider>
+          <AuthCookieSync />
+          {children}
+          <PwaPrompt />
+        </QueryProvider>
       </body>
     </html>
   );

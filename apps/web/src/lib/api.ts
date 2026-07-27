@@ -1,4 +1,37 @@
-import { setAuthCookie, clearAuthCookie } from './auth-cookie';
+import { clearSessionFlagCookie, setSessionFlagCookie } from './auth-cookie';
+import { getSelectedTenantId, withBuildingQuery } from './building-context';
+
+const ACCESS_KEY = 'dah_token';
+const LEGACY_REFRESH_KEY = 'dah_refresh';
+
+/** Paths that should receive selected multi-building scope. */
+const BUILDING_SCOPED_PREFIXES = [
+  '/finance/funds',
+  '/finance/bank-accounts',
+  '/finance/suppliers',
+  '/finance/expenses',
+  '/finance/reports/',
+  '/accruals',
+  '/payments',
+  '/building/apartments',
+  '/building/ops-summary',
+  '/journal',
+  '/meters',
+];
+
+function applyBuildingScope(path: string): string {
+  if (typeof window === 'undefined') return path;
+  if (path.includes('buildingId=')) return path;
+  const pure = path.split('?')[0];
+  const scoped = BUILDING_SCOPED_PREFIXES.some(
+    (p) => pure === p || pure.startsWith(p) || pure.startsWith(p.replace(/\/$/, '')),
+  );
+  // Do not scope personal account / auth
+  if (pure.startsWith('/accruals/my-account') || pure.startsWith('/accruals/lines/')) {
+    return path;
+  }
+  return scoped ? withBuildingQuery(path) : path;
+}
 
 /** Browser: same-origin /api (nginx or Next rewrite). SSR/build: env fallback. */
 export function getApiBaseUrl(): string {
@@ -8,54 +41,70 @@ export function getApiBaseUrl(): string {
   return process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 }
 
+/**
+ * Access token: sessionStorage only (cleared when tab session ends).
+ * Refresh: HttpOnly cookie set by API (not readable from JS).
+ */
 export function getToken(): string | null {
   if (typeof window === 'undefined') return null;
-  const stored = localStorage.getItem('dah_token');
-  if (stored) return stored;
-  const match = document.cookie.match(/(?:^|; )dah_token=([^;]*)/);
-  if (!match) return null;
   try {
-    return decodeURIComponent(match[1]);
+    return sessionStorage.getItem(ACCESS_KEY) ?? localStorage.getItem(ACCESS_KEY);
   } catch {
-    return match[1];
+    return localStorage.getItem(ACCESS_KEY);
   }
 }
 
-export function getRefreshToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem('dah_refresh');
-}
-
-function persistTokens(accessToken: string, refreshToken?: string) {
-  localStorage.setItem('dah_token', accessToken);
-  if (refreshToken) localStorage.setItem('dah_refresh', refreshToken);
-  setAuthCookie(accessToken);
+function persistAccessToken(accessToken: string) {
+  try {
+    sessionStorage.setItem(ACCESS_KEY, accessToken);
+  } catch {
+    // ignore
+  }
+  // Migrate off long-lived localStorage tokens
+  localStorage.removeItem(ACCESS_KEY);
+  localStorage.removeItem(LEGACY_REFRESH_KEY);
+  setSessionFlagCookie();
   window.dispatchEvent(new Event('dah-auth-change'));
 }
 
 function clearSession() {
-  localStorage.removeItem('dah_token');
-  localStorage.removeItem('dah_refresh');
+  try {
+    sessionStorage.removeItem(ACCESS_KEY);
+  } catch {
+    // ignore
+  }
+  localStorage.removeItem(ACCESS_KEY);
+  localStorage.removeItem(LEGACY_REFRESH_KEY);
   localStorage.removeItem('dah_user');
-  clearAuthCookie();
+  clearSessionFlagCookie();
   window.dispatchEvent(new Event('dah-auth-change'));
+}
+
+/** @deprecated refresh is cookie-based; kept for transitional callers */
+export function getRefreshToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(LEGACY_REFRESH_KEY);
+}
+
+function persistTokens(accessToken: string, _refreshToken?: string) {
+  persistAccessToken(accessToken);
 }
 
 let refreshInFlight: Promise<string | null> | null = null;
 
-/** Exchange refresh token for a new access token. Single-flight. */
+/** Exchange refresh cookie (or legacy body token) for a new access token. Single-flight. */
 export async function refreshAccessToken(): Promise<string | null> {
   if (typeof window === 'undefined') return null;
   if (refreshInFlight) return refreshInFlight;
 
   refreshInFlight = (async () => {
-    const refreshToken = getRefreshToken();
-    if (!refreshToken) return null;
+    const legacyRefresh = getRefreshToken();
     try {
       const res = await fetch(`${getApiBaseUrl()}/auth/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
+        credentials: 'include',
+        body: JSON.stringify(legacyRefresh ? { refreshToken: legacyRefresh } : {}),
       });
       if (!res.ok) {
         clearSession();
@@ -83,7 +132,11 @@ export async function refreshAccessToken(): Promise<string | null> {
 
 export async function checkApiHealth(): Promise<boolean> {
   try {
-    const res = await fetch(`${getApiBaseUrl()}/health`, { method: 'GET', cache: 'no-store' });
+    const res = await fetch(`${getApiBaseUrl()}/health`, {
+      method: 'GET',
+      cache: 'no-store',
+      credentials: 'include',
+    });
     return res.ok;
   } catch {
     return false;
@@ -109,17 +162,26 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     (headers as Record<string, string>)['Authorization'] = `Bearer ${authToken}`;
   }
 
+  const scopedPath = applyBuildingScope(path);
+  const tenantId = typeof window !== 'undefined' ? getSelectedTenantId() : null;
+  if (tenantId) {
+    (headers as Record<string, string>)['X-Tenant-Id'] = tenantId;
+  }
   const apiUrl = getApiBaseUrl();
   let res: Response;
   try {
-    res = await fetch(`${apiUrl}${path}`, { ...init, headers });
+    res = await fetch(`${apiUrl}${scopedPath}`, {
+      ...init,
+      headers,
+      credentials: 'include',
+    });
   } catch {
     throw new Error(
       'Немає зв\'язку з сервером ОСМД. Перевірте мережу, KeenDNS або що API запущено.',
     );
   }
 
-  if (res.status === 401 && !skipAuth && !_retried && !path.startsWith('/auth/')) {
+  if (res.status === 401 && !skipAuth && !_retried && !scopedPath.startsWith('/auth/')) {
     const newToken = await refreshAccessToken();
     if (newToken) {
       return apiFetch<T>(path, { ...options, token: newToken, _retried: true });
@@ -156,6 +218,7 @@ export async function uploadFile(
     method: 'POST',
     headers: { Authorization: `Bearer ${auth}` },
     body: form,
+    credentials: 'include',
   });
 
   if (res.status === 401) {
@@ -166,6 +229,7 @@ export async function uploadFile(
         method: 'POST',
         headers: { Authorization: `Bearer ${auth}` },
         body: form,
+        credentials: 'include',
       });
     }
   }
@@ -182,6 +246,7 @@ export async function downloadReceipt(lineId: string, token: string) {
   let auth = token;
   let res = await fetch(`${apiUrl}/accruals/lines/${lineId}/receipt`, {
     headers: { Authorization: `Bearer ${auth}` },
+    credentials: 'include',
   });
 
   if (res.status === 401) {
@@ -190,6 +255,7 @@ export async function downloadReceipt(lineId: string, token: string) {
       auth = newToken;
       res = await fetch(`${apiUrl}/accruals/lines/${lineId}/receipt`, {
         headers: { Authorization: `Bearer ${auth}` },
+        credentials: 'include',
       });
     }
   }
@@ -221,3 +287,5 @@ export interface LoginResponse {
   refreshToken?: string;
   user: LoginUser;
 }
+
+export { persistAccessToken, clearSession as clearClientSession };

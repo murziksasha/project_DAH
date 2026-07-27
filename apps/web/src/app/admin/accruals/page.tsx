@@ -25,9 +25,10 @@ interface ApartmentPreview {
   entrance: number;
   area: number;
   amount: number;
+  meterConsumption?: number;
 }
 
-type Distribution = 'by_area' | 'fixed_per_apartment' | 'manual';
+type Distribution = 'by_area' | 'fixed_per_apartment' | 'manual' | 'by_meter';
 type Step = 1 | 2 | 3 | 4;
 
 const STEPS: { id: Step; label: string }[] = [
@@ -48,6 +49,7 @@ export default function AccrualsPage() {
   const [distribution, setDistribution] = useState<Distribution>('by_area');
   const [rate, setRate] = useState('8.5');
   const [fixedAmount, setFixedAmount] = useState('450');
+  const [meterType, setMeterType] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [preview, setPreview] = useState<ApartmentPreview[]>([]);
   const [manualAmounts, setManualAmounts] = useState<Record<string, string>>({});
@@ -93,8 +95,9 @@ export default function AccrualsPage() {
       dueDate: dueDate || undefined,
       templateId: templateId || undefined,
     };
-    if (distribution === 'by_area') payload.rate = Number(rate);
+    if (distribution === 'by_area' || distribution === 'by_meter') payload.rate = Number(rate);
     if (distribution === 'fixed_per_apartment') payload.fixedAmount = Number(fixedAmount);
+    if (distribution === 'by_meter' && meterType) payload.meterType = meterType;
     if (distribution === 'manual') {
       payload.manualLines = Object.entries(manualAmounts)
         .filter(([, v]) => v && Number(v) > 0)
@@ -268,12 +271,13 @@ export default function AccrualsPage() {
             >
               <option value="by_area">По площі (грн/м²)</option>
               <option value="fixed_per_apartment">Фіксована сума на квартиру</option>
+              <option value="by_meter">За лічильниками (грн/од.)</option>
               <option value="manual">Вручну по квартирах</option>
             </select>
           </div>
-          {distribution === 'by_area' && (
+          {(distribution === 'by_area' || distribution === 'by_meter') && (
             <div>
-              <label>Тариф (грн/м²)</label>
+              <label>{distribution === 'by_meter' ? 'Тариф (грн/од.)' : 'Тариф (грн/м²)'}</label>
               <input
                 type="number"
                 step="0.01"
@@ -282,6 +286,22 @@ export default function AccrualsPage() {
                 onChange={(e) => setRate(e.target.value)}
                 required
               />
+            </div>
+          )}
+          {distribution === 'by_meter' && (
+            <div>
+              <label>Тип лічильника (опційно)</label>
+              <select value={meterType} onChange={(e) => setMeterType(e.target.value)}>
+                <option value="">Усі типи</option>
+                <option value="cold_water">Холодна вода</option>
+                <option value="hot_water">Гаряча вода</option>
+                <option value="heating">Опалення</option>
+                <option value="electricity">Електроенергія</option>
+                <option value="other">Інше</option>
+              </select>
+              <p style={{ color: 'var(--muted)', fontSize: '0.8rem', marginTop: 4 }}>
+                Споживання береться з показників за обраний період (див. «Лічильники»).
+              </p>
             </div>
           )}
           {distribution === 'fixed_per_apartment' && (

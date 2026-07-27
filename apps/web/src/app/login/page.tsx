@@ -2,8 +2,7 @@
 
 import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
-import { apiFetch, LoginResponse } from '@/lib/api';
-import { setAuthCookie } from '@/lib/auth-cookie';
+import { apiFetch, LoginResponse, persistAccessToken } from '@/lib/api';
 
 const ADMIN_ROLES = ['chairman', 'accountant', 'board', 'auditor'];
 
@@ -20,14 +19,12 @@ function safeNextPath(raw: string | null): string | null {
 }
 
 async function finishLogin(data: LoginResponse) {
-  if (!data.accessToken || !data.refreshToken) {
+  if (!data.accessToken) {
     throw new Error('Неповна відповідь сервера');
   }
-  localStorage.setItem('dah_token', data.accessToken);
-  localStorage.setItem('dah_refresh', data.refreshToken);
+  persistAccessToken(data.accessToken);
   localStorage.setItem('dah_user', JSON.stringify(data.user));
-  setAuthCookie(data.accessToken);
-  window.dispatchEvent(new Event('dah-auth-change'));
+  localStorage.removeItem('dah_refresh');
 
   const next = safeNextPath(new URLSearchParams(window.location.search).get('next'));
 
@@ -41,7 +38,6 @@ async function finishLogin(data: LoginResponse) {
     target = '/admin';
   }
 
-  // Respect ?next= only if role-compatible
   if (next) {
     if (data.user.role === 'resident' && next.startsWith('/resident')) target = next;
     if (ADMIN_ROLES.includes(data.user.role) && next.startsWith('/admin')) target = next;
@@ -51,21 +47,59 @@ async function finishLogin(data: LoginResponse) {
   window.location.href = target;
 }
 
+type Mode = 'password' | 'sms' | '2fa';
+
 export default function LoginPage() {
+  const [mode, setMode] = useState<Mode>('password');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [phone, setPhone] = useState('');
+  const [smsCode, setSmsCode] = useState('');
+  const [smsSent, setSmsSent] = useState(false);
   const [code, setCode] = useState('');
   const [tempToken, setTempToken] = useState('');
-  const [step, setStep] = useState<'password' | '2fa'>('password');
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [showDemoHints, setShowDemoHints] = useState(false);
+  const [smsAvailable, setSmsAvailable] = useState(false);
+  const [identityAvailable, setIdentityAvailable] = useState(false);
+  const [identityProvider, setIdentityProvider] = useState('mock');
 
   useEffect(() => {
     if (isLocalHost()) {
       setEmail('chairman@osbb.local');
       setPassword('password123');
       setShowDemoHints(true);
+    }
+    apiFetch<{ enabled: boolean }>('/sms/status', { skipAuth: true })
+      .then((s) => setSmsAvailable(Boolean(s.enabled)))
+      .catch(() => setSmsAvailable(false));
+    apiFetch<{ enabled: boolean; provider?: string }>('/identity/status', { skipAuth: true })
+      .then((s) => {
+        setIdentityAvailable(Boolean(s.enabled));
+        setIdentityProvider(s.provider ?? 'mock');
+      })
+      .catch(() => setIdentityAvailable(false));
+
+    // Identity callback: /login?identity=callback&state=...&email=...
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('identity') === 'callback' && params.get('state')) {
+      setLoading(true);
+      apiFetch<LoginResponse>('/identity/callback', {
+        method: 'POST',
+        body: JSON.stringify({
+          state: params.get('state'),
+          code: params.get('code') ?? undefined,
+          email: params.get('email') ?? undefined,
+          phone: params.get('phone') ?? undefined,
+        }),
+      })
+        .then((data) => finishLogin(data))
+        .catch((err) => {
+          setError(err instanceof Error ? err.message : 'Помилка Diia/BankID');
+          setLoading(false);
+        });
     }
   }, []);
 
@@ -80,13 +114,69 @@ export default function LoginPage() {
       });
       if (data.requires2fa && data.tempToken) {
         setTempToken(data.tempToken);
-        setStep('2fa');
+        setMode('2fa');
         return;
       }
       await finishLogin(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Помилка входу');
     } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSmsRequest(e: FormEvent) {
+    e.preventDefault();
+    setError('');
+    setMessage('');
+    setLoading(true);
+    try {
+      const res = await apiFetch<{ ok: boolean; message?: string }>('/auth/login/sms/request', {
+        method: 'POST',
+        body: JSON.stringify({ phone }),
+      });
+      setSmsSent(true);
+      setMessage(res.message ?? 'Код надіслано (якщо номер у системі)');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Помилка SMS');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSmsVerify(e: FormEvent) {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const data = await apiFetch<LoginResponse>('/auth/login/sms/verify', {
+        method: 'POST',
+        body: JSON.stringify({ phone, code: smsCode }),
+      });
+      if (data.requires2fa && data.tempToken) {
+        setTempToken(data.tempToken);
+        setMode('2fa');
+        return;
+      }
+      await finishLogin(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Невірний код');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleIdentity() {
+    setError('');
+    setLoading(true);
+    try {
+      const res = await apiFetch<{ authorizeUrl: string }>('/identity/authorize', {
+        method: 'POST',
+        body: JSON.stringify({ returnTo: window.location.pathname }),
+      });
+      window.location.href = res.authorizeUrl;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Identity недоступний');
       setLoading(false);
     }
   }
@@ -113,7 +203,32 @@ export default function LoginPage() {
       <h1 style={{ marginBottom: '0.5rem' }}>Вхід</h1>
       <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>DAH — кабінет ОСМД</p>
 
-      {step === 'password' ? (
+      {mode !== '2fa' && smsAvailable && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: '1rem' }}>
+          <button
+            type="button"
+            className={`btn btn-sm${mode === 'password' ? '' : ' btn-ghost'}`}
+            onClick={() => {
+              setMode('password');
+              setError('');
+            }}
+          >
+            Email
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm${mode === 'sms' ? '' : ' btn-ghost'}`}
+            onClick={() => {
+              setMode('sms');
+              setError('');
+            }}
+          >
+            SMS
+          </button>
+        </div>
+      )}
+
+      {mode === 'password' && (
         <form onSubmit={handlePassword} className="card" style={{ display: 'grid', gap: '1rem' }}>
           <div>
             <label htmlFor="email">Email</label>
@@ -142,8 +257,76 @@ export default function LoginPage() {
           <button type="submit" disabled={loading}>
             {loading ? 'Вхід…' : 'Увійти'}
           </button>
+          {identityAvailable && (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={loading}
+              onClick={() => void handleIdentity()}
+            >
+              {identityProvider === 'diia'
+                ? 'Увійти через Дію'
+                : identityProvider === 'bankid'
+                  ? 'Увійти через BankID'
+                  : 'Увійти через Дію / BankID (mock)'}
+            </button>
+          )}
         </form>
-      ) : (
+      )}
+
+      {mode === 'sms' && (
+        <form
+          onSubmit={smsSent ? handleSmsVerify : handleSmsRequest}
+          className="card"
+          style={{ display: 'grid', gap: '1rem' }}
+        >
+          <div>
+            <label htmlFor="phone">Телефон</label>
+            <input
+              id="phone"
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+380..."
+              required
+              autoComplete="tel"
+            />
+          </div>
+          {smsSent && (
+            <div>
+              <label htmlFor="sms-code">Код з SMS</label>
+              <input
+                id="sms-code"
+                inputMode="numeric"
+                value={smsCode}
+                onChange={(e) => setSmsCode(e.target.value)}
+                required
+                maxLength={6}
+                autoComplete="one-time-code"
+              />
+            </div>
+          )}
+          {message && <p className="success-banner">{message}</p>}
+          {error && <p className="error">{error}</p>}
+          <button type="submit" disabled={loading}>
+            {loading ? '…' : smsSent ? 'Увійти' : 'Надіслати код'}
+          </button>
+          {smsSent && (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => {
+                setSmsSent(false);
+                setSmsCode('');
+              }}
+            >
+              Змінити номер
+            </button>
+          )}
+        </form>
+      )}
+
+      {mode === '2fa' && (
         <form onSubmit={handle2fa} className="card" style={{ display: 'grid', gap: '1rem' }}>
           <p style={{ fontSize: '0.95rem' }}>
             Введіть 6-значний код з додатку-аутентифікатора (2FA).
@@ -169,7 +352,7 @@ export default function LoginPage() {
             type="button"
             className="btn btn-ghost"
             onClick={() => {
-              setStep('password');
+              setMode('password');
               setTempToken('');
               setCode('');
               setError('');
@@ -180,7 +363,7 @@ export default function LoginPage() {
         </form>
       )}
 
-      {showDemoHints && step === 'password' && (
+      {showDemoHints && mode === 'password' && (
         <p style={{ marginTop: '1rem', color: 'var(--muted)', fontSize: '0.85rem' }}>
           Демо: chairman@osbb.local / password123
           <br />

@@ -20,17 +20,75 @@ export class BuildingService {
     private audit: AuditService,
   ) {}
 
-  getBuilding() {
+  getBuilding(buildingId?: string, tenantId?: string | null) {
+    if (buildingId) {
+      return this.prisma.building.findFirst({
+        where: {
+          id: buildingId,
+          ...(tenantId ? { tenantId } : {}),
+        },
+        include: {
+          bankAccounts: { include: { funds: true } },
+          funds: true,
+          _count: { select: { apartments: true } },
+        },
+      });
+    }
     return this.prisma.building.findFirst({
+      where: tenantId ? { tenantId } : undefined,
       include: {
         bankAccounts: { include: { funds: true } },
         funds: true,
+        _count: { select: { apartments: true } },
       },
     });
   }
 
+  /** Multi-building: list all buildings of this OSBB (tenant). */
+  listBuildings(tenantId?: string | null) {
+    return this.prisma.building.findMany({
+      where: tenantId ? { tenantId } : undefined,
+      orderBy: { createdAt: 'asc' },
+      include: {
+        _count: { select: { apartments: true, funds: true } },
+      },
+    });
+  }
+
+  async createBuilding(
+    dto: { name: string; address: string; edrpou?: string | null; tenantId?: string },
+    userId: string,
+    userTenantId?: string | null,
+  ) {
+    let tenantId = dto.tenantId ?? userTenantId ?? null;
+    if (!tenantId) {
+      const def = await this.prisma.tenant.findFirst({ orderBy: { createdAt: 'asc' } });
+      tenantId = def?.id ?? null;
+    }
+    if (!tenantId) throw new BadRequestException('Немає tenant — створіть ОСББ (tenant)');
+
+    const created = await this.prisma.building.create({
+      data: {
+        tenantId,
+        name: dto.name.trim(),
+        address: dto.address.trim(),
+        edrpou: dto.edrpou?.trim() || null,
+        isInitialized: true,
+      },
+    });
+    await this.audit.log({
+      userId,
+      action: 'building.created',
+      entityType: 'Building',
+      entityId: created.id,
+      payload: { name: created.name },
+    });
+    return created;
+  }
+
   /** Lightweight counters for admin dashboard. */
-  async getOpsSummary() {
+  async getOpsSummary(buildingId?: string) {
+    const aptScope = buildingId ? { apartment: { buildingId } } : {};
     const [pendingResidents, openRequests, activePolls, debtorsLines, documents] =
       await Promise.all([
         this.prisma.user.count({ where: { status: 'pending', role: 'resident' } }),
@@ -39,6 +97,7 @@ export class BuildingService {
         this.prisma.accrualLine.count({
           where: {
             status: { in: ['open', 'partially_paid', 'overdue'] },
+            ...aptScope,
           },
         }),
         this.prisma.document.count(),
@@ -50,6 +109,7 @@ export class BuildingService {
       activePolls,
       openAccrualLines: debtorsLines,
       documents,
+      buildingId: buildingId ?? null,
     };
   }
 
@@ -182,8 +242,13 @@ export class BuildingService {
     };
   }
 
-  async listApartments() {
+  async listApartments(buildingId?: string, tenantId?: string | null) {
     const apartments = await this.prisma.apartment.findMany({
+      where: buildingId
+        ? { buildingId }
+        : tenantId
+          ? { building: { tenantId } }
+          : undefined,
       orderBy: [{ entrance: 'asc' }, { number: 'asc' }],
       include: {
         residents: true,
@@ -220,8 +285,17 @@ export class BuildingService {
     });
   }
 
-  async createApartment(dto: CreateApartmentDto, userId: string) {
-    const building = await this.prisma.building.findFirst();
+  async createApartment(dto: CreateApartmentDto, userId: string, tenantId?: string | null) {
+    const building = dto.buildingId
+      ? await this.prisma.building.findFirst({
+          where: {
+            id: dto.buildingId,
+            ...(tenantId ? { tenantId } : {}),
+          },
+        })
+      : await this.prisma.building.findFirst({
+          where: tenantId ? { tenantId } : undefined,
+        });
     if (!building) throw new NotFoundException('Будинок не налаштовано');
 
     const apartment = await this.prisma.apartment.create({

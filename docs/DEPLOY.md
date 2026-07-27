@@ -27,6 +27,8 @@ cp .env.example .env
 | `CORS_ORIGIN` | `https://<домен>` |
 | `NEXT_PUBLIC_API_URL` | `https://<домен>/api` |
 | `VAPID_*` | `npx web-push generate-vapid-keys` |
+| `COOKIE_SECURE` | `true` за HTTPS (HttpOnly refresh cookie) |
+| `BACKUP_STATUS_PATH` | Шлях до `last-backup.json` (опційно, для /admin/ops) |
 
 ## 3. TLS-сертифікати (Let's Encrypt)
 

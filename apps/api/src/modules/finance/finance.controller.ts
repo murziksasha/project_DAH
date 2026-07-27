@@ -15,11 +15,13 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { Response } from 'express';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
+import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { CreateBankAccountDto, UpdateBankAccountDto } from './dto/bank-account.dto';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { CreateExpenseDto } from './dto/create-expense.dto';
+import { CreateFundDto } from './dto/create-fund.dto';
 import { CreateSupplierDto } from './dto/create-supplier.dto';
 import { UpdateFundDto } from './dto/update-fund.dto';
 import { VoidExpenseDto } from './dto/void-expense.dto';
@@ -35,20 +37,41 @@ export class FinanceController {
   constructor(private finance: FinanceService) {}
 
   @Get('funds')
-  listFunds() {
-    return this.finance.listFunds();
+  listFunds(
+    @Query('buildingId') buildingId?: string,
+    @TenantId() tenantId?: string | null,
+  ) {
+    return this.finance.listFunds(buildingId, tenantId);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(...FINANCE_WRITE_ROLES)
+  @Post('funds')
+  createFund(
+    @Body() dto: CreateFundDto,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId?: string | null,
+  ) {
+    return this.finance.createFund(dto, user.id, tenantId);
   }
 
   @Get('bank-accounts')
-  listBankAccounts() {
-    return this.finance.listBankAccounts();
+  listBankAccounts(
+    @Query('buildingId') buildingId?: string,
+    @TenantId() tenantId?: string | null,
+  ) {
+    return this.finance.listBankAccounts(buildingId, tenantId);
   }
 
   @UseGuards(RolesGuard)
   @Roles(UserRole.chairman, UserRole.accountant)
   @Post('bank-accounts')
-  createBankAccount(@Body() dto: CreateBankAccountDto, @CurrentUser() user: AuthUser) {
-    return this.finance.createBankAccount(dto, user.id);
+  createBankAccount(
+    @Body() dto: CreateBankAccountDto,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId?: string | null,
+  ) {
+    return this.finance.createBankAccount(dto, user.id, tenantId);
   }
 
   @UseGuards(RolesGuard)
@@ -107,15 +130,21 @@ export class FinanceController {
   }
 
   @Get('suppliers')
-  listSuppliers() {
-    return this.finance.listSuppliers();
+  listSuppliers(
+    @Query('buildingId') buildingId?: string,
+    @TenantId() tenantId?: string | null,
+  ) {
+    return this.finance.listSuppliers(buildingId, tenantId);
   }
 
   @UseGuards(RolesGuard)
   @Roles(...FINANCE_WRITE_ROLES)
   @Post('suppliers')
-  createSupplier(@Body() dto: CreateSupplierDto) {
-    return this.finance.createSupplier(dto);
+  createSupplier(
+    @Body() dto: CreateSupplierDto,
+    @TenantId() tenantId?: string | null,
+  ) {
+    return this.finance.createSupplier(dto, tenantId);
   }
 
   @UseGuards(RolesGuard)
@@ -132,11 +161,15 @@ export class FinanceController {
     @Query('to') to?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('buildingId') buildingId?: string,
+    @TenantId() tenantId?: string | null,
   ) {
     return this.finance.listExpenses({
       fundId,
       from,
       to,
+      buildingId,
+      tenantId,
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
     });
@@ -166,23 +199,60 @@ export class FinanceController {
   }
 
   @Get('reports/cash-flow')
-  cashFlow(@Query('from') from?: string, @Query('to') to?: string) {
-    return this.finance.getCashFlowReport(from, to);
+  cashFlow(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('buildingId') buildingId?: string,
+    @TenantId() tenantId?: string | null,
+  ) {
+    return this.finance.getCashFlowReport(from, to, buildingId, tenantId);
   }
 
   @Get('reports/expenses-summary')
-  expensesSummary(@Query('from') from?: string, @Query('to') to?: string) {
-    return this.finance.getExpensesSummary(from, to);
+  expensesSummary(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('buildingId') buildingId?: string,
+    @TenantId() tenantId?: string | null,
+  ) {
+    return this.finance.getExpensesSummary(from, to, buildingId, tenantId);
   }
 
   @Get('reports/board.pdf')
   async boardReportPdf(
     @Query('from') from: string | undefined,
     @Query('to') to: string | undefined,
+    @Query('buildingId') buildingId: string | undefined,
+    @TenantId() tenantId: string | null | undefined,
     @Res() res: Response,
   ) {
-    const { buffer, filename } = await this.finance.generateBoardReportPdf(from, to);
+    const { buffer, filename } = await this.finance.generateBoardReportPdf(
+      from,
+      to,
+      buildingId,
+      tenantId,
+    );
     res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+  }
+
+  /** ZIP of Excel-friendly CSV reports (cash-flow, debtors, expenses, 1C-style). */
+  @Get('reports/export-pack.zip')
+  async exportPack(
+    @Query('from') from: string | undefined,
+    @Query('to') to: string | undefined,
+    @Query('buildingId') buildingId: string | undefined,
+    @TenantId() tenantId: string | null | undefined,
+    @Res() res: Response,
+  ) {
+    const { buffer, filename } = await this.finance.generateExportPack(
+      from,
+      to,
+      buildingId,
+      tenantId,
+    );
+    res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);
   }

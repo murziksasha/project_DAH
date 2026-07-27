@@ -45,6 +45,7 @@ export default function ReportsPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [busyPdf, setBusyPdf] = useState(false);
+  const [busyPack, setBusyPack] = useState(false);
   const [busyNotify, setBusyNotify] = useState(false);
   const [message, setMessage] = useState('');
 
@@ -129,6 +130,26 @@ export default function ReportsPage() {
     }
   }
 
+  async function downloadExportPack() {
+    setBusyPack(true);
+    setError('');
+    try {
+      const qs = new URLSearchParams();
+      if (from) qs.set('from', from);
+      if (to) qs.set('to', to);
+      const q = qs.toString();
+      await downloadAuthFile(
+        `/finance/reports/export-pack.zip${q ? `?${q}` : ''}`,
+        'dah-export.zip',
+      );
+      setMessage('Пакет експорту завантажено (Excel CSV + 1C)');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Помилка export pack');
+    } finally {
+      setBusyPack(false);
+    }
+  }
+
   async function notifyDebtors() {
     if (
       !window.confirm(
@@ -162,6 +183,14 @@ export default function ReportsPage() {
         description="Рух коштів, боржники, PDF для зборів"
         actions={
           <>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => void downloadExportPack()}
+              disabled={busyPack}
+            >
+              {busyPack ? 'ZIP…' : 'Export pack (Excel)'}
+            </button>
             <button type="button" className="btn btn-sm btn-ghost" onClick={exportCashFlowCsv} disabled={!cashFlow}>
               CSV: рух
             </button>

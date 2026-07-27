@@ -20,6 +20,11 @@ import { PrismaModule } from './prisma/prisma.module';
 import { RemindersModule } from './modules/reminders/reminders.module';
 import { SetupModule } from './modules/setup/setup.module';
 import { UsersModule } from './modules/users/users.module';
+import { JournalModule } from './modules/journal/journal.module';
+import { MetersModule } from './modules/meters/meters.module';
+import { SmsModule } from './modules/sms/sms.module';
+import { IdentityModule } from './modules/identity/identity.module';
+import { TenantsModule } from './modules/tenants/tenants.module';
 
 @Module({
   imports: [
@@ -28,6 +33,11 @@ import { UsersModule } from './modules/users/users.module';
       throttlers: [{ name: 'default', ttl: 60000, limit: 120 }],
     }),
     PrismaModule,
+    JournalModule,
+    MetersModule,
+    SmsModule,
+    IdentityModule,
+    TenantsModule,
     MailModule,
     BootstrapModule,
     AuditModule,

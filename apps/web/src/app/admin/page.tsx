@@ -10,6 +10,7 @@ import { apiFetch, getToken } from '@/lib/api';
 import { getStoredUser } from '@/lib/auth';
 import { formatDateUk, formatMoney } from '@/lib/money';
 import { getQuickActions } from '@/lib/nav-config';
+import { useDebtorsQuery, useOpsSummaryQuery } from '@/lib/queries';
 
 interface CashFlowReport {
   totalIncome: number;
@@ -64,14 +65,16 @@ function today() {
 export default function AdminDashboard() {
   const [report, setReport] = useState<CashFlowReport | null>(null);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [debtors, setDebtors] = useState<Debtor[]>([]);
-  const [ops, setOps] = useState<OpsSummary | null>(null);
   const [from, setFrom] = useState(monthStart());
   const [to, setTo] = useState(today());
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const user = getStoredUser();
   const quickActions = getQuickActions(user?.role ?? '');
+  const debtorsQuery = useDebtorsQuery(Boolean(getToken()));
+  const opsQuery = useOpsSummaryQuery(Boolean(getToken()));
+  const debtors = (debtorsQuery.data ?? []).slice(0, 5) as Debtor[];
+  const ops = (opsQuery.data as OpsSummary | undefined) ?? null;
 
   const load = useCallback(async () => {
     const token = getToken();
@@ -91,29 +94,27 @@ export default function AdminDashboard() {
       if (to) expQs.set('to', to);
       const eq = expQs.toString();
 
-      const [r, e, d, o] = await Promise.all([
+      const [r, e] = await Promise.all([
         apiFetch<CashFlowReport>(`/finance/reports/cash-flow${q ? `?${q}` : ''}`, { token }),
         apiFetch<ExpensesPage>(
           `/finance/expenses?${eq ? `${eq}&` : ''}page=1&limit=5`,
           { token },
         ),
-        apiFetch<Debtor[]>('/payments/reports/debtors', { token }).catch(() => [] as Debtor[]),
-        apiFetch<OpsSummary>('/building/ops-summary', { token }).catch(() => null),
       ]);
       setReport(r);
       setExpenses(e.items ?? []);
-      setDebtors(d.slice(0, 5));
-      setOps(o);
+      await Promise.all([debtorsQuery.refetch(), opsQuery.refetch()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Помилка');
     } finally {
       setLoading(false);
     }
-  }, [from, to]);
+  }, [from, to, debtorsQuery, opsQuery]);
 
   useEffect(() => {
     load().catch(() => undefined);
-  }, [load]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial + period only
+  }, [from, to]);
 
   const totalDebt = debtors.reduce((s, d) => s + d.debt, 0);
   const collectionRate =

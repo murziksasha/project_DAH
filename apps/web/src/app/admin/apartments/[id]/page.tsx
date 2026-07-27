@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/Badge';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { SkeletonCards } from '@/components/ui/Skeleton';
 import { StatCard } from '@/components/ui/StatCard';
-import { apiFetch, downloadReceipt, getToken } from '@/lib/api';
+import { apiFetch, downloadReceipt, getApiBaseUrl, getToken } from '@/lib/api';
 import { formatDateUk, formatMoney } from '@/lib/money';
 import { t } from '@/lib/i18n';
 
@@ -86,6 +86,35 @@ export default function ApartmentAccountPage() {
       />
 
       {error && <p className="error">{error}</p>}
+      {account && (
+        <div style={{ marginBottom: '1rem' }}>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            onClick={async () => {
+              const token = getToken();
+              if (!token) return;
+              const res = await fetch(
+                `${getApiBaseUrl()}/accruals/apartments/${id}/statement.csv`,
+                { headers: { Authorization: `Bearer ${token}` } },
+              );
+              if (!res.ok) {
+                setError('Не вдалося завантажити виписку');
+                return;
+              }
+              const blob = await res.blob();
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `account-kv-${account.apartment.number}.csv`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+          >
+            Експорт виписки CSV
+          </button>
+        </div>
+      )}
       {loading && <SkeletonCards count={3} />}
 
       {account && (

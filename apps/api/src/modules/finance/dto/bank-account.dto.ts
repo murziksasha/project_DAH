@@ -19,6 +19,11 @@ export class CreateBankAccountDto {
   @IsString()
   @MaxLength(200)
   description?: string;
+
+  @ApiPropertyOptional({ description: 'Target building (defaults to first)' })
+  @IsOptional()
+  @IsString()
+  buildingId?: string;
 }
 
 export class UpdateBankAccountDto {

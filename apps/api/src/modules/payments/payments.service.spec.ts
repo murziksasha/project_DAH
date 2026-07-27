@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
+import { JournalService } from '../journal/journal.service';
 import { PaymentsService } from './payments.service';
 
 describe('PaymentsService', () => {
@@ -11,7 +12,13 @@ describe('PaymentsService', () => {
   const prisma = {
     apartment: { findUnique: jest.fn() },
     accrualLine: { findMany: jest.fn() },
-    payment: { create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn() },
+    payment: {
+      create: jest.fn(),
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+      update: jest.fn(),
+      count: jest.fn(),
+    },
     paymentAllocation: { create: jest.fn() },
     accrualLine_update: jest.fn(),
     $transaction: jest.fn((fn: (tx: unknown) => unknown) =>
@@ -19,12 +26,15 @@ describe('PaymentsService', () => {
         payment: { create: jest.fn().mockResolvedValue({ id: 'pay-1' }) },
         paymentAllocation: { create: jest.fn() },
         accrualLine: { update: jest.fn() },
+        $queryRaw: jest.fn().mockResolvedValue([]),
+        apartment: { update: jest.fn() },
       }),
     ),
   };
 
   const audit = { log: jest.fn() };
   const mail = { notifyResidentsOfApartments: jest.fn().mockResolvedValue(undefined) };
+  const journal = { write: jest.fn().mockResolvedValue({}) };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -35,6 +45,7 @@ describe('PaymentsService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: AuditService, useValue: audit },
         { provide: MailService, useValue: mail },
+        { provide: JournalService, useValue: journal },
       ],
     }).compile();
 

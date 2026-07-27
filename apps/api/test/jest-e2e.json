@@ -7,5 +7,9 @@
     "^.+\\.(t|j)s$": ["ts-jest", { "tsconfig": { "esModuleInterop": true } }]
   },
   "setupFiles": ["<rootDir>/setup-env.ts"],
-  "testTimeout": 30000
+  "testTimeout": 30000,
+  "moduleNameMapper": {
+    "^@dah/shared$": "<rootDir>/../../packages/shared/src/index.ts",
+    "^@dah/money$": "<rootDir>/../../packages/money/src/index.ts"
+  }
 }

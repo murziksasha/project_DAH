@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
+import { withBuildingBody } from '@/lib/building-context';
 
 interface Supplier {
   id: string;
@@ -86,13 +87,13 @@ export default function SuppliersPage() {
     if (!token) return;
     setError('');
     setMessage('');
-    const body = {
+    const body = withBuildingBody({
       name: form.name,
       edrpou: form.edrpou || undefined,
       iban: form.iban || undefined,
       phone: form.phone || undefined,
       serviceType: form.serviceType || undefined,
-    };
+    });
     try {
       if (editingId) {
         await apiFetch(`/finance/suppliers/${editingId}`, {

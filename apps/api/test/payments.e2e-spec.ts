@@ -74,4 +74,55 @@ describe('Payments (e2e)', () => {
     expect(Number(line?.paidAmount)).toBe(100);
     expect(line?.status).toBe('partially_paid');
   });
+
+  it('concurrent payments do not over-allocate accrual line', async () => {
+    // Fresh line balance after previous 100 paid of 425 → 325 left.
+    // Two parallel 200 payments should not push paidAmount above 425.
+    const payloads = [1, 2].map((i) => ({
+      apartmentId,
+      amount: 200,
+      date: '2026-06-21',
+      source: 'bank' as const,
+      reference: `race-${i}-${Date.now()}`,
+    }));
+
+    const results = await Promise.all(
+      payloads.map((body) =>
+        request(app.getHttpServer())
+          .post('/api/payments')
+          .set('Authorization', `Bearer ${token}`)
+          .send(body),
+      ),
+    );
+
+    for (const res of results) {
+      expect([200, 201]).toContain(res.status);
+    }
+
+    const line = await testPrisma.accrualLine.findFirst({ where: { apartmentId } });
+    expect(line).toBeTruthy();
+    expect(Number(line!.paidAmount)).toBeLessThanOrEqual(425);
+    expect(Number(line!.paidAmount)).toBeGreaterThanOrEqual(300); // at least prior 100 + some
+
+    const payments = await testPrisma.payment.findMany({
+      where: { apartmentId, isVoided: false, reference: { startsWith: 'race-' } },
+      include: { allocations: true },
+    });
+    const allocated = payments.reduce(
+      (s, p) => s + p.allocations.reduce((a, x) => a + Number(x.amount), 0),
+      0,
+    );
+    // Total allocated across race payments + previous should not invent money beyond debt
+    expect(allocated).toBeLessThanOrEqual(425);
+  });
+
+  it('GET /api/payments returns page object', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/payments?limit=10')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(Array.isArray(res.body.items)).toBe(true);
+    expect(typeof res.body.total).toBe('number');
+    expect(res.body.page).toBe(1);
+  });
 });

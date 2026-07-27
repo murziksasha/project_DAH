@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ReactNode, useCallback, useEffect, useState } from 'react';
+import { BuildingSwitcher } from '@/components/BuildingSwitcher';
 import { HealthBanner } from '@/components/HealthBanner';
 import { apiFetch, getToken } from '@/lib/api';
 import { getRoleHome, getStoredUser, logout } from '@/lib/auth';
@@ -165,6 +166,7 @@ export default function AppShell({ children }: AppShellProps) {
           <span className="app-header-sub">{title}</span>
         </div>
         <div className="app-header-actions">
+          <BuildingSwitcher />
           <button
             type="button"
             className="app-icon-btn"

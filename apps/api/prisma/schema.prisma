@@ -26,6 +26,15 @@ enum AccrualDistribution {
   by_area
   fixed_per_apartment
   manual
+  by_meter
+}
+
+enum MeterType {
+  cold_water
+  hot_water
+  heating
+  electricity
+  other
 }
 
 enum AccrualLineStatus {
@@ -53,6 +62,35 @@ enum UserStatus {
   blocked
 }
 
+enum JournalEntryType {
+  accrual
+  payment
+  expense
+  void_payment
+  void_expense
+  opening
+}
+
+enum VoteWeightMode {
+  one_per_user
+  one_per_apartment
+  by_area
+}
+
+/** One legal ОСББ (organization) on a shared install. Multi-tenant SaaS foundation. */
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  isActive  Boolean  @default(true)
+  settings  Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  buildings Building[]
+  users     User[]
+}
+
 model User {
   id           String     @id @default(cuid())
   email        String     @unique
@@ -62,6 +100,9 @@ model User {
   phone        String?
   role         UserRole   @default(resident)
   status       UserStatus @default(pending)
+  /// null = platform super_admin (cross-tenant); otherwise ОСББ tenant
+  tenantId     String?
+  tenant       Tenant?    @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   apartmentId  String?
   primaryApartment Apartment? @relation("UserPrimaryApartment", fields: [apartmentId], references: [id])
   refreshToken String?
@@ -73,6 +114,7 @@ model User {
   updatedAt    DateTime   @updatedAt
 
   apartmentLinks     UserApartment[]
+  authSessions       AuthSession[]
   auditLogs          AuditLog[]
   createdExpenses    Expense[]           @relation("ExpenseCreatedBy")
   announcements      Announcement[]
@@ -81,6 +123,25 @@ model User {
   pushSubscriptions  PushSubscription[]
   reminders          Reminder[]          @relation("ReminderTarget")
   createdReminders   Reminder[]          @relation("ReminderCreator")
+
+  @@index([tenantId])
+}
+
+/** Refresh-token session with rotation + reuse detection (v1.0). */
+model AuthSession {
+  id               String    @id @default(cuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  familyId         String
+  refreshTokenHash String
+  revokedAt        DateTime?
+  userAgent        String?
+  ip               String?
+  createdAt        DateTime  @default(now())
+  lastUsedAt       DateTime  @default(now())
+
+  @@index([userId])
+  @@index([familyId])
 }
 
 model UserApartment {
@@ -98,6 +159,8 @@ model UserApartment {
 
 model Building {
   id                      String   @id @default(cuid())
+  tenantId                String
+  tenant                  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   name                    String
   address                 String
   edrpou                  String?
@@ -111,6 +174,8 @@ model Building {
   bankAccounts BankAccount[]
   funds       Fund[]
   suppliers   Supplier[]
+
+  @@index([tenantId])
 }
 
 model Apartment {
@@ -121,6 +186,8 @@ model Apartment {
   entrance   Int      @default(1)
   floor      Int?
   area       Float
+  /// Prepaid balance (advance) in major units — first-class, updated with payments/voids.
+  advanceBalance Decimal @default(0) @db.Decimal(12, 2)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -130,8 +197,42 @@ model Apartment {
   accrualLines   AccrualLine[]
   payments       Payment[]
   reminders      Reminder[]
+  pollVotes      PollVote[]
+  meters         Meter[]
 
   @@unique([buildingId, number])
+}
+
+model Meter {
+  id           String    @id @default(cuid())
+  apartmentId  String
+  apartment    Apartment @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+  type         MeterType @default(cold_water)
+  name         String
+  unit         String    @default("m3")
+  serialNumber String?
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  readings MeterReading[]
+
+  @@index([apartmentId])
+  @@index([type])
+}
+
+model MeterReading {
+  id            String   @id @default(cuid())
+  meterId       String
+  meter         Meter    @relation(fields: [meterId], references: [id], onDelete: Cascade)
+  period        String
+  value         Decimal  @db.Decimal(14, 3)
+  previousValue Decimal? @db.Decimal(14, 3)
+  consumption   Decimal  @db.Decimal(14, 3)
+  createdAt     DateTime @default(now())
+
+  @@unique([meterId, period])
+  @@index([period])
 }
 
 model Resident {
@@ -312,16 +413,23 @@ model Request {
   author      User          @relation("RequestAuthor", fields: [authorId], references: [id])
   assigneeId  String?
   assignee    User?         @relation("RequestAssignee", fields: [assigneeId], references: [id])
+  /// SLA target datetime
+  dueAt       DateTime?
+  /// MinIO object keys for attached photos
+  photoKeys   Json          @default("[]")
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 }
 
 model Poll {
-  id        String       @id @default(cuid())
-  question  String
-  isActive  Boolean      @default(true)
-  endsAt    DateTime?
-  createdAt DateTime     @default(now())
+  id            String         @id @default(cuid())
+  question      String
+  isActive      Boolean        @default(true)
+  endsAt        DateTime?
+  voteWeight    VoteWeightMode @default(one_per_user)
+  /// Required participation percent of eligible weight (null = no quorum)
+  quorumPercent Decimal?       @db.Decimal(5, 2)
+  createdAt     DateTime       @default(now())
 
   options PollOption[]
   votes   PollVote[]
@@ -337,15 +445,54 @@ model PollOption {
 }
 
 model PollVote {
-  id       String     @id @default(cuid())
-  pollId   String
-  poll     Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
-  optionId String
-  option   PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
-  userId   String
-  createdAt DateTime  @default(now())
+  id          String     @id @default(cuid())
+  pollId      String
+  poll        Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  optionId    String
+  option      PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  userId      String
+  apartmentId String?
+  apartment   Apartment? @relation(fields: [apartmentId], references: [id], onDelete: SetNull)
+  weight      Decimal    @default(1) @db.Decimal(12, 4)
+  createdAt   DateTime   @default(now())
 
   @@unique([pollId, userId])
+  @@index([pollId, apartmentId])
+}
+
+/// Immutable financial journal (v1.0 accounting foundation).
+model JournalEntry {
+  id          String           @id @default(cuid())
+  type        JournalEntryType
+  buildingId  String?
+  apartmentId String?
+  fundId      String?
+  refType     String
+  refId       String
+  description String?
+  createdById String?
+  createdAt   DateTime         @default(now())
+
+  lines JournalLine[]
+
+  @@index([refType, refId])
+  @@index([type, createdAt])
+  @@index([buildingId, createdAt])
+}
+
+model JournalLine {
+  id          String       @id @default(cuid())
+  entryId     String
+  entry       JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  /// Logical account code: receivable | cash | advance | expense | fund_balance
+  account     String
+  apartmentId String?
+  fundId      String?
+  debit       Decimal      @default(0) @db.Decimal(14, 2)
+  credit      Decimal      @default(0) @db.Decimal(14, 2)
+
+  @@index([entryId])
+  @@index([account, apartmentId])
 }
 
 model AuditLog {

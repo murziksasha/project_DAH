@@ -25,6 +25,13 @@ interface HealthStatus {
   service: string;
   version?: string;
   db?: string;
+  redis?: string;
+  storage?: string;
+  backup?: {
+    status: string;
+    lastBackupAt: string | null;
+    ageHours: number | null;
+  };
   timestamp: string;
 }
 
@@ -110,14 +117,72 @@ export default function OpsPage() {
     }
   }
 
+  async function testSms() {
+    const token = getToken();
+    if (!token) return;
+    const to = window.prompt('Телефон для тест-SMS (напр. +380501112233)?');
+    if (!to?.trim()) return;
+    setBusy(true);
+    setError('');
+    try {
+      const res = await apiFetch<{ ok: boolean; logged?: boolean; providerId?: string }>(
+        '/sms/test',
+        {
+          method: 'POST',
+          token,
+          body: JSON.stringify({ to: to.trim(), text: 'DAH test SMS' }),
+        },
+      );
+      setMessage(
+        res.logged
+          ? `SMS у лог (без gateway), id=${res.providerId}`
+          : `SMS надіслано: ${res.providerId}`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Помилка SMS');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runJournalReconcile() {
+    const token = getToken();
+    if (!token) return;
+    setBusy(true);
+    setError('');
+    try {
+      const res = await apiFetch<{
+        ok: boolean;
+        mismatchCount: number;
+        mismatches: Array<{ kind: string; label: string; diff: number }>;
+      }>('/journal/reconcile', { token });
+      setMessage(
+        res.ok
+          ? 'Journal reconcile: OK (розбіжностей немає)'
+          : `Journal reconcile: ${res.mismatchCount} розбіжностей (див. консоль)`,
+      );
+      if (!res.ok) {
+        // eslint-disable-next-line no-console
+        console.info('journal mismatches', res.mismatches);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Помилка');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const apiOk = health?.status === 'ok';
   const dbOk = health?.db === 'up';
+  const redisOk = health?.redis === 'up';
+  const storageOk = health?.storage === 'up';
+  const backupOk = health?.backup?.status === 'ok';
 
   return (
     <main>
       <PageHeader
         title="Операції / здоровʼя"
-        description="API, БД, email, нагадування — контроль self-host"
+        description="API, БД, Redis, MinIO, email, backup — контроль self-host"
         actions={
           <button type="button" className="btn btn-sm btn-ghost" onClick={() => refresh()}>
             Оновити
@@ -132,13 +197,33 @@ export default function OpsPage() {
         <StatCard
           label="API"
           value={health ? health.status.toUpperCase() : '…'}
-          tone={apiOk ? 'success' : health ? 'danger' : 'muted'}
+          tone={apiOk ? 'success' : health?.status === 'degraded' ? 'muted' : health ? 'danger' : 'muted'}
           hint={health?.version ? `версія ${health.version}` : undefined}
         />
         <StatCard
           label="PostgreSQL"
           value={health?.db ? health.db.toUpperCase() : '…'}
           tone={dbOk ? 'success' : health ? 'danger' : 'muted'}
+        />
+        <StatCard
+          label="Redis"
+          value={health?.redis ? health.redis.toUpperCase() : '…'}
+          tone={redisOk ? 'success' : health ? 'danger' : 'muted'}
+        />
+        <StatCard
+          label="MinIO"
+          value={health?.storage ? health.storage.toUpperCase() : '…'}
+          tone={storageOk ? 'success' : health ? 'danger' : 'muted'}
+        />
+        <StatCard
+          label="Backup"
+          value={health?.backup?.status ? health.backup.status.toUpperCase() : '…'}
+          tone={backupOk ? 'success' : health?.backup?.status === 'stale' ? 'danger' : 'muted'}
+          hint={
+            health?.backup?.lastBackupAt
+              ? `останній: ${new Date(health.backup.lastBackupAt).toLocaleString('uk-UA')}`
+              : 'немає markers (BACKUP_STATUS_PATH)'
+          }
         />
         <StatCard
           label="Email"
@@ -159,7 +244,16 @@ export default function OpsPage() {
             <button type="button" className="btn btn-sm btn-ghost" onClick={processReminders} disabled={busy}>
               Обробити нагадування + overdue
             </button>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={runJournalReconcile} disabled={busy}>
+              Journal reconcile
+            </button>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => void testSms()} disabled={busy}>
+              Тест SMS
+            </button>
           </div>
+          <p style={{ color: 'var(--muted)', fontSize: '0.8rem', marginTop: '0.5rem' }}>
+            SMS: увімкніть SMS_ENABLED=true (provider=log пише в API log). Online pay: ONLINE_PAYMENTS_*.
+          </p>
           <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginTop: '0.75rem' }}>
             Worker (docker) кожні 15 хв: reminders + mark overdue. Backup:{' '}
             <code>npm run backup</code> / <code>infra/scripts</code>.
