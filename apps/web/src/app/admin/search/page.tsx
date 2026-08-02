@@ -2,9 +2,9 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
-import { t } from '@/lib/i18n';
 
 interface Apartment {
   id: string;
@@ -14,6 +14,7 @@ interface Apartment {
 }
 
 export default function AdminSearchPage() {
+  const { t } = useI18n();
   const [apartments, setApartments] = useState<Apartment[]>([]);
   const [q, setQ] = useState('');
   const [error, setError] = useState('');
@@ -52,7 +53,7 @@ export default function AdminSearchPage() {
           id="q"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="101, під'їзд 2…"
+          placeholder={t('searchPh')}
           autoFocus
         />
       </div>
@@ -69,9 +70,11 @@ export default function AdminSearchPage() {
                   style={{ display: 'flex', justifyContent: 'space-between' }}
                 >
                   <span>
-                    кв. {a.number} · під&apos;їзд {a.entrance}
+                    {t('aptPrefix')} {a.number} · {t('searchEntrance')} {a.entrance}
                   </span>
-                  <span style={{ color: 'var(--muted)' }}>{a.area} м²</span>
+                  <span style={{ color: 'var(--muted)' }}>
+                    {a.area} {t('sqm')}
+                  </span>
                 </Link>
               </li>
             ))}

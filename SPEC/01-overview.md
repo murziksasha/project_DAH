@@ -45,7 +45,7 @@
 
 ### Інфраструктура
 - Docker Compose, nginx, HTTPS
-- Backup PostgreSQL + MinIO
+- Backup PostgreSQL (in-app weekly/manual + download/upload dump на ПК) + MinIO (CLI)
 - Журнал аудиту, Jest + Playwright
 
 ## Ключові архітектурні рішення

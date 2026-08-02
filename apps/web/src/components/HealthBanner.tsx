@@ -1,9 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { checkApiHealth } from '@/lib/api';
 
 export function HealthBanner() {
+  const { t } = useI18n();
   const [offline, setOffline] = useState(false);
 
   const ping = useCallback(async () => {
@@ -33,9 +35,9 @@ export function HealthBanner() {
 
   return (
     <div className="health-banner" role="status">
-      Немає зв&apos;язку з сервером «Мій дім». Перевірте Wi‑Fi, KeenDNS або що Docker/API запущено.
+      {t('healthOffline')}
       <button type="button" className="btn btn-ghost btn-sm" onClick={() => ping()} style={{ marginLeft: '0.75rem' }}>
-        Спробувати знову
+        {t('tryAgain')}
       </button>
     </div>
   );

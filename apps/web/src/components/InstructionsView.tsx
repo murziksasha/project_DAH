@@ -1,21 +1,34 @@
 'use client';
 
-import { getInstructionsForRole, getRoleLabel } from '@/lib/instructions-content';
+import { useI18n } from '@/components/LocaleProvider';
+import { getInstructionsForRole } from '@/lib/instructions-content';
 import { getStoredUser } from '@/lib/auth';
+import type { I18nKey } from '@/lib/i18n';
+
+const ROLE_I18N: Record<string, I18nKey> = {
+  super_admin: 'roleSuperAdmin',
+  chairman: 'roleChairman',
+  accountant: 'roleAccountant',
+  board: 'roleBoard',
+  auditor: 'roleAuditor',
+  resident: 'roleResident',
+};
 
 export default function InstructionsView() {
+  const { t, locale } = useI18n();
   const user = getStoredUser();
 
   if (!user) return null;
 
-  const content = getInstructionsForRole(user.role);
-  const roleLabel = getRoleLabel(user.role);
+  const content = getInstructionsForRole(user.role, locale);
+  const roleKey = ROLE_I18N[user.role];
+  const roleName = roleKey ? t(roleKey) : user.role;
 
   return (
     <main>
       <h1 style={{ marginBottom: '0.5rem' }}>{content.title}</h1>
       <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>
-        Роль: {roleLabel}
+        {t('instructionsRole')} {roleName}
       </p>
 
       <section className="card" style={{ marginBottom: '1rem' }}>

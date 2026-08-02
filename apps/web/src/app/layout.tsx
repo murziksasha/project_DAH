@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { AuthCookieSync } from '@/components/AuthCookieSync';
+import { LocaleProvider } from '@/components/LocaleProvider';
 import { PwaPrompt } from '@/components/PwaPrompt';
 import { QueryProvider } from '@/components/QueryProvider';
 import './globals.css';
@@ -35,9 +36,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <QueryProvider>
-          <AuthCookieSync />
-          {children}
-          <PwaPrompt />
+          <LocaleProvider>
+            <AuthCookieSync />
+            {children}
+            <PwaPrompt />
+          </LocaleProvider>
         </QueryProvider>
       </body>
     </html>

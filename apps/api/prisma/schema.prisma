@@ -112,6 +112,11 @@ model User {
   tenant       Tenant?    @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   apartmentId  String?
   primaryApartment Apartment? @relation("UserPrimaryApartment", fields: [apartmentId], references: [id])
+  /// Who activated the account (registration approve or admin status→active)
+  approvedAt   DateTime?
+  approvedById String?
+  approvedBy   User?      @relation("UserApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedUsers User[]    @relation("UserApprovedBy")
   refreshToken String?
   totpSecret         String?
   totpEnabled        Boolean  @default(false)
@@ -132,6 +137,7 @@ model User {
   createdReminders   Reminder[]          @relation("ReminderCreator")
 
   @@index([tenantId])
+  @@index([approvedById])
 }
 
 /** Refresh-token session with rotation + reuse detection (v1.0). */

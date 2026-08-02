@@ -27,6 +27,39 @@ type Props = {
   onChange: (next: DocumentTemplatesConfig) => void;
 };
 
+type TabId = 'forms' | 'exports';
+
+function BuilderTabs({
+  tab,
+  onTab,
+}: {
+  tab: TabId;
+  onTab: (tab: TabId) => void;
+}) {
+  return (
+    <div className="doc-builder-tabs" role="tablist" aria-label="Тип конструктора">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={tab === 'forms'}
+        className={tab === 'forms' ? 'btn btn-sm' : 'btn btn-sm btn-ghost'}
+        onClick={() => onTab('forms')}
+      >
+        PDF-документи
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={tab === 'exports'}
+        className={tab === 'exports' ? 'btn btn-sm' : 'btn btn-sm btn-ghost'}
+        onClick={() => onTab('exports')}
+      >
+        Excel / звіти
+      </button>
+    </div>
+  );
+}
+
 const kindLabels: Record<DocTemplateKind, string> = {
   receipt: 'Квитанція',
   board_report: 'Звіт правління',
@@ -406,7 +439,12 @@ function BlockEditor({
   }
 }
 
-function FormsTab({ config, onChange }: Props) {
+function FormsTab({
+  config,
+  onChange,
+  tab,
+  onTab,
+}: Props & { tab: TabId; onTab: (tab: TabId) => void }) {
   const [selectedId, setSelectedId] = useState(config.forms[0]?.id ?? '');
   const [insertType, setInsertType] = useState<DocLayoutBlock['type']>('paragraph');
   const selected =
@@ -474,46 +512,54 @@ function FormsTab({ config, onChange }: Props) {
 
   if (!selected) {
     return (
-      <div className="card">
-        <p>Немає шаблонів.</p>
-        <button type="button" className="btn" onClick={addForm}>
-          Створити шаблон
-        </button>
+      <div className="doc-builder-grid">
+        <div className="doc-builder-sticky-left">
+          <BuilderTabs tab={tab} onTab={onTab} />
+          <div className="card">
+            <p>Немає шаблонів.</p>
+            <button type="button" className="btn" onClick={addForm}>
+              Створити шаблон
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="doc-builder-grid">
-      <aside className="doc-builder-list card">
-        <div className="doc-builder-list-head">
-          <h2>Шаблони PDF</h2>
-          <button type="button" className="btn btn-sm" onClick={addForm}>
-            +
-          </button>
-        </div>
-        <ul className="doc-form-list">
-          {config.forms.map((form) => (
-            <li key={form.id}>
-              <button
-                type="button"
-                className={
-                  form.id === selected.id
-                    ? 'doc-form-item doc-form-item-active'
-                    : 'doc-form-item'
-                }
-                onClick={() => setSelectedId(form.id)}
-              >
-                <strong>{form.title}</strong>
-                <small>
-                  {kindLabels[form.kind]}
-                  {!form.isActive ? ' · вимкнено' : ''}
-                </small>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </aside>
+      <div className="doc-builder-sticky-left">
+        <BuilderTabs tab={tab} onTab={onTab} />
+        <aside className="doc-builder-list card">
+          <div className="doc-builder-list-head">
+            <h2>Шаблони PDF</h2>
+            <button type="button" className="btn btn-sm" onClick={addForm}>
+              +
+            </button>
+          </div>
+          <ul className="doc-form-list">
+            {config.forms.map((form) => (
+              <li key={form.id}>
+                <button
+                  type="button"
+                  className={
+                    form.id === selected.id
+                      ? 'doc-form-item doc-form-item-active'
+                      : 'doc-form-item'
+                  }
+                  onClick={() => setSelectedId(form.id)}
+                >
+                  <strong>{form.title}</strong>
+                  <small>
+                    {kindLabels[form.kind]}
+                    {!form.isActive ? ' · вимкнено' : ''}
+                  </small>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </aside>
+      </div>
 
       <section className="doc-builder-editor card">
         <div className="doc-builder-meta">
@@ -644,21 +690,28 @@ function FormsTab({ config, onChange }: Props) {
         </div>
       </section>
 
-      <section className="doc-builder-preview card">
-        <h2>Попередній перегляд</h2>
-        <p className="doc-hint">
-          Демо-дані. Реальні PDF генеруються на сервері з даних нарахування / звіту.
-        </p>
-        <div
-          className="doc-preview-page"
-          dangerouslySetInnerHTML={{ __html: previewHtml }}
-        />
+      <section className="doc-builder-preview card doc-builder-sticky-right">
+        <div className="doc-builder-preview-inner">
+          <h2>Попередній перегляд</h2>
+          <p className="doc-hint">
+            Демо-дані. Реальні PDF генеруються на сервері з даних нарахування / звіту.
+          </p>
+          <div
+            className="doc-preview-page"
+            dangerouslySetInnerHTML={{ __html: previewHtml }}
+          />
+        </div>
       </section>
     </div>
   );
 }
 
-function ExportsTab({ config, onChange }: Props) {
+function ExportsTab({
+  config,
+  onChange,
+  tab,
+  onTab,
+}: Props & { tab: TabId; onTab: (tab: TabId) => void }) {
   const [selectedId, setSelectedId] = useState(config.exports[0]?.id ?? '');
   const selected =
     config.exports.find((e) => e.id === selectedId) ?? config.exports[0] ?? null;
@@ -671,32 +724,42 @@ function ExportsTab({ config, onChange }: Props) {
   }
 
   if (!selected) {
-    return <div className="card">Немає профілів експорту.</div>;
+    return (
+      <div className="doc-export-grid">
+        <div className="doc-builder-sticky-left">
+          <BuilderTabs tab={tab} onTab={onTab} />
+          <div className="card">Немає профілів експорту.</div>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="doc-export-grid">
-      <aside className="card">
-        <h2>Excel / вигрузки</h2>
-        <ul className="doc-form-list">
-          {config.exports.map((profile) => (
-            <li key={profile.id}>
-              <button
-                type="button"
-                className={
-                  profile.id === selected.id
-                    ? 'doc-form-item doc-form-item-active'
-                    : 'doc-form-item'
-                }
-                onClick={() => setSelectedId(profile.id)}
-              >
-                <strong>{profile.title}</strong>
-                <small>{profile.kind}</small>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </aside>
+      <div className="doc-builder-sticky-left">
+        <BuilderTabs tab={tab} onTab={onTab} />
+        <aside className="doc-builder-list card">
+          <h2>Excel / вигрузки</h2>
+          <ul className="doc-form-list">
+            {config.exports.map((profile) => (
+              <li key={profile.id}>
+                <button
+                  type="button"
+                  className={
+                    profile.id === selected.id
+                      ? 'doc-form-item doc-form-item-active'
+                      : 'doc-form-item'
+                  }
+                  onClick={() => setSelectedId(profile.id)}
+                >
+                  <strong>{profile.title}</strong>
+                  <small>{profile.kind}</small>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </aside>
+      </div>
       <section className="card">
         <label>
           Назва профілю
@@ -749,30 +812,14 @@ function ExportsTab({ config, onChange }: Props) {
 }
 
 export function DocumentTemplateBuilder({ config, onChange }: Props) {
-  const [tab, setTab] = useState<'forms' | 'exports'>('forms');
+  const [tab, setTab] = useState<TabId>('forms');
 
   return (
     <div className="doc-builder">
-      <div className="doc-builder-tabs">
-        <button
-          type="button"
-          className={tab === 'forms' ? 'btn btn-sm' : 'btn btn-sm btn-ghost'}
-          onClick={() => setTab('forms')}
-        >
-          PDF-документи
-        </button>
-        <button
-          type="button"
-          className={tab === 'exports' ? 'btn btn-sm' : 'btn btn-sm btn-ghost'}
-          onClick={() => setTab('exports')}
-        >
-          Excel / звіти
-        </button>
-      </div>
       {tab === 'forms' ? (
-        <FormsTab config={config} onChange={onChange} />
+        <FormsTab config={config} onChange={onChange} tab={tab} onTab={setTab} />
       ) : (
-        <ExportsTab config={config} onChange={onChange} />
+        <ExportsTab config={config} onChange={onChange} tab={tab} onTab={setTab} />
       )}
     </div>
   );

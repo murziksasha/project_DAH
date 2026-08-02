@@ -89,7 +89,8 @@ Layouts не використовують server-side auth (middleware вимк�
 | notifications | `/api/notifications` | Web Push підписки |
 | audit | `/api/audit` | Журнал аудиту |
 | files | `/api/files` | Завантаження в MinIO |
-| health | `/api/health` | Health check (DB/Redis/MinIO/backup) |
+| health | `/api/health` | Health check (DB/Redis/MinIO/backup markers) |
+| backups | `/api/backups` | Копії PostgreSQL: list/status, create, weekly, download, upload |
 
 ### Shared packages (v1.0)
 

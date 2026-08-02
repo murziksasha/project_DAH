@@ -393,8 +393,26 @@ export class AuthService {
 
     const updated = await this.prisma.user.update({
       where: { id: userId },
-      data: { status: UserStatus.active },
-      select: { id: true, email: true, status: true, role: true, firstName: true, lastName: true },
+      data: {
+        status: UserStatus.active,
+        approvedAt: new Date(),
+        approvedById: actorId,
+      },
+      select: {
+        id: true,
+        email: true,
+        status: true,
+        role: true,
+        firstName: true,
+        lastName: true,
+        approvedAt: true,
+        approvedById: true,
+      },
+    });
+
+    const approver = await this.prisma.user.findUnique({
+      where: { id: actorId },
+      select: { id: true, email: true, firstName: true, lastName: true, role: true },
     });
 
     await this.audit.log({
@@ -402,7 +420,19 @@ export class AuthService {
       action: 'auth.approve',
       entityType: 'User',
       entityId: userId,
-      payload: { email: user.email, role: user.role },
+      payload: {
+        email: user.email,
+        role: user.role,
+        approvedBy: approver
+          ? {
+              id: approver.id,
+              email: approver.email,
+              firstName: approver.firstName,
+              lastName: approver.lastName,
+              role: approver.role,
+            }
+          : { id: actorId },
+      },
     });
 
     void this.mail.sendTemplate(updated.email, 'registration.approved', {

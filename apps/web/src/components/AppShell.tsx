@@ -5,17 +5,11 @@ import { usePathname } from 'next/navigation';
 import { ReactNode, useCallback, useEffect, useState } from 'react';
 import { BuildingSwitcher } from '@/components/BuildingSwitcher';
 import { HealthBanner } from '@/components/HealthBanner';
+import { useI18n } from '@/components/LocaleProvider';
 import { NavIcon } from '@/components/ui/NavIcon';
 import { apiFetch, getToken } from '@/lib/api';
 import { getRoleHome, getStoredUser, logout } from '@/lib/auth';
-import {
-  getStoredLocale,
-  groupLabel,
-  navLabelForHref,
-  setStoredLocale,
-  t,
-  type Locale,
-} from '@/lib/i18n';
+import { groupLabel, navLabelForHref, type Locale } from '@/lib/i18n';
 import { getNavGroups, getShellTitle, type NavGroup } from '@/lib/nav-config';
 import { applyTheme, getStoredTheme, toggleTheme, type ThemeMode } from '@/lib/theme';
 
@@ -42,7 +36,6 @@ export function resolveActiveNavHref(
 
   let best: string | null = null;
   for (const href of hrefs) {
-    // Home-style roots only match exactly (handled above).
     if (href === homeHref || href === '/admin' || href === '/resident') continue;
     if (pathname === href || pathname.startsWith(`${href}/`)) {
       if (!best || href.length > best.length) best = href;
@@ -64,12 +57,13 @@ function NavGroups({
   locale: Locale;
   iconOnly: boolean;
 }) {
-  const homeLabel = t('home', locale);
+  const { t } = useI18n();
+  const homeLabel = t('home');
   const allHrefs = groups.flatMap((g) => g.items.map((i) => i.href));
   const activeHref = resolveActiveNavHref(pathname, allHrefs, homeHref);
 
   return (
-    <nav className="app-drawer-nav" id="app-nav" aria-label="Основна навігація">
+    <nav className="app-drawer-nav" id="app-nav" aria-label={t('mainNav')}>
       <Link
         href={homeHref}
         className={`app-drawer-link${activeHref === homeHref || pathname === homeHref ? ' active' : ''}`}
@@ -106,14 +100,12 @@ function NavGroups({
 
 export default function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
-  /** Desktop: expanded labels when true; collapsed = icon rail. Default: icons-only. */
+  const { locale, setLocale, t } = useI18n();
   const [navExpanded, setNavExpanded] = useState(false);
-  /** Mobile: full drawer overlay open. */
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
   const [isInitialized, setIsInitialized] = useState(true);
   const [theme, setTheme] = useState<ThemeMode>('light');
-  const [locale, setLocale] = useState<Locale>('uk');
   const user = getStoredUser();
 
   const loadInitStatus = useCallback(async () => {
@@ -131,9 +123,6 @@ export default function AppShell({ children }: AppShellProps) {
   useEffect(() => {
     applyTheme(getStoredTheme());
     setTheme(getStoredTheme());
-    const loc = getStoredLocale();
-    setLocale(loc);
-    setStoredLocale(loc);
     try {
       const stored = localStorage.getItem(NAV_COLLAPSED_KEY);
       if (stored === '1') setNavExpanded(false);
@@ -162,12 +151,11 @@ export default function AppShell({ children }: AppShellProps) {
     apiFetch<{ locale?: string }>('/building/settings', { token })
       .then((s) => {
         if (s.locale === 'uk' || s.locale === 'ru') {
-          setStoredLocale(s.locale);
           setLocale(s.locale);
         }
       })
       .catch(() => undefined);
-  }, [loadInitStatus]);
+  }, [loadInitStatus, setLocale]);
 
   useEffect(() => {
     setMobileOpen(false);
@@ -187,15 +175,15 @@ export default function AppShell({ children }: AppShellProps) {
   const navGroups = getNavGroups(user.role, isInitialized);
   const homeHref = getRoleHome(user.role, isInitialized);
   const orgType = user.tenant?.orgType ?? null;
-  const titleKey =
+  const title =
     user.role === 'super_admin'
-      ? t('setupTitle', locale)
+      ? t('setupTitle')
       : user.role === 'resident'
-        ? t('residentCabinet', locale)
+        ? t('residentCabinet')
         : orgType === 'management_company'
-          ? 'Кабінет УК'
-          : t('boardCabinet', locale);
-  const title = titleKey || getShellTitle(user.role, orgType);
+          ? t('boardCabinetUk')
+          : t('boardCabinet');
+  const shellFallback = getShellTitle(user.role, orgType);
   const userLabel = `${user.firstName} ${user.lastName}`.trim() || user.email;
   const desktopCollapsed = !navExpanded;
   const iconOnly = isDesktop ? desktopCollapsed : !mobileOpen;
@@ -223,9 +211,7 @@ export default function AppShell({ children }: AppShellProps) {
   }
 
   function onToggleLocale() {
-    const next: Locale = locale === 'uk' ? 'ru' : 'uk';
-    setStoredLocale(next);
-    setLocale(next);
+    setLocale(locale === 'uk' ? 'ru' : 'uk');
   }
 
   return (
@@ -242,7 +228,7 @@ export default function AppShell({ children }: AppShellProps) {
         <button
           type="button"
           className={`app-menu-btn${menuOpenVisual ? ' open' : ''}`}
-          aria-label="Меню"
+          aria-label={t('menu')}
           aria-expanded={menuOpenVisual}
           aria-controls="app-nav"
           onClick={onToggleMenu}
@@ -250,8 +236,8 @@ export default function AppShell({ children }: AppShellProps) {
           <span className={`app-menu-icon${menuOpenVisual ? ' open' : ''}`} />
         </button>
         <div className="app-header-title">
-          <span className="app-brand">{t('appName', locale)}</span>
-          <span className="app-header-sub">{title}</span>
+          <span className="app-brand">{t('appName')}</span>
+          <span className="app-header-sub">{title || shellFallback}</span>
         </div>
         <div className="app-header-actions">
           <BuildingSwitcher />
@@ -259,7 +245,7 @@ export default function AppShell({ children }: AppShellProps) {
             type="button"
             className="app-icon-btn"
             aria-label={locale === 'uk' ? 'RU' : 'UK'}
-            title={t('language', locale)}
+            title={t('language')}
             onClick={onToggleLocale}
           >
             {locale === 'uk' ? 'RU' : 'UK'}
@@ -267,14 +253,14 @@ export default function AppShell({ children }: AppShellProps) {
           <button
             type="button"
             className="app-icon-btn"
-            aria-label={theme === 'dark' ? 'Світла тема' : 'Темна тема'}
-            title={theme === 'dark' ? 'Світла тема' : 'Темна тема'}
+            aria-label={theme === 'dark' ? t('themeLight') : t('themeDark')}
+            title={theme === 'dark' ? t('themeLight') : t('themeDark')}
             onClick={onToggleTheme}
           >
             {theme === 'dark' ? '☀' : '☾'}
           </button>
           <button type="button" className="app-logout-btn" onClick={() => logout()}>
-            {t('logout', locale)}
+            {t('logout')}
           </button>
         </div>
       </header>
@@ -286,7 +272,7 @@ export default function AppShell({ children }: AppShellProps) {
           <button
             type="button"
             className="app-drawer-backdrop"
-            aria-label="Закрити меню"
+            aria-label={t('closeMenu')}
             onClick={() => setMobileOpen(false)}
           />
         )}

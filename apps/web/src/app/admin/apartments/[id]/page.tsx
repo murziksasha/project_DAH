@@ -3,13 +3,13 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { Badge } from '@/components/ui/Badge';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { SkeletonCards } from '@/components/ui/Skeleton';
 import { StatCard } from '@/components/ui/StatCard';
 import { apiFetch, downloadReceipt, getApiBaseUrl, getToken } from '@/lib/api';
 import { formatDateUk, formatMoney } from '@/lib/money';
-import { t } from '@/lib/i18n';
 
 interface Account {
   apartment: {
@@ -40,19 +40,20 @@ interface Account {
   }>;
 }
 
-const STATUS: Record<string, string> = {
-  open: 'До сплати',
-  partially_paid: 'Частково',
-  paid: 'Сплачено',
-  overdue: 'Прострочено',
-};
-
 export default function ApartmentAccountPage() {
+  const { t } = useI18n();
   const params = useParams();
   const id = String(params.id ?? '');
   const [account, setAccount] = useState<Account | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+
+  const STATUS: Record<string, string> = {
+    open: t('aptStatusOpen'),
+    partially_paid: t('aptStatusPartial'),
+    paid: t('aptStatusPaid'),
+    overdue: t('aptStatusOverdue'),
+  };
 
   useEffect(() => {
     const token = getToken();
@@ -75,12 +76,19 @@ export default function ApartmentAccountPage() {
       <PageHeader
         title={
           account
-            ? `${t('apartmentAccount')} · кв. ${account.apartment.number}`
+            ? t('aptTitleNum', {
+                title: t('apartmentAccount'),
+                number: account.apartment.number,
+              })
             : t('apartmentAccount')
         }
         description={
           account
-            ? `${account.apartment.buildingName} · під'їзд ${account.apartment.entrance} · ${account.apartment.area} м²`
+            ? t('aptMeta', {
+                building: account.apartment.buildingName,
+                entrance: account.apartment.entrance,
+                area: account.apartment.area,
+              })
             : undefined
         }
       />
@@ -99,7 +107,7 @@ export default function ApartmentAccountPage() {
                 { headers: { Authorization: `Bearer ${token}` } },
               );
               if (!res.ok) {
-                setError('Не вдалося завантажити виписку');
+                setError(t('aptExportFail'));
                 return;
               }
               const blob = await res.blob();
@@ -111,7 +119,7 @@ export default function ApartmentAccountPage() {
               URL.revokeObjectURL(url);
             }}
           >
-            Експорт виписки Excel
+            {t('aptExportExcel')}
           </button>
         </div>
       )}
@@ -126,12 +134,12 @@ export default function ApartmentAccountPage() {
               tone={account.summary.debt > 0 ? 'danger' : 'success'}
             />
             <StatCard label={t('paid')} value={formatMoney(account.summary.totalPaid)} />
-            <StatCard label="Нараховано" value={formatMoney(account.summary.totalAccrued)} />
-            <StatCard label="Аванс" value={formatMoney(account.summary.advance)} />
+            <StatCard label={t('aptAccrued')} value={formatMoney(account.summary.totalAccrued)} />
+            <StatCard label={t('aptAdvance')} value={formatMoney(account.summary.advance)} />
           </div>
 
           <section className="card" style={{ marginBottom: '1rem' }}>
-            <h2 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>Нарахування</h2>
+            <h2 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>{t('aptAccruals')}</h2>
             {account.lines.length === 0 ? (
               <p style={{ color: 'var(--muted)' }}>{t('noData')}</p>
             ) : (
@@ -166,7 +174,9 @@ export default function ApartmentAccountPage() {
                       </div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontWeight: 700 }}>{formatMoney(line.balance > 0 ? line.balance : line.amount)}</div>
+                      <div style={{ fontWeight: 700 }}>
+                        {formatMoney(line.balance > 0 ? line.balance : line.amount)}
+                      </div>
                       <button
                         type="button"
                         className="btn btn-sm btn-ghost"
@@ -186,7 +196,7 @@ export default function ApartmentAccountPage() {
           </section>
 
           <section className="card">
-            <h2 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>Платежі</h2>
+            <h2 style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>{t('aptPayments')}</h2>
             {account.payments.length === 0 ? (
               <p style={{ color: 'var(--muted)' }}>{t('noData')}</p>
             ) : (
@@ -194,10 +204,10 @@ export default function ApartmentAccountPage() {
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th>Дата</th>
-                      <th>Сума</th>
-                      <th>Джерело</th>
-                      <th>Референс</th>
+                      <th>{t('date')}</th>
+                      <th>{t('amount')}</th>
+                      <th>{t('aptSource')}</th>
+                      <th>{t('aptReference')}</th>
                     </tr>
                   </thead>
                   <tbody>

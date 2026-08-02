@@ -329,19 +329,19 @@ export const sampleBoardReportData: Record<string, string> = {
 };
 
 export const sampleBoardTableHtml = {
-  fund_balances: `<table class="doc-line-table"><thead><tr><th>Фонд</th><th>Баланс</th><th>Надх.</th><th>Витр.</th></tr></thead><tbody>
+  fund_balances: `<table class="doc-line-table cols-4"><thead><tr><th>Фонд</th><th>Баланс</th><th>Надх.</th><th>Витр.</th></tr></thead><tbody>
 <tr><td>Утримання</td><td>40 000,00 грн</td><td>80 000,00 грн</td><td>60 000,00 грн</td></tr>
 <tr><td>Капремонт</td><td>15 000,00 грн</td><td>40 000,00 грн</td><td>35 000,00 грн</td></tr>
 </tbody></table>`,
-  expenses_by_category: `<table class="doc-line-table"><thead><tr><th>Категорія</th><th>Сума</th></tr></thead><tbody>
+  expenses_by_category: `<table class="doc-line-table cols-2"><thead><tr><th>Категорія</th><th>Сума</th></tr></thead><tbody>
 <tr><td>Електроенергія</td><td>22 000,00 грн</td></tr>
 <tr><td>Прибирання</td><td>18 000,00 грн</td></tr>
 </tbody></table>`,
-  debtors: `<table class="doc-line-table"><thead><tr><th>Кв.</th><th>Під'їзд</th><th>Борг</th></tr></thead><tbody>
+  debtors: `<table class="doc-line-table cols-3"><thead><tr><th>Кв.</th><th>Під'їзд</th><th>Борг</th></tr></thead><tbody>
 <tr><td>5</td><td>1</td><td>3 200,00 грн</td></tr>
 <tr><td>12</td><td>2</td><td>5 300,00 грн</td></tr>
 </tbody></table>`,
-  payment_lines: `<table class="doc-line-table"><thead><tr><th>Послуга</th><th>Сума</th></tr></thead><tbody>
+  payment_lines: `<table class="doc-line-table cols-2"><thead><tr><th>Послуга</th><th>Сума</th></tr></thead><tbody>
 <tr><td>Утримання</td><td>450,00 грн</td></tr>
 </tbody></table>`,
 };

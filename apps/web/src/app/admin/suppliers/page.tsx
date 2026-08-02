@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
@@ -33,6 +34,7 @@ const emptyForm = {
 };
 
 export default function SuppliersPage() {
+  const { t } = useI18n();
   const [tab, setTab] = useState<Tab>('suppliers');
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -101,19 +103,19 @@ export default function SuppliersPage() {
           token,
           body: JSON.stringify(body),
         });
-        setMessage('Постачальника оновлено');
+        setMessage(t('suppliersUpdated'));
       } else {
         await apiFetch('/finance/suppliers', {
           method: 'POST',
           token,
           body: JSON.stringify(body),
         });
-        setMessage('Постачальника додано');
+        setMessage(t('suppliersAdded'));
       }
       cancelEdit();
       await loadSuppliers();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     }
   }
 
@@ -130,34 +132,34 @@ export default function SuppliersPage() {
       });
       setCatName('');
       setCatCode('');
-      setMessage('Категорію додано');
+      setMessage(t('categoryAdded'));
       await loadCategories();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     }
   }
 
   async function deleteCategory(id: string) {
-    if (!window.confirm('Видалити категорію?')) return;
+    if (!window.confirm(t('categoryDeleteConfirm'))) return;
     const token = getToken();
     if (!token) return;
     try {
       await apiFetch(`/finance/categories/${id}`, { method: 'DELETE', token });
-      setMessage('Категорію видалено');
+      setMessage(t('categoryDeleted'));
       await loadCategories();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     }
   }
 
   return (
     <main>
       <PageHeader
-        title="Довідники"
-        description="Постачальники та категорії витрат"
+        title={t('suppliersTitle')}
+        description={t('suppliersDesc')}
         actions={
           <Link href="/admin/expenses" className="btn btn-sm btn-ghost">
-            Нова витрата
+            {t('newExpense')}
           </Link>
         }
       />
@@ -168,14 +170,14 @@ export default function SuppliersPage() {
           className={`tab-btn${tab === 'suppliers' ? ' active' : ''}`}
           onClick={() => setTab('suppliers')}
         >
-          Постачальники
+          {t('suppliersTabSuppliers')}
         </button>
         <button
           type="button"
           className={`tab-btn${tab === 'categories' ? ' active' : ''}`}
           onClick={() => setTab('categories')}
         >
-          Категорії
+          {t('suppliersTabCategories')}
         </button>
       </nav>
 
@@ -190,10 +192,10 @@ export default function SuppliersPage() {
             style={{ display: 'grid', gap: '0.75rem', marginBottom: '1.25rem' }}
           >
             <h2 style={{ fontSize: '1.05rem' }}>
-              {editingId ? 'Редагувати постачальника' : 'Новий постачальник'}
+              {editingId ? t('suppliersEdit') : t('suppliersNew')}
             </h2>
             <div>
-              <label>Назва</label>
+              <label>{t('name')}</label>
               <input
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -202,7 +204,7 @@ export default function SuppliersPage() {
             </div>
             <div className="grid-2">
               <div>
-                <label>ЄДРПОУ</label>
+                <label>{t('suppliersEdrpou')}</label>
                 <input value={form.edrpou} onChange={(e) => setForm({ ...form, edrpou: e.target.value })} />
               </div>
               <div>
@@ -212,11 +214,11 @@ export default function SuppliersPage() {
             </div>
             <div className="grid-2">
               <div>
-                <label>Телефон</label>
+                <label>{t('phone')}</label>
                 <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
               </div>
               <div>
-                <label>Тип послуг</label>
+                <label>{t('suppliersServiceType')}</label>
                 <input
                   value={form.serviceType}
                   onChange={(e) => setForm({ ...form, serviceType: e.target.value })}
@@ -224,10 +226,10 @@ export default function SuppliersPage() {
               </div>
             </div>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button type="submit">{editingId ? 'Зберегти' : 'Додати'}</button>
+              <button type="submit">{editingId ? t('save') : t('add')}</button>
               {editingId && (
                 <button type="button" className="btn btn-ghost" onClick={cancelEdit}>
-                  Скасувати
+                  {t('cancel')}
                 </button>
               )}
             </div>
@@ -235,7 +237,7 @@ export default function SuppliersPage() {
 
           <section className="card">
             {suppliers.length === 0 ? (
-              <EmptyState title="Постачальників немає" />
+              <EmptyState title={t('suppliersEmpty')} />
             ) : (
               <ul style={{ listStyle: 'none', display: 'grid', gap: '0.75rem' }}>
                 {suppliers.map((s) => (
@@ -257,7 +259,7 @@ export default function SuppliersPage() {
                       </div>
                     </div>
                     <button type="button" className="btn btn-sm btn-ghost" onClick={() => startEdit(s)}>
-                      Редагувати
+                      {t('edit')}
                     </button>
                   </li>
                 ))}
@@ -274,14 +276,14 @@ export default function SuppliersPage() {
             className="card"
             style={{ display: 'grid', gap: '0.75rem', marginBottom: '1.25rem' }}
           >
-            <h2 style={{ fontSize: '1.05rem' }}>Нова категорія витрат</h2>
+            <h2 style={{ fontSize: '1.05rem' }}>{t('categoryNewExpense')}</h2>
             <div className="grid-2">
               <div>
-                <label>Назва</label>
+                <label>{t('name')}</label>
                 <input value={catName} onChange={(e) => setCatName(e.target.value)} required />
               </div>
               <div>
-                <label>Код (опційно)</label>
+                <label>{t('categoryCodeOptional')}</label>
                 <input
                   value={catCode}
                   onChange={(e) => setCatCode(e.target.value)}
@@ -289,11 +291,11 @@ export default function SuppliersPage() {
                 />
               </div>
             </div>
-            <button type="submit">Додати</button>
+            <button type="submit">{t('add')}</button>
           </form>
           <section className="card">
             {categories.length === 0 ? (
-              <EmptyState title="Категорій немає" />
+              <EmptyState title={t('categoriesEmpty')} />
             ) : (
               <ul style={{ listStyle: 'none', display: 'grid', gap: '0.5rem' }}>
                 {categories.map((c) => (
@@ -312,7 +314,7 @@ export default function SuppliersPage() {
                       <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>({c.code})</span>
                     </span>
                     <button type="button" className="btn btn-sm btn-ghost" onClick={() => deleteCategory(c.id)}>
-                      Видалити
+                      {t('delete')}
                     </button>
                   </li>
                 ))}

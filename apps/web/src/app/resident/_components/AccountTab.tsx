@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { StatCard } from '@/components/ui/StatCard';
@@ -19,13 +20,6 @@ import {
 } from '../_lib/account-filters';
 import { AccountFilters } from './AccountFilters';
 import { AccountHistory } from './AccountHistory';
-
-const STATUS_LABELS: Record<string, string> = {
-  open: 'До сплати',
-  partially_paid: 'Частково',
-  paid: 'Сплачено',
-  overdue: 'Прострочено',
-};
 
 export interface ResidentAccount {
   apartment: { number: string; buildingName: string };
@@ -63,6 +57,13 @@ export function AccountTab({
   copied,
   onCopy,
 }: Props) {
+  const { t } = useI18n();
+  const STATUS_LABELS: Record<string, string> = {
+    open: t('aptStatusOpen'),
+    partially_paid: t('aptStatusPartial'),
+    paid: t('aptStatusPaid'),
+    overdue: t('aptStatusOverdue'),
+  };
   const [filters, setFilters] = useState<AccountFiltersState>(EMPTY_FILTERS);
 
   useEffect(() => {
@@ -179,24 +180,24 @@ export function AccountTab({
       <div className="resident-summary-sticky">
         <div className="grid-2 resident-stat-grid">
           <StatCard
-            label="Борг"
+            label={t('debt')}
             value={formatMoney(account.summary.debt)}
             tone={account.summary.debt > 0 ? 'danger' : 'success'}
           />
           <StatCard
-            label="Аванс"
+            label={t('aptAdvance')}
             value={formatMoney(account.summary.advance)}
             tone={account.summary.advance > 0 ? 'success' : 'muted'}
           />
-          <StatCard label="Нараховано" value={formatMoney(account.summary.totalAccrued)} />
-          <StatCard label="Сплачено" value={formatMoney(account.summary.totalPaid)} tone="success" />
+          <StatCard label={t('aptAccrued')} value={formatMoney(account.summary.totalAccrued)} />
+          <StatCard label={t('paid')} value={formatMoney(account.summary.totalPaid)} tone="success" />
         </div>
         <p className="resident-filter-hint">
-          Показано: <strong>{filterLabel(filters)}</strong>
+          {t('filter')}: <strong>{filterLabel(filters)}</strong>
           {' · '}
-          борг у вибірці {formatMoney(periodSummary.debt)}
+          {t('debt')} {formatMoney(periodSummary.debt)}
           {' · '}
-          платежі {formatMoney(periodSummary.paidEvents)}
+          {t('aptPayments')} {formatMoney(periodSummary.paidEvents)}
         </p>
       </div>
 
@@ -209,7 +210,7 @@ export function AccountTab({
 
       <div className="resident-toolbar">
         <button type="button" className="btn btn-sm" onClick={() => void exportExcel()}>
-          Excel: виписка
+          {t('aptStatement')}
         </button>
       </div>
 

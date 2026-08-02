@@ -1,9 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StatCard } from '@/components/ui/StatCard';
-import { apiFetch, getApiBaseUrl, getToken } from '@/lib/api';
+import { apiFetch, getApiBaseUrl, getToken, refreshAccessToken } from '@/lib/api';
+import { downloadAuthFile } from '@/lib/download';
+import type { I18nKey } from '@/lib/i18n';
 
 interface MailStatus {
   smtpConfigured: boolean;
@@ -51,6 +54,8 @@ interface BackupListItem {
   sizeBytes: number | null;
   status: string;
   relativePath: string;
+  /** schedule | api | manual | upload | … */
+  source?: string | null;
 }
 
 function formatBytes(n: number | null) {
@@ -60,7 +65,39 @@ function formatBytes(n: number | null) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** Visual origin of a backup in the catalog. */
+function backupOrigin(
+  b: BackupListItem,
+  t: (key: I18nKey) => string,
+): {
+  label: string;
+  badgeClass: string;
+  title: string;
+} {
+  if (b.source === 'upload') {
+    return {
+      label: t('opsBackupUpload'),
+      badgeClass: 'badge badge-warning',
+      title: t('opsBackupUpload'),
+    };
+  }
+  if (b.kind === 'weekly') {
+    return {
+      label: t('opsBackupWeekly'),
+      badgeClass: 'badge badge-success',
+      title: t('opsBackupWeekly'),
+    };
+  }
+  return {
+    label: t('opsBackupManual'),
+    badgeClass: 'badge badge-primary',
+    title: t('opsBackupManual'),
+  };
+}
+
 export default function OpsPage() {
+  const { t, locale } = useI18n();
+  const dateLocale = locale === 'ru' ? 'ru-RU' : 'uk-UA';
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [mail, setMail] = useState<MailStatus | null>(null);
   const [logs, setLogs] = useState<EmailLog[]>([]);
@@ -70,6 +107,8 @@ export default function OpsPage() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [busyBackup, setBusyBackup] = useState(false);
+  const [busyDownloadId, setBusyDownloadId] = useState<string | null>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
     const token = getToken();
@@ -94,10 +133,10 @@ export default function OpsPage() {
       setBackupStatus(bStatus);
       setBackupList(bList);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
       setHealth(null);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     refresh().catch(() => undefined);
@@ -252,6 +291,73 @@ export default function OpsPage() {
     }
   }
 
+  async function downloadBackup(b: BackupListItem) {
+    const key = `${b.kind}-${b.id}`;
+    setBusyDownloadId(key);
+    setError('');
+    try {
+      await downloadAuthFile(
+        `/backups/${b.kind}/${encodeURIComponent(b.id)}/download`,
+        `dah-backup-${b.kind}-${b.id}.sql.gz`,
+      );
+      setMessage(`Завантажено: dah-backup-${b.kind}-${b.id}.sql.gz`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Помилка завантаження');
+    } finally {
+      setBusyDownloadId(null);
+    }
+  }
+
+  async function uploadBackupFromPc(file: File) {
+    let token = getToken();
+    if (!token) return;
+    setBusyBackup(true);
+    setError('');
+    setMessage('');
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const apiUrl = getApiBaseUrl();
+      let res = await fetch(`${apiUrl}/backups/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+        credentials: 'include',
+      });
+      if (res.status === 401) {
+        const newToken = await refreshAccessToken();
+        if (!newToken) throw new Error('Сесію завершено');
+        token = newToken;
+        res = await fetch(`${apiUrl}/backups/upload`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: form,
+          credentials: 'include',
+        });
+      }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: res.statusText }));
+        throw new Error(
+          Array.isArray(err.message) ? err.message.join(', ') : (err.message ?? 'Помилка завантаження'),
+        );
+      }
+      const data = (await res.json()) as {
+        relativePath: string;
+        sizeBytes: number;
+        finishedAt: string;
+      };
+      setMessage(
+        `Копію з компʼютера додано: ${data.relativePath} (${formatBytes(data.sizeBytes)})`,
+      );
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Помилка завантаження копії');
+    } finally {
+      setBusyBackup(false);
+      if (uploadInputRef.current) uploadInputRef.current.value = '';
+    }
+  }
+
   const apiOk = health?.status === 'ok';
   const dbOk = health?.db === 'up';
   const redisOk = health?.redis === 'up';
@@ -261,11 +367,11 @@ export default function OpsPage() {
   return (
     <main>
       <PageHeader
-        title="Операції / здоровʼя"
-        description="API, БД, Redis, MinIO, email, backup — контроль self-host"
+        title={t('opsPageTitle')}
+        description={t('opsPageDesc')}
         actions={
           <button type="button" className="btn btn-sm btn-ghost" onClick={() => refresh()}>
-            Оновити
+            {t('refresh')}
           </button>
         }
       />
@@ -278,7 +384,7 @@ export default function OpsPage() {
           label="API"
           value={health ? health.status.toUpperCase() : '…'}
           tone={apiOk ? 'success' : health?.status === 'degraded' ? 'muted' : health ? 'danger' : 'muted'}
-          hint={health?.version ? `версія ${health.version}` : undefined}
+          hint={health?.version ? t('opsVersion', { v: health.version }) : undefined}
         />
         <StatCard
           label="PostgreSQL"
@@ -301,34 +407,36 @@ export default function OpsPage() {
           tone={backupOk ? 'success' : health?.backup?.status === 'stale' ? 'danger' : 'muted'}
           hint={
             health?.backup?.lastBackupAt
-              ? `останній: ${new Date(health.backup.lastBackupAt).toLocaleString('uk-UA')}`
-              : 'немає markers (BACKUP_STATUS_PATH)'
+              ? t('opsLastBackupAt', {
+                  date: new Date(health.backup.lastBackupAt).toLocaleString(dateLocale),
+                })
+              : t('opsNoBackupMarkers')
           }
         />
         <StatCard
           label="Email"
           value={mail ? mail.mode.toUpperCase() : '…'}
-          hint={mail?.smtpConfigured ? 'SMTP налаштовано' : 'Без SMTP — лише лог'}
+          hint={mail?.smtpConfigured ? t('opsSmtpOk') : t('opsSmtpNo')}
           tone={mail?.smtpConfigured ? 'success' : 'muted'}
         />
       </div>
 
       {mail && (
         <section className="card" style={{ marginBottom: '1rem' }}>
-          <h2 style={{ fontSize: '1.05rem', marginBottom: '0.5rem' }}>Посилання застосунку</h2>
+          <h2 style={{ fontSize: '1.05rem', marginBottom: '0.5rem' }}>{t('opsAppLinks')}</h2>
           <p className="invite-url">{mail.appUrl}</p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.75rem' }}>
             <button type="button" className="btn btn-sm" onClick={testMail} disabled={busy}>
-              Тестовий email
+              {t('opsTestEmail')}
             </button>
             <button type="button" className="btn btn-sm btn-ghost" onClick={processReminders} disabled={busy}>
-              Обробити нагадування + overdue
+              {t('opsProcessReminders')}
             </button>
             <button type="button" className="btn btn-sm btn-ghost" onClick={runJournalReconcile} disabled={busy}>
-              Journal reconcile
+              {t('opsJournal')}
             </button>
             <button type="button" className="btn btn-sm btn-ghost" onClick={() => void testSms()} disabled={busy}>
-              Тест SMS
+              {t('opsTestSms')}
             </button>
           </div>
           <p style={{ color: 'var(--muted)', fontSize: '0.8rem', marginTop: '0.5rem' }}>
@@ -340,17 +448,16 @@ export default function OpsPage() {
           </p>
           {health?.timestamp && (
             <p style={{ color: 'var(--muted)', fontSize: '0.8rem', marginTop: '0.35rem' }}>
-              Health: {new Date(health.timestamp).toLocaleString('uk-UA')}
+              Health: {new Date(health.timestamp).toLocaleString(dateLocale)}
             </p>
           )}
         </section>
       )}
 
       <section className="card" style={{ marginBottom: '1rem' }}>
-        <h2 style={{ fontSize: '1.05rem', marginBottom: '0.5rem' }}>Копії даних (PostgreSQL)</h2>
+        <h2 style={{ fontSize: '1.05rem', marginBottom: '0.5rem' }}>{t('opsBackups')}</h2>
         <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
-          Автоматично раз на тиждень (ISO). Якщо копія за поточний тиждень уже є — повторно не
-          створюється. Ручна копія — завжди нова. Мешканцям недоступно.
+          {t('opsBackupsDesc')}
         </p>
         {backupStatus && (
           <div
@@ -362,18 +469,18 @@ export default function OpsPage() {
             }}
           >
             <div>
-              Поточний тиждень: <strong>{backupStatus.weekKey}</strong>{' '}
+              {t('opsCurrentWeek')}: <strong>{backupStatus.weekKey}</strong>{' '}
               {backupStatus.weeklyExists ? (
-                <span className="badge badge-success">тижнева є</span>
+                <span className="badge badge-success">{t('opsWeeklyExists')}</span>
               ) : (
-                <span className="badge badge-danger">тижневої немає</span>
+                <span className="badge badge-danger">{t('opsWeeklyMissing')}</span>
               )}
             </div>
             <div style={{ color: 'var(--muted)' }}>
-              Остання:{' '}
+              {t('opsLast')}:{' '}
               {backupStatus.lastBackupAt
-                ? new Date(backupStatus.lastBackupAt).toLocaleString('uk-UA')
-                : 'немає marker'}
+                ? new Date(backupStatus.lastBackupAt).toLocaleString(dateLocale)
+                : t('opsNoMarker')}
             </div>
           </div>
         )}
@@ -384,7 +491,7 @@ export default function OpsPage() {
             onClick={() => void createManualBackup()}
             disabled={busyBackup}
           >
-            {busyBackup ? 'Копіювання…' : 'Створити копію зараз'}
+            {busyBackup ? t('opsBackuping') : t('opsCreateBackup')}
           </button>
           <button
             type="button"
@@ -392,41 +499,84 @@ export default function OpsPage() {
             onClick={() => void ensureWeeklyBackup()}
             disabled={busyBackup}
           >
-            Перевірити / створити тижневу
+            {t('opsWeeklyBackup')}
           </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost btn-warning"
+            onClick={() => uploadInputRef.current?.click()}
+            disabled={busyBackup}
+            title={t('opsFromPc')}
+          >
+            {t('opsFromPc')}
+          </button>
+          <input
+            ref={uploadInputRef}
+            type="file"
+            accept=".gz,.sql.gz,application/gzip"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void uploadBackupFromPc(f);
+            }}
+          />
         </div>
         {backupList.length === 0 ? (
-          <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
-            Список порожній — зробіть ручну копію або дочекайтесь worker.
-          </p>
+          <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>{t('opsEmptyBackups')}</p>
         ) : (
           <div className="table-scroll">
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Тип</th>
-                  <th>Ід / тиждень</th>
-                  <th>Час</th>
-                  <th>Розмір</th>
-                  <th>Статус</th>
+                  <th>{t('opsColType')}</th>
+                  <th>{t('opsColId')}</th>
+                  <th>{t('opsColTime')}</th>
+                  <th>{t('opsColSize')}</th>
+                  <th>{t('opsColStatus')}</th>
+                  <th>{t('actions')}</th>
                 </tr>
               </thead>
               <tbody>
-                {backupList.map((b) => (
-                  <tr key={`${b.kind}-${b.id}`}>
-                    <td>{b.kind === 'weekly' ? 'Тижнева' : 'Ручна'}</td>
-                    <td>
-                      <code style={{ fontSize: '0.8rem' }}>{b.weekKey ?? b.id}</code>
-                    </td>
-                    <td>
-                      {b.finishedAt
-                        ? new Date(b.finishedAt).toLocaleString('uk-UA')
-                        : '—'}
-                    </td>
-                    <td>{formatBytes(b.sizeBytes)}</td>
-                    <td>{b.status}</td>
-                  </tr>
-                ))}
+                {backupList.map((b) => {
+                  const rowKey = `${b.kind}-${b.id}`;
+                  const origin = backupOrigin(b, t);
+                  return (
+                    <tr key={rowKey}>
+                      <td>
+                        <span className={origin.badgeClass} title={origin.title}>
+                          {origin.label}
+                        </span>
+                      </td>
+                      <td>
+                        <code style={{ fontSize: '0.8rem' }}>{b.weekKey ?? b.id}</code>
+                      </td>
+                      <td>
+                        {b.finishedAt
+                          ? new Date(b.finishedAt).toLocaleString(dateLocale)
+                          : '—'}
+                      </td>
+                      <td>{formatBytes(b.sizeBytes)}</td>
+                      <td>
+                        {b.status === 'ok' ? (
+                          <span className="badge badge-success">ok</span>
+                        ) : (
+                          <span className="badge badge-danger">{b.status}</span>
+                        )}
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-ghost btn-success"
+                          disabled={busyDownloadId === rowKey || b.status !== 'ok'}
+                          onClick={() => void downloadBackup(b)}
+                          title={t('opsToPc')}
+                        >
+                          {busyDownloadId === rowKey ? '…' : t('opsToPc')}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -434,9 +584,9 @@ export default function OpsPage() {
       </section>
 
       <section className="card">
-        <h2 style={{ fontSize: '1.05rem', marginBottom: '0.75rem' }}>Останні email-логи</h2>
+        <h2 style={{ fontSize: '1.05rem', marginBottom: '0.75rem' }}>{t('opsEmailLogs')}</h2>
         {logs.length === 0 ? (
-          <p style={{ color: 'var(--muted)' }}>Порожньо</p>
+          <p style={{ color: 'var(--muted)' }}>{t('commsEmpty')}</p>
         ) : (
           <ul style={{ listStyle: 'none', display: 'grid', gap: '0.5rem' }}>
             {logs.map((l) => (
@@ -455,7 +605,7 @@ export default function OpsPage() {
                 </span>{' '}
                 <strong>{l.template}</strong> → {l.to}
                 <div style={{ color: 'var(--muted)' }}>
-                  {l.subject} · {new Date(l.createdAt).toLocaleString('uk-UA')}
+                  {l.subject} · {new Date(l.createdAt).toLocaleString(dateLocale)}
                 </div>
               </li>
             ))}

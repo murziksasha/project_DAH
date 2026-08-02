@@ -2,6 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { getToken } from '@/lib/api';
 import { canUsePush, isPushConfigured, registerServiceWorker, subscribeToPush } from '@/lib/push';
 
@@ -15,6 +16,7 @@ const PUSH_DISMISSED_KEY = 'dah_push_dismissed';
 
 export function PwaPrompt() {
   const pathname = usePathname();
+  const { t } = useI18n();
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstall, setShowInstall] = useState(false);
   const [showPush, setShowPush] = useState(false);
@@ -88,11 +90,11 @@ export function PwaPrompt() {
   async function handlePush() {
     try {
       await subscribeToPush();
-      setMessage('Сповіщення увімкнено');
+      setMessage(t('pwaPushEnabled'));
       setMessageIsError(false);
       setShowPush(false);
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Помилка підписки на сповіщення');
+      setMessage(err instanceof Error ? err.message : t('error'));
       setMessageIsError(true);
     }
   }
@@ -115,31 +117,31 @@ export function PwaPrompt() {
     >
       {showInstall && (
         <div className="card" style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={{ flex: 1, fontSize: '0.9rem' }}>Встановити «Мій дім» на екран телефону?</span>
+          <span style={{ flex: 1, fontSize: '0.9rem' }}>{t('pwaInstallPrompt')}</span>
           <button type="button" onClick={handleInstall} style={{ fontSize: '0.85rem' }}>
-            Встановити
+            {t('pwaInstall')}
           </button>
           <button
             type="button"
             onClick={dismissInstall}
             style={{ fontSize: '0.85rem', background: 'var(--surface-2)' }}
           >
-            Пізніше
+            {t('pwaLater')}
           </button>
         </div>
       )}
       {showPush && (
         <div className="card" style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={{ flex: 1, fontSize: '0.9rem' }}>Отримувати сповіщення про оголошення?</span>
+          <span style={{ flex: 1, fontSize: '0.9rem' }}>{t('pwaPushPrompt')}</span>
           <button type="button" onClick={handlePush} style={{ fontSize: '0.85rem' }}>
-            Увімкнути
+            {t('pwaEnable')}
           </button>
           <button
             type="button"
             onClick={dismissPush}
             style={{ fontSize: '0.85rem', background: 'var(--surface-2)' }}
           >
-            Ні
+            {t('no')}
           </button>
         </div>
       )}

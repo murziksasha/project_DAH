@@ -1,5 +1,6 @@
 'use client';
 
+import { useI18n } from '@/components/LocaleProvider';
 import type { AccountFiltersState } from '../_lib/account-filters';
 import { monthLabel } from '../_lib/account-filters';
 
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export function AccountFilters({ value, years, onChange, onReset }: Props) {
+  const { t } = useI18n();
   function patch(p: Partial<AccountFiltersState>) {
     onChange({ ...value, ...p });
   }
@@ -21,7 +23,7 @@ export function AccountFilters({ value, years, onChange, onReset }: Props) {
     <div className="resident-filters card">
       <div className="resident-filters-grid">
         <div>
-          <label htmlFor="acc-year">Рік</label>
+          <label htmlFor="acc-year">{t('residentYear')}</label>
           <select
             id="acc-year"
             value={value.year}
@@ -29,7 +31,7 @@ export function AccountFilters({ value, years, onChange, onReset }: Props) {
               patch({ year: e.target.value, month: e.target.value ? value.month : '' })
             }
           >
-            <option value="">Усі роки</option>
+            <option value="">{t('residentAllYears')}</option>
             {years.map((y) => (
               <option key={y} value={y}>
                 {y}
@@ -38,14 +40,14 @@ export function AccountFilters({ value, years, onChange, onReset }: Props) {
           </select>
         </div>
         <div>
-          <label htmlFor="acc-month">Місяць</label>
+          <label htmlFor="acc-month">{t('residentMonth')}</label>
           <select
             id="acc-month"
             value={value.month}
             disabled={!value.year}
             onChange={(e) => patch({ month: e.target.value })}
           >
-            <option value="">Усі місяці</option>
+            <option value="">{t('residentAllMonths')}</option>
             {MONTHS.map((m) => (
               <option key={m} value={m}>
                 {monthLabel(m)}
@@ -54,7 +56,7 @@ export function AccountFilters({ value, years, onChange, onReset }: Props) {
           </select>
         </div>
         <div>
-          <label htmlFor="acc-kind">Тип</label>
+          <label htmlFor="acc-kind">{t('residentType')}</label>
           <select
             id="acc-kind"
             value={value.kind}
@@ -62,38 +64,38 @@ export function AccountFilters({ value, years, onChange, onReset }: Props) {
               patch({ kind: e.target.value as AccountFiltersState['kind'] })
             }
           >
-            <option value="">Усі</option>
-            <option value="accrual">Нарахування</option>
-            <option value="payment">Платежі</option>
+            <option value="">{t('all')}</option>
+            <option value="accrual">{t('aptAccruals')}</option>
+            <option value="payment">{t('aptPayments')}</option>
           </select>
         </div>
         <div>
-          <label htmlFor="acc-status">Статус</label>
+          <label htmlFor="acc-status">{t('status')}</label>
           <select
             id="acc-status"
             value={value.status}
             onChange={(e) => patch({ status: e.target.value })}
           >
-            <option value="">Усі</option>
-            <option value="open">До сплати</option>
-            <option value="partially_paid">Частково</option>
-            <option value="overdue">Прострочено</option>
-            <option value="paid">Сплачено</option>
+            <option value="">{t('all')}</option>
+            <option value="open">{t('aptStatusOpen')}</option>
+            <option value="partially_paid">{t('aptStatusPartial')}</option>
+            <option value="overdue">{t('overdue')}</option>
+            <option value="paid">{t('paid')}</option>
           </select>
         </div>
         <div className="resident-filters-search">
-          <label htmlFor="acc-q">Пошук</label>
+          <label htmlFor="acc-q">{t('searchPlaceholder')}</label>
           <input
             id="acc-q"
             type="search"
-            placeholder="Послуга, фонд, період…"
+            placeholder={t('searchPlaceholder')}
             value={value.q}
             onChange={(e) => patch({ q: e.target.value })}
             autoComplete="off"
           />
         </div>
         <div>
-          <label htmlFor="acc-view">Вигляд</label>
+          <label htmlFor="acc-view">{t('residentType')}</label>
           <select
             id="acc-view"
             value={value.view}
@@ -101,14 +103,14 @@ export function AccountFilters({ value, years, onChange, onReset }: Props) {
               patch({ view: e.target.value as AccountFiltersState['view'] })
             }
           >
-            <option value="periods">За періодами</option>
-            <option value="feed">Стрічка</option>
+            <option value="periods">{t('period')}</option>
+            <option value="feed">{t('residentHistoryFeed')}</option>
           </select>
         </div>
       </div>
       <div className="resident-filters-actions">
         <button type="button" className="btn btn-sm btn-ghost" onClick={onReset}>
-          Скинути фільтри
+          {t('residentResetFilters')}
         </button>
       </div>
     </div>

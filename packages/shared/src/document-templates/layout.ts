@@ -201,6 +201,12 @@ const renderFieldRows = (fields: DocLayoutField[], columns: number) => {
     .join('');
 };
 
+const colsClass = (count: number) => {
+  if (count <= 2) return ' cols-2';
+  if (count === 3) return ' cols-3';
+  return ' cols-4';
+};
+
 const renderCustomTable = (
   columns: DocLayoutTableColumn[],
   rows: DocLayoutTableRow[],
@@ -230,7 +236,7 @@ const renderCustomTable = (
           .join('')}</tr>`,
     )
     .join('');
-  return `<table class="doc-line-table"><thead><tr>${header}</tr></thead><tbody>${bodyRows}</tbody></table>`;
+  return `<table class="doc-line-table${colsClass(safeColumns.length)}"><thead><tr>${header}</tr></thead><tbody>${bodyRows}</tbody></table>`;
 };
 
 const renderDataTablePlaceholder = (

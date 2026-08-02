@@ -2,9 +2,9 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { Pagination } from '@/components/ui/Pagination';
 import { apiFetch, getToken } from '@/lib/api';
 import { downloadXlsx } from '@/lib/xlsx';
 import { formatDateUk, formatMoney } from '@/lib/money';
@@ -22,6 +22,7 @@ interface Expense {
 }
 
 export default function ExpensesListPage() {
+  const { t } = useI18n();
   const [fundId, setFundId] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -48,12 +49,12 @@ export default function ExpensesListPage() {
 
   useEffect(() => {
     if (expensesQuery.error) {
-      setError(expensesQuery.error instanceof Error ? expensesQuery.error.message : 'Помилка');
+      setError(expensesQuery.error instanceof Error ? expensesQuery.error.message : t('error'));
     }
-  }, [expensesQuery.error]);
+  }, [expensesQuery.error, t]);
 
   async function voidExpense(id: string) {
-    const reason = window.prompt('Причина анулювання витрати?');
+    const reason = window.prompt(t('expenseVoidPrompt'));
     if (!reason?.trim()) return;
     const token = getToken();
     if (!token) return;
@@ -65,16 +66,17 @@ export default function ExpensesListPage() {
         token,
         body: JSON.stringify({ reason: reason.trim() }),
       });
-      setMessage('Витрату анульовано');
+      setMessage(t('expenseVoided'));
       await expensesQuery.refetch();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка анулювання');
+      setError(err instanceof Error ? err.message : t('expenseVoidError'));
     } finally {
       setVoidingId(null);
     }
   }
 
   async function exportExcel() {
+    // Export content stays as-is (not translated UI chrome)
     await downloadXlsx(`vytraty-p${page}-${new Date().toISOString().slice(0, 10)}.xlsx`, [
       {
         name: 'Витрати',
@@ -98,11 +100,11 @@ export default function ExpensesListPage() {
   return (
     <main>
       <Link href="/admin/expenses" style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
-        ← Нова витрата
+        {t('expenseBackNew')}
       </Link>
       <PageHeader
-        title="Витрати організації"
-        description="Фільтр, пагінація, Excel, анулювання"
+        title={t('expenseOrgTitle')}
+        description={t('expenseListDesc')}
         actions={
           <>
             <button
@@ -111,10 +113,10 @@ export default function ExpensesListPage() {
               onClick={() => void exportExcel()}
               disabled={!expenses.length}
             >
-              Excel (сторінка)
+              {t('expenseExcelPage')}
             </button>
             <Link href="/admin/expenses" className="btn btn-sm">
-              + Витрата
+              {t('expensePlus')}
             </Link>
           </>
         }
@@ -130,7 +132,7 @@ export default function ExpensesListPage() {
         }}
       >
         <div>
-          <label>Фонд</label>
+          <label>{t('expenseFund')}</label>
           <select
             value={fundId}
             onChange={(e) => {
@@ -138,7 +140,7 @@ export default function ExpensesListPage() {
               setFundId(e.target.value);
             }}
           >
-            <option value="">Усі фонди</option>
+            <option value="">{t('expenseAllFunds')}</option>
             {funds.map((f) => (
               <option key={f.id} value={f.id}>
                 {f.name}
@@ -147,7 +149,7 @@ export default function ExpensesListPage() {
           </select>
         </div>
         <div>
-          <label>Від</label>
+          <label>{t('from')}</label>
           <input
             type="date"
             value={from}
@@ -158,7 +160,7 @@ export default function ExpensesListPage() {
           />
         </div>
         <div>
-          <label>До</label>
+          <label>{t('to')}</label>
           <input
             type="date"
             value={to}
@@ -174,7 +176,7 @@ export default function ExpensesListPage() {
             onClick={() => void expensesQuery.refetch()}
             style={{ width: '100%' }}
           >
-            Оновити
+            {t('refresh')}
           </button>
         </div>
       </div>
@@ -184,19 +186,24 @@ export default function ExpensesListPage() {
 
       {!loading && (
         <p style={{ color: 'var(--muted)', marginBottom: '0.75rem' }}>
-          Всього: {total} · стор. {page}/{totalPages} · на сторінці {formatMoney(pageTotal)}
+          {t('expensePageSummary', {
+            total,
+            page,
+            totalPages,
+            sum: formatMoney(pageTotal),
+          })}
         </p>
       )}
 
       <section className="card">
         {loading ? (
-          <p style={{ color: 'var(--muted)' }}>Завантаження…</p>
+          <p style={{ color: 'var(--muted)' }}>{t('loading')}</p>
         ) : expenses.length === 0 ? (
           <EmptyState
-            title="Витрат не знайдено"
-            description="Змініть фільтр або додайте першу витрату."
+            title={t('expenseNotFound')}
+            description={t('expenseNotFoundDesc')}
             actionHref="/admin/expenses"
-            actionLabel="Нова витрата"
+            actionLabel={t('newExpense')}
           />
         ) : (
           <ul style={{ listStyle: 'none', display: 'grid', gap: '0.75rem' }}>
@@ -222,7 +229,7 @@ export default function ExpensesListPage() {
                           rel="noopener noreferrer"
                           className="btn btn-sm btn-ghost"
                         >
-                          Платіжка
+                          {t('expensePaymentSlip')}
                         </a>
                       )}
                       <button
@@ -231,7 +238,7 @@ export default function ExpensesListPage() {
                         disabled={voidingId === e.id}
                         onClick={() => voidExpense(e.id)}
                       >
-                        Анулювати
+                        {t('voidAction')}
                       </button>
                     </div>
                   </div>
@@ -249,7 +256,7 @@ export default function ExpensesListPage() {
               disabled={page <= 1 || loading}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
             >
-              ← Назад
+              ← {t('prev')}
             </button>
             <button
               type="button"
@@ -257,7 +264,7 @@ export default function ExpensesListPage() {
               disabled={page >= totalPages || loading}
               onClick={() => setPage((p) => p + 1)}
             >
-              Далі →
+              {t('next')} →
             </button>
           </div>
         )}

@@ -76,11 +76,15 @@ Web UI `/admin/organization` — лише `super_admin`.
 | Операція | resident | board | accountant | chairman | auditor | super_admin |
 |----------|----------|-------|------------|----------|---------|-------------|
 | GET /backups, /backups/status | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| POST /backups (manual) | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ |
+| GET /backups/:kind/:id/download (на ПК) | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| POST /backups (manual dump) | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ |
 | POST /backups/weekly | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ |
+| POST /backups/upload (з ПК у каталог) | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ |
 | UI `/admin/ops` (секція копій) | ❌ | ✅ | ✅ | ✅ | ❌† | ✅ |
 
-† Auditor бачить API list, якщо є токен; пункт меню ops — переважно правління/бухгалтер.
+† Auditor: list + download через API; пункт меню ops — переважно правління/бухгалтер (auditor не upload / не create).  
+Upload **не** = restore live БД.  
+UI: бейдж «З компʼютера» для `source=upload`; кнопка «На компʼютер» (export) vs «З компʼютера…» (import у каталог).
 
 Worker (без UI): щоденна перевірка тижневої копії; повторно за той самий ISO-тиждень не створює.
 

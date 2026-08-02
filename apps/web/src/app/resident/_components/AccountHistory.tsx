@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatDateUk, formatMoney } from '@/lib/money';
@@ -16,6 +17,7 @@ interface Props {
 const FEED_PAGE = 25;
 
 export function AccountHistory({ events, view, onResetFilters }: Props) {
+  const { t } = useI18n();
   const groups = useMemo(() => groupTimelineByPeriod(events), [events]);
   const currentYear = String(new Date().getFullYear());
   const [openYears, setOpenYears] = useState<Record<string, boolean>>(() => {
@@ -32,8 +34,8 @@ export function AccountHistory({ events, view, onResetFilters }: Props) {
     return (
       <div className="card">
         <EmptyState
-          title="Немає операцій за обраний період"
-          description="Змініть рік, місяць або скиньте фільтри."
+          title={t('residentNoOpsPeriod')}
+          description={t('residentNoOpsPeriodDesc')}
         />
         {onResetFilters && (
           <button
@@ -42,7 +44,7 @@ export function AccountHistory({ events, view, onResetFilters }: Props) {
             style={{ marginTop: '0.5rem' }}
             onClick={onResetFilters}
           >
-            Скинути фільтри
+            {t('residentResetFilters')}
           </button>
         )}
       </div>
@@ -56,7 +58,7 @@ export function AccountHistory({ events, view, onResetFilters }: Props) {
       .slice(0, feedLimit);
     return (
       <div className="card resident-history">
-        <h2 className="resident-section-title">Історія (стрічка)</h2>
+        <h2 className="resident-section-title">{t('residentHistoryFeed')}</h2>
         <ul className="resident-event-list">
           {slice.map((ev) => (
             <EventRow key={ev.id} ev={ev} />
@@ -69,7 +71,7 @@ export function AccountHistory({ events, view, onResetFilters }: Props) {
             style={{ marginTop: '0.75rem' }}
             onClick={() => setFeedLimit((n) => n + FEED_PAGE)}
           >
-            Показати ще ({events.length - feedLimit})
+            {t('residentShowMore', { count: events.length - feedLimit })}
           </button>
         )}
       </div>
@@ -78,7 +80,7 @@ export function AccountHistory({ events, view, onResetFilters }: Props) {
 
   return (
     <div className="card resident-history">
-      <h2 className="resident-section-title">Історія за періодами</h2>
+      <h2 className="resident-section-title">{t('residentHistory')}</h2>
       <div className="resident-year-list">
         {groups.map((g) => {
           const yearOpen = openYears[g.year] ?? g.year === currentYear;
@@ -96,8 +98,8 @@ export function AccountHistory({ events, view, onResetFilters }: Props) {
                   <strong>{g.year}</strong>
                   <span className="resident-muted">
                     {' '}
-                    · нараховано {formatMoney(g.accrued)} · сплачено{' '}
-                    {formatMoney(g.paid)}
+                    · {t('aptAccrued').toLowerCase()} {formatMoney(g.accrued)} ·{' '}
+                    {t('paid').toLowerCase()} {formatMoney(g.paid)}
                   </span>
                 </span>
                 <span aria-hidden>{yearOpen ? '▾' : '▸'}</span>

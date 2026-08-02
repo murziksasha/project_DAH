@@ -76,19 +76,21 @@ function drawTable(doc: PDFKit.PDFDocument, rows: string[][]) {
   const colWidth = pageWidth / colCount;
 
   rows.forEach((row, rowIndex) => {
-    const startY = doc.y;
-    if (startY > doc.page.height - doc.page.margins.bottom - 40) {
+    if (doc.y > doc.page.height - doc.page.margins.bottom - 40) {
       doc.addPage();
     }
     const y = doc.y;
     let maxH = 12;
-    row.forEach((cell, colIndex) => {
+    // Pad short rows so column count stays stable (headers vs data)
+    const cells = Array.from({ length: colCount }, (_, i) => row[i] ?? '');
+    cells.forEach((cell, colIndex) => {
       const x = doc.page.margins.left + colIndex * colWidth;
       if (rowIndex === 0) usePdfFont(doc, 'Bold');
       else usePdfFont(doc, 'Regular');
       doc.fontSize(9).fillColor('#000');
-      const h = doc.heightOfString(cell ?? '', { width: colWidth - 6 });
-      doc.text(cell ?? '', x, y, { width: colWidth - 6 });
+      const align = colIndex === 0 ? 'left' : 'right';
+      const h = doc.heightOfString(cell, { width: colWidth - 6, align });
+      doc.text(cell, x, y, { width: colWidth - 6, align });
       if (h > maxH) maxH = h;
     });
     doc.x = doc.page.margins.left;

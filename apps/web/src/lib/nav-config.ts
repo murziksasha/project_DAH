@@ -103,7 +103,11 @@ export function getNavGroups(role: string, isInitialized = true): NavGroup[] {
     { href: '/admin/documents', label: 'Документи', icon: 'file' },
   ];
   if (role === 'chairman' || role === 'board') {
-    building.push({ href: '/admin/residents', label: 'Мешканці', icon: 'users' });
+    building.push({
+      href: '/admin/residents',
+      label: 'Заявки на реєстрацію',
+      icon: 'users',
+    });
   }
   if (hasPermission(role, Permission.MANAGE_SETTINGS)) {
     building.push({ href: '/admin/settings', label: 'Налаштування', icon: 'gear' });

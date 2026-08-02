@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
@@ -30,6 +31,7 @@ function getCurrentUserRole(): string | null {
 }
 
 export default function ResidentsPage() {
+  const { t } = useI18n();
   const [users, setUsers] = useState<PendingUser[]>([]);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -49,11 +51,11 @@ export default function ResidentsPage() {
       const data = await apiFetch<PendingUser[]>('/auth/pending', { token });
       setUsers(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка завантаження');
+      setError(err instanceof Error ? err.message : t('residentsLoadError'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     load().catch(() => undefined);
@@ -68,9 +70,9 @@ export default function ResidentsPage() {
     try {
       await apiFetch(`/auth/approve/${id}`, { method: 'PATCH', token });
       setUsers((prev) => prev.filter((u) => u.id !== id));
-      setMessage('Мешканця підтверджено — можна входити в кабінет');
+      setMessage(t('residentsApproved'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка підтвердження');
+      setError(err instanceof Error ? err.message : t('error'));
     } finally {
       setBusyId(null);
     }
@@ -79,9 +81,7 @@ export default function ResidentsPage() {
   async function handleReject(id: string) {
     const token = getToken();
     if (!token) return;
-    const ok = window.confirm(
-      'Відхилити заявку? Обліковий запис буде заблоковано. Мешканець зможе звернутися до правління.',
-    );
+    const ok = window.confirm(t('residentsRejectConfirm'));
     if (!ok) return;
     setBusyId(id);
     setMessage('');
@@ -93,9 +93,9 @@ export default function ResidentsPage() {
         body: JSON.stringify({ reason: 'Відхилено правлінням' }),
       });
       setUsers((prev) => prev.filter((u) => u.id !== id));
-      setMessage('Заявку відхилено');
+      setMessage(t('residentsRejected'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка відхилення');
+      setError(err instanceof Error ? err.message : t('error'));
     } finally {
       setBusyId(null);
     }
@@ -104,33 +104,23 @@ export default function ResidentsPage() {
   return (
     <main>
       <PageHeader
-        title="Заявки мешканців"
-        description="Підтвердження самостійної реєстрації (/register)"
+        title={t('residentsTitle')}
+        description={t('residentsEmptyDesc')}
         actions={
           <button type="button" className="btn btn-sm btn-ghost" onClick={() => load()} disabled={loading}>
-            {loading ? 'Оновлення…' : 'Оновити'}
+            {loading ? t('loading') : t('refresh')}
           </button>
         }
       />
-
-      {!canApprove && (
-        <p className="card" style={{ marginBottom: '1rem', color: 'var(--muted)', fontSize: '0.9rem' }}>
-          Підтверджувати можуть лише голова правління або члени правління. Ви можете переглядати
-          список.
-        </p>
-      )}
 
       {error && <p className="error">{error}</p>}
       {message && <p className="success-banner">{message}</p>}
 
       <section className="card">
         {loading && users.length === 0 ? (
-          <p style={{ color: 'var(--muted)' }}>Завантаження…</p>
+          <p style={{ color: 'var(--muted)' }}>{t('loading')}</p>
         ) : users.length === 0 ? (
-          <EmptyState
-            title="Немає заявок"
-            description="Коли мешканець зареєструється, заявка з’явиться тут."
-          />
+          <EmptyState title={t('residentsEmpty')} description={t('residentsEmptyDesc')} />
         ) : (
           <ul style={{ listStyle: 'none', display: 'grid', gap: '1rem' }}>
             {users.map((user) => (
@@ -156,8 +146,8 @@ export default function ResidentsPage() {
                   )}
                   <div style={{ color: 'var(--muted)', fontSize: '0.85rem', marginTop: '0.35rem' }}>
                     {user.apartment
-                      ? `Під'їзд ${user.apartment.entrance}, кв. ${user.apartment.number}`
-                      : 'Квартира не вказана'}
+                      ? `${t('entrance')} ${user.apartment.entrance}, ${t('aptPrefix')} ${user.apartment.number}`
+                      : t('residentsNoApt')}
                     {' · '}
                     {formatDateUk(user.createdAt)}
                   </div>
@@ -169,7 +159,7 @@ export default function ResidentsPage() {
                       onClick={() => handleApprove(user.id)}
                       disabled={busyId === user.id}
                     >
-                      {busyId === user.id ? '…' : 'Підтвердити'}
+                      {busyId === user.id ? '…' : t('residentsApprove')}
                     </button>
                     <button
                       type="button"
@@ -177,7 +167,7 @@ export default function ResidentsPage() {
                       onClick={() => handleReject(user.id)}
                       disabled={busyId === user.id}
                     >
-                      Відхилити
+                      {t('residentsReject')}
                     </button>
                   </div>
                 )}

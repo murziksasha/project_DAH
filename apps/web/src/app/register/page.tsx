@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { apiFetch } from '@/lib/api';
 
 interface Apartment {
@@ -16,6 +17,7 @@ interface RegisterResponse {
 }
 
 export default function RegisterPage() {
+  const { t, locale, setLocale } = useI18n();
   const [apartments, setApartments] = useState<Apartment[]>([]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -37,11 +39,12 @@ export default function RegisterPage() {
         if (list.length > 0) setApartmentId(list[0].id);
       })
       .catch((err) => {
-        const msg = err instanceof Error ? err.message : 'Не вдалося завантажити список квартир';
+        const msg = err instanceof Error ? err.message : t('registerFailApts');
         setError(msg);
-        if (/вимкнен|disabled|заборонен/i.test(msg)) setRegistrationClosed(true);
+        if (/вимкнен|disabled|заборонен|отключ/i.test(msg)) setRegistrationClosed(true);
       })
       .finally(() => setLoadingApartments(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once
   }, []);
 
   const filtered = useMemo(() => {
@@ -69,48 +72,53 @@ export default function RegisterPage() {
           apartmentId,
         }),
       });
-      setSuccess(data.message);
+      setSuccess(data.message || t('registerSuccess'));
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Помилка реєстрації';
+      const msg = err instanceof Error ? err.message : t('registerFail');
       setError(msg);
-      if (/вимкнен/i.test(msg)) setRegistrationClosed(true);
+      if (/вимкнен|disabled|отключ/i.test(msg)) setRegistrationClosed(true);
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main style={{ maxWidth: 420, margin: '0 auto', padding: '2rem 1rem' }}>
-      <h1 style={{ marginBottom: '0.5rem' }}>Реєстрація мешканця</h1>
-      <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>
-        Вкажіть квартиру. Після підтвердження правлінням зможете увійти в кабінет.
-      </p>
+    <main style={{ maxWidth: 420, margin: '0 auto', padding: '2rem 1rem', position: 'relative' }}>
+      <div style={{ position: 'absolute', top: '1rem', right: '1rem' }}>
+        <button
+          type="button"
+          className="btn btn-sm btn-ghost"
+          aria-label={locale === 'uk' ? 'RU' : 'UK'}
+          title={t('language')}
+          onClick={() => setLocale(locale === 'uk' ? 'ru' : 'uk')}
+        >
+          {locale === 'uk' ? 'RU' : 'UK'}
+        </button>
+      </div>
+      <h1 style={{ marginBottom: '0.5rem' }}>{t('registerTitle')}</h1>
+      <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>{t('registerSubtitle')}</p>
 
       {registrationClosed && !success ? (
         <div className="card">
-          <p style={{ marginBottom: '0.75rem' }}>
-            Самостійна реєстрація зараз вимкнена. Зверніться до керівництва або бухгалтера вашої організації.
-          </p>
+          <p style={{ marginBottom: '0.75rem' }}>{t('registerClosedBody')}</p>
           <Link href="/login" className="btn btn-sm">
-            На сторінку входу
+            {t('registerToLogin')}
           </Link>
         </div>
       ) : success ? (
         <div className="card" style={{ display: 'grid', gap: '1rem' }}>
-          <p style={{ color: 'var(--success)', fontWeight: 600 }}>Заявку прийнято</p>
+          <p style={{ color: 'var(--success)', fontWeight: 600 }}>{t('registerSuccessTitle')}</p>
           <p style={{ color: 'var(--muted)', fontSize: '0.95rem' }}>{success}</p>
-          <p style={{ fontSize: '0.9rem' }}>
-            Зазвичай підтвердження займає 1–2 робочі дні. Після цього увійдіть з email і паролем.
-          </p>
+          <p style={{ fontSize: '0.9rem' }}>{t('registerSuccessHint')}</p>
           <Link href="/login" className="btn" style={{ textAlign: 'center' }}>
-            Перейти до входу
+            {t('registerGoLogin')}
           </Link>
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="card" style={{ display: 'grid', gap: '1rem' }}>
           <div className="grid-2">
             <div>
-              <label htmlFor="firstName">Ім&apos;я</label>
+              <label htmlFor="firstName">{t('firstName')}</label>
               <input
                 id="firstName"
                 value={firstName}
@@ -120,7 +128,7 @@ export default function RegisterPage() {
               />
             </div>
             <div>
-              <label htmlFor="lastName">Прізвище</label>
+              <label htmlFor="lastName">{t('lastName')}</label>
               <input
                 id="lastName"
                 value={lastName}
@@ -131,7 +139,7 @@ export default function RegisterPage() {
             </div>
           </div>
           <div>
-            <label htmlFor="email">Email</label>
+            <label htmlFor="email">{t('email')}</label>
             <input
               id="email"
               type="email"
@@ -142,7 +150,7 @@ export default function RegisterPage() {
             />
           </div>
           <div>
-            <label htmlFor="phone">Телефон (необов&apos;язково)</label>
+            <label htmlFor="phone">{t('registerPhoneOptional')}</label>
             <input
               id="phone"
               type="tel"
@@ -152,7 +160,7 @@ export default function RegisterPage() {
             />
           </div>
           <div>
-            <label htmlFor="password">Пароль (мін. 8 символів)</label>
+            <label htmlFor="password">{t('registerPasswordHint')}</label>
             <input
               id="password"
               type="password"
@@ -164,17 +172,17 @@ export default function RegisterPage() {
             />
           </div>
           <div>
-            <label htmlFor="apt-q">Пошук квартири</label>
+            <label htmlFor="apt-q">{t('registerApartmentSearch')}</label>
             <input
               id="apt-q"
               value={aptQuery}
               onChange={(e) => setAptQuery(e.target.value)}
-              placeholder="Номер квартири"
+              placeholder={t('registerAptPlaceholder')}
               disabled={loadingApartments}
             />
           </div>
           <div>
-            <label htmlFor="apartment">Квартира</label>
+            <label htmlFor="apartment">{t('registerSelectApartment')}</label>
             <select
               id="apartment"
               value={apartmentId}
@@ -182,26 +190,26 @@ export default function RegisterPage() {
               required
               disabled={loadingApartments || filtered.length === 0}
             >
-              {loadingApartments && <option value="">Завантаження…</option>}
+              {loadingApartments && <option value="">{t('registerLoadingApts')}</option>}
               {!loadingApartments && filtered.length === 0 && (
-                <option value="">Квартир не знайдено</option>
+                <option value="">{t('registerNoApts')}</option>
               )}
               {filtered.map((apt) => (
                 <option key={apt.id} value={apt.id}>
-                  Під&apos;їзд {apt.entrance}, кв. {apt.number}
+                  {t('registerAptOption', { entrance: apt.entrance, number: apt.number })}
                 </option>
               ))}
             </select>
           </div>
           {error && <p className="error">{error}</p>}
           <button type="submit" disabled={loading || loadingApartments || !apartmentId}>
-            {loading ? 'Надсилання…' : 'Надіслати заявку'}
+            {loading ? t('registerSubmitting') : t('registerSubmit')}
           </button>
         </form>
       )}
 
       <p style={{ marginTop: '1rem', fontSize: '0.85rem', color: 'var(--muted)' }}>
-        Вже є обліковий запис? <Link href="/login">Увійти</Link>
+        {t('registerHasAccount')} <Link href="/login">{t('registerLoginLink')}</Link>
       </p>
     </main>
   );

@@ -2,12 +2,12 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
 import { downloadAuthFile } from '@/lib/download';
 import { formatDateUk, formatMoney } from '@/lib/money';
-import { t } from '@/lib/i18n';
 
 interface AccrualLine {
   id: string;
@@ -27,6 +27,7 @@ interface Accrual {
 }
 
 export default function AccrualsListPage() {
+  const { t } = useI18n();
   const [accruals, setAccruals] = useState<Accrual[]>([]);
   const [period, setPeriod] = useState('');
   const [error, setError] = useState('');
@@ -57,7 +58,7 @@ export default function AccrualsListPage() {
         `kvytantsii.${kind}`,
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка завантаження');
+      setError(err instanceof Error ? err.message : t('accrualDownloadError'));
     } finally {
       setBusy(null);
     }
@@ -68,7 +69,7 @@ export default function AccrualsListPage() {
       <Link href="/admin/accruals" style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
         ← {t('accruals')}
       </Link>
-      <PageHeader title="Історія нарахувань" description="Масові квитанції PDF / ZIP" />
+      <PageHeader title={t('accrualListTitle')} description={t('accrualListDesc')} />
 
       <div
         className="card"
@@ -81,11 +82,11 @@ export default function AccrualsListPage() {
         }}
       >
         <div style={{ flex: 1, minWidth: 160 }}>
-          <label>Період</label>
+          <label>{t('accrualPeriodShort')}</label>
           <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} />
         </div>
         <button type="button" className="btn btn-ghost" onClick={() => load().catch((e) => setError(e.message))}>
-          Фільтр
+          {t('filter')}
         </button>
       </div>
 
@@ -93,8 +94,8 @@ export default function AccrualsListPage() {
 
       {accruals.length === 0 ? (
         <EmptyState
-          title="Нарахувань ще немає"
-          description="Створіть нарахування за період — тут з’являться квитанції."
+          title={t('accrualEmpty')}
+          description={t('accrualEmptyDesc')}
           actionHref="/admin/accruals"
           actionLabel={t('accruals')}
         />
@@ -117,8 +118,8 @@ export default function AccrualsListPage() {
                 <div>
                   <h2 style={{ fontSize: '1.1rem' }}>{a.title}</h2>
                   <p style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>
-                    {a.period} · {a.fund.name} · {a.lines.length} кв. · {formatMoney(total)}
-                    {paid > 0 && ` · сплачено ${formatMoney(paid)}`}
+                    {a.period} · {a.fund.name} · {a.lines.length} {t('aptPrefix')} · {formatMoney(total)}
+                    {paid > 0 && t('accrualPaidSuffix', { amount: formatMoney(paid) })}
                   </p>
                   <span style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>
                     {formatDateUk(a.createdAt)}
@@ -146,7 +147,7 @@ export default function AccrualsListPage() {
                     className="btn btn-sm btn-ghost"
                     onClick={() => setExpanded(open ? null : a.id)}
                   >
-                    {open ? 'Згорнути' : 'Рядки'}
+                    {open ? t('collapse') : t('accrualLinesBtn')}
                   </button>
                 </div>
               </div>
@@ -156,10 +157,10 @@ export default function AccrualsListPage() {
                   <table className="data-table">
                     <thead>
                       <tr>
-                        <th>Кв.</th>
-                        <th>Сума</th>
-                        <th>Сплачено</th>
-                        <th>Статус</th>
+                        <th>{t('metersColApt')}</th>
+                        <th>{t('amount')}</th>
+                        <th>{t('paid')}</th>
+                        <th>{t('status')}</th>
                         <th />
                       </tr>
                     </thead>
@@ -176,7 +177,7 @@ export default function AccrualsListPage() {
                           <td>{l.status}</td>
                           <td>
                             <Link href={`/admin/apartments/${l.apartment.id}`} className="btn btn-sm btn-ghost">
-                              Рахунок
+                              {t('accountShort')}
                             </Link>
                           </td>
                         </tr>

@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
 import { logout, logoutAll } from '@/lib/auth';
@@ -24,6 +25,7 @@ interface MailStatus {
 }
 
 export default function SecurityPage() {
+  const { t } = useI18n();
   const [phone, setPhone] = useState('');
   const [status, setStatus] = useState<TwoFaStatus | null>(null);
   const [mail, setMail] = useState<MailStatus | null>(null);
@@ -65,9 +67,9 @@ export default function SecurityPage() {
       setPushStatus(p);
       setPhone(profile.phone ?? '');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     load().catch(() => undefined);
@@ -86,7 +88,7 @@ export default function SecurityPage() {
       );
       setSetup(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     } finally {
       setLoading(false);
     }
@@ -104,12 +106,12 @@ export default function SecurityPage() {
         token,
         body: JSON.stringify({ code }),
       });
-      setMessage('2FA увімкнено');
+      setMessage(t('securityEnabled'));
       setSetup(null);
       setCode('');
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     } finally {
       setLoading(false);
     }
@@ -127,12 +129,12 @@ export default function SecurityPage() {
         token,
         body: JSON.stringify({ password, code: code || undefined }),
       });
-      setMessage('2FA вимкнено');
+      setMessage(t('securityDisabled'));
       setPassword('');
       setCode('');
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     } finally {
       setLoading(false);
     }
@@ -150,9 +152,9 @@ export default function SecurityPage() {
         body: JSON.stringify({ enabled: next }),
       });
       setStatus({ ...status, emailNotifyEnabled: next });
-      setMessage(next ? 'Email-сповіщення увімкнено' : 'Email-сповіщення вимкнено');
+      setMessage(next ? t('securityEmailEnabledMsg') : t('securityEmailDisabledMsg'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     }
   }
 
@@ -166,18 +168,18 @@ export default function SecurityPage() {
       });
       setMessage(
         res.skipped
-          ? `Тест записано в журнал (SMTP не налаштовано), to=${res.to}`
-          : `Лист надіслано на ${res.to}`,
+          ? `SMTP log, to=${res.to}`
+          : `${res.to}`,
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     }
   }
 
   async function changePassword(e: FormEvent) {
     e.preventDefault();
     if (newPassword !== newPassword2) {
-      setError('Нові паролі не збігаються');
+      setError(t('securityPasswordMismatch'));
       return;
     }
     const token = getToken();
@@ -193,10 +195,10 @@ export default function SecurityPage() {
           newPassword,
         }),
       });
-      setMessage('Пароль змінено. Потрібен повторний вхід…');
+      setMessage(t('securityPasswordChanged'));
       setTimeout(() => logout(), 1200);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
       setLoading(false);
     }
   }
@@ -205,10 +207,10 @@ export default function SecurityPage() {
     setError('');
     try {
       await subscribeToPush();
-      setMessage('Web Push увімкнено');
+      setMessage(t('securityPushEnabledMsg'));
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка push');
+      setError(err instanceof Error ? err.message : t('error'));
     }
   }
 
@@ -216,28 +218,28 @@ export default function SecurityPage() {
     setError('');
     try {
       await unsubscribeFromPush();
-      setMessage('Web Push вимкнено');
+      setMessage(t('securityPushDisabledMsg'));
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     }
   }
 
   return (
     <main>
       <PageHeader
-        title="Безпека та сповіщення"
-        description="Пароль, 2FA (TOTP), email і Web Push"
+        title={t('securityPageTitle')}
+        description={t('securityPageDesc')}
       />
 
       {error && <p className="error">{error}</p>}
       {message && <p className="success-banner">{message}</p>}
 
       <section className="card" style={{ marginBottom: '1rem' }}>
-        <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>Телефон (SMS-вхід)</h2>
+        <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>{t('securityPhoneTitle')}</h2>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'end' }}>
           <div style={{ flex: 1, minWidth: 180 }}>
-            <label htmlFor="phone">Номер</label>
+            <label htmlFor="phone">{t('securityPhoneNumber')}</label>
             <input
               id="phone"
               type="tel"
@@ -260,23 +262,23 @@ export default function SecurityPage() {
                   token,
                   body: JSON.stringify({ phone: phone.trim() || null }),
                 });
-                setMessage('Телефон збережено');
+                setMessage(t('securityPhoneSaved'));
               } catch (err) {
-                setError(err instanceof Error ? err.message : 'Помилка');
+                setError(err instanceof Error ? err.message : t('error'));
               } finally {
                 setLoading(false);
               }
             }}
           >
-            Зберегти
+            {t('save')}
           </button>
         </div>
       </section>
 
       <section className="card" style={{ marginBottom: '1rem' }}>
-        <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>Сесії</h2>
+        <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>{t('securitySessions')}</h2>
         <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
-          Refresh-токени з ротацією (HttpOnly cookie). Завершіть усі сесії на інших пристроях.
+          {t('securitySessionsDesc')}
         </p>
         <button
           type="button"
@@ -287,15 +289,15 @@ export default function SecurityPage() {
             void logoutAll().finally(() => setLoading(false));
           }}
         >
-          Вийти скрізь
+          {t('securityLogoutAll')}
         </button>
       </section>
 
       <section className="card" style={{ marginBottom: '1rem' }}>
-        <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>Зміна пароля</h2>
+        <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>{t('securityChangePassword')}</h2>
         <form onSubmit={changePassword} style={{ display: 'grid', gap: '0.75rem', maxWidth: 400 }}>
           <div>
-            <label htmlFor="cur">Поточний пароль</label>
+            <label htmlFor="cur">{t('securityCurrentPassword')}</label>
             <input
               id="cur"
               type="password"
@@ -307,7 +309,7 @@ export default function SecurityPage() {
             />
           </div>
           <div>
-            <label htmlFor="np">Новий пароль</label>
+            <label htmlFor="np">{t('securityNewPassword')}</label>
             <input
               id="np"
               type="password"
@@ -319,7 +321,7 @@ export default function SecurityPage() {
             />
           </div>
           <div>
-            <label htmlFor="np2">Повтор нового пароля</label>
+            <label htmlFor="np2">{t('securityRepeatPassword')}</label>
             <input
               id="np2"
               type="password"
@@ -331,56 +333,57 @@ export default function SecurityPage() {
             />
           </div>
           <button type="submit" disabled={loading}>
-            Змінити пароль
+            {t('securityChangePasswordBtn')}
           </button>
         </form>
       </section>
 
       <section className="card" style={{ marginBottom: '1rem' }}>
-        <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>Email-сповіщення</h2>
+        <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>{t('securityEmailNotify')}</h2>
         <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
-          Реєстрація, нарахування, платежі, оголошення, заявки, нагадування про борг.
+          {t('securityEmailNotifyDesc')}
           {mail && (
             <>
               {' '}
-              Режим: <strong>{mail.mode}</strong>
-              {mail.smtpConfigured ? ' (SMTP)' : ' (лог без SMTP)'}.
+              <strong>{mail.mode}</strong>
+              {mail.smtpConfigured ? ' (SMTP)' : ''}.
             </>
           )}
         </p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
           <button type="button" className="btn btn-sm" onClick={toggleEmail} disabled={!status}>
-            {status?.emailNotifyEnabled ? 'Вимкнути для мене' : 'Увімкнути для мене'}
+            {status?.emailNotifyEnabled ? t('securityEmailOff') : t('securityEmailOn')}
           </button>
           <button type="button" className="btn btn-sm btn-ghost" onClick={sendTestMail}>
-            Надіслати тест
+            {t('securitySendTest')}
           </button>
         </div>
       </section>
 
       <section className="card" style={{ marginBottom: '1rem' }}>
-        <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>Web Push</h2>
+        <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>{t('securityPush')}</h2>
         {!canUsePush() || !pushStatus?.supported ? (
-          <p style={{ color: 'var(--muted)' }}>Браузер не підтримує push-сповіщення.</p>
+          <p style={{ color: 'var(--muted)' }}>{t('securityPushUnsupported')}</p>
         ) : !pushStatus.configured ? (
-          <p style={{ color: 'var(--muted)' }}>
-            VAPID ключі не налаштовані на сервері (див. .env).
-          </p>
+          <p style={{ color: 'var(--muted)' }}>{t('securityPushNotConfigured')}</p>
         ) : (
           <>
             <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
-              Дозвіл: <strong>{pushStatus.permission}</strong>
+              {t('securityPushPermission')}: <strong>{pushStatus.permission}</strong>
               {' · '}
-              Підписка: <strong>{pushStatus.subscribed ? 'активна' : 'немає'}</strong>
+              {t('securityPushSub')}:{' '}
+              <strong>
+                {pushStatus.subscribed ? t('securityPushActive') : t('securityPushNone')}
+              </strong>
             </p>
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
               {!pushStatus.subscribed ? (
                 <button type="button" className="btn btn-sm" onClick={enablePush}>
-                  Увімкнути push
+                  {t('securityPushEnable')}
                 </button>
               ) : (
                 <button type="button" className="btn btn-sm btn-ghost" onClick={disablePush}>
-                  Вимкнути push
+                  {t('securityPushDisable')}
                 </button>
               )}
             </div>
@@ -389,16 +392,14 @@ export default function SecurityPage() {
       </section>
 
       <section className="card">
-        <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>2FA (TOTP)</h2>
+        <h2 style={{ fontSize: '1.1rem', marginBottom: '0.75rem' }}>{t('security2fa')}</h2>
         {!status?.available ? (
-          <p style={{ color: 'var(--muted)' }}>
-            2FA доступна для ролей правління та адміністраторів. Мешканцям — лише email/push.
-          </p>
+          <p style={{ color: 'var(--muted)' }}>{t('security2faUnavailable')}</p>
         ) : status.totpEnabled ? (
           <form onSubmit={disable} style={{ display: 'grid', gap: '0.75rem', maxWidth: 400 }}>
-            <p style={{ color: 'var(--success)' }}>2FA увімкнено</p>
+            <p style={{ color: 'var(--success)' }}>{t('securityEnabled')}</p>
             <div>
-              <label htmlFor="pwd">Пароль</label>
+              <label htmlFor="pwd">{t('password')}</label>
               <input
                 id="pwd"
                 type="password"
@@ -408,7 +409,7 @@ export default function SecurityPage() {
               />
             </div>
             <div>
-              <label htmlFor="code-off">Код з додатку</label>
+              <label htmlFor="code-off">{t('security2faAppCode')}</label>
               <input
                 id="code-off"
                 inputMode="numeric"
@@ -419,14 +420,12 @@ export default function SecurityPage() {
               />
             </div>
             <button type="submit" className="btn btn-ghost" disabled={loading}>
-              Вимкнути 2FA
+              {t('security2faDisableBtn')}
             </button>
           </form>
         ) : setup ? (
           <form onSubmit={enable} style={{ display: 'grid', gap: '0.75rem', maxWidth: 420 }}>
-            <p style={{ fontSize: '0.9rem' }}>
-              Відскануйте QR у Google Authenticator / Authy або введіть секрет вручну.
-            </p>
+            <p style={{ fontSize: '0.9rem' }}>{t('security2faScan')}</p>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={setup.qrUrl}
@@ -440,7 +439,7 @@ export default function SecurityPage() {
             />
             <code style={{ fontSize: '0.85rem', wordBreak: 'break-all' }}>{setup.secret}</code>
             <div>
-              <label htmlFor="code-on">Код підтвердження</label>
+              <label htmlFor="code-on">{t('security2faCodeConfirm')}</label>
               <input
                 id="code-on"
                 inputMode="numeric"
@@ -451,12 +450,12 @@ export default function SecurityPage() {
               />
             </div>
             <button type="submit" disabled={loading}>
-              Підтвердити та увімкнути
+              {t('security2faConfirm')}
             </button>
           </form>
         ) : (
           <button type="button" onClick={startSetup} disabled={loading}>
-            Налаштувати 2FA
+            {t('security2faSetup')}
           </button>
         )}
       </section>

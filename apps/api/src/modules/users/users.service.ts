@@ -34,6 +34,11 @@ const USER_SELECT = {
   status: true,
   apartmentId: true,
   createdAt: true,
+  approvedAt: true,
+  approvedById: true,
+  approvedBy: {
+    select: { id: true, email: true, firstName: true, lastName: true, role: true },
+  },
   apartmentLinks: {
     select: {
       isPrimary: true,
@@ -61,6 +66,16 @@ function mapUserRow(user: Prisma.UserGetPayload<{ select: typeof USER_SELECT }>)
     status: user.status,
     apartmentId: user.apartmentId,
     createdAt: user.createdAt,
+    approvedAt: user.approvedAt,
+    approvedBy: user.approvedBy
+      ? {
+          id: user.approvedBy.id,
+          email: user.approvedBy.email,
+          firstName: user.approvedBy.firstName,
+          lastName: user.approvedBy.lastName,
+          role: user.approvedBy.role,
+        }
+      : null,
     apartments,
     apartment: primary
       ? { id: primary.id, number: primary.number, entrance: primary.entrance }
@@ -204,6 +219,16 @@ export class UsersService {
     if (dto.email !== undefined) data.email = dto.email;
     if (dto.status !== undefined) data.status = dto.status;
     if (dto.role !== undefined) data.role = dto.role;
+
+    // When admin activates a pending/blocked account from Organization, record who did it
+    if (
+      dto.status === UserStatus.active &&
+      user.status !== UserStatus.active &&
+      !user.approvedAt
+    ) {
+      data.approvedAt = new Date();
+      data.approvedBy = { connect: { id: actorId } };
+    }
 
     if (dto.password) {
       data.passwordHash = await bcrypt.hash(dto.password, 10);

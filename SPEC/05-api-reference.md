@@ -88,14 +88,60 @@ Login / refresh: `user.tenant = { id, name, slug, orgType }`.
 
 | Method | Path | Auth | Опис |
 |--------|------|------|------|
-| GET | `/backups/status` | admin* | Поточний ISO-тиждень, `weeklyExists`, `lastBackupAt` |
-| GET | `/backups` | admin* | Список weekly/manual копій |
-| POST | `/backups` | write** | Ручна копія PostgreSQL (`manual/…`) |
-| POST | `/backups/weekly` | write** | Ensure тижнева; **skip** якщо вже є |
+| GET | `/backups/status` | admin* | Поточний ISO-тиждень, `weeklyExists`, `lastBackupAt`, `backupDir` |
+| GET | `/backups` | admin* | Список weekly/manual копій (з `source`) |
+| POST | `/backups` | write** | Ручна копія PostgreSQL (`manual/{stamp}`, `source: api`) |
+| POST | `/backups/weekly` | write** | Ensure тижнева; **skip** якщо вже є (`source: api` \| schedule у worker) |
+| GET | `/backups/:kind/:id/download` | admin* | Stream `database.sql.gz` на ПК |
+| POST | `/backups/upload` | write** | multipart `file` (.sql.gz) → `manual/…`, `source: upload` (**без** restore БД) |
 
 \* `super_admin`, `chairman`, `board`, `accountant`, `auditor`  
-\*\* без `auditor` і без `resident`  
-Файли: `BACKUP_DIR` (`weekly/{YYYY-Www}`, `manual/{stamp}`).
+\*\* без `auditor` і без `resident`
+
+#### Каталог і файли
+
+- Корінь: `BACKUP_DIR` (default monorepo `./backups`, Docker `/backups`)
+- `weekly/{YYYY-Www}/database.sql.gz` + `manifest.json`
+- `manual/{stamp}/database.sql.gz` + `manifest.json`
+- Marker здоровʼя: `BACKUP_STATUS_PATH` / `last-backup.json` — оновлюється лише після **успішного live dump** (weekly/manual create), **не** після upload
+
+#### `GET /backups` — елемент списку
+
+```ts
+{
+  kind: 'weekly' | 'manual';
+  id: string;              // folder name
+  weekKey?: string;
+  finishedAt: string | null;
+  sizeBytes: number | null;
+  status: string;          // ok | failed | unknown | corrupt
+  relativePath: string;    // e.g. manual/20260802_083334
+  source: string | null;   // schedule | api | manual | upload | …
+}
+```
+
+| `source` | Значення |
+|----------|----------|
+| `schedule` | Worker / auto weekly |
+| `api` | POST `/backups` або POST `/backups/weekly` з UI/API |
+| `upload` | POST `/backups/upload` — файл з ПК у каталог |
+| `null` | Старий/пошкоджений manifest без поля |
+
+#### Download
+
+- `kind`: `weekly` \| `manual`; `id` — лише `[A-Za-z0-9][A-Za-z0-9._-]*` (без path traversal)
+- Відповідь: `Content-Type: application/gzip`,  
+  `Content-Disposition: attachment; filename="dah-backup-{kind}-{id}.sql.gz"`
+- 404 якщо dump відсутній
+
+#### Upload
+
+- `multipart/form-data`, поле `file`; розширення `.sql.gz` / `.gz`
+- Перевірка gzip magic (`1f 8b`)
+- Розмір: **без ліміту** за замовчуванням; опційно `BACKUP_UPLOAD_MAX_MB=<MB>` (позитивне число). `0` / порожнє / відсутнє = unlimited
+- Створює нову теку `manual/{stamp}/`, audit action `backup.upload`
+- **Не** викликає `psql` / restore і **не** оновлює health marker
+- Відповідь: `{ relativePath, finishedAt, sizeBytes, id, kind: 'manual', status: 'ok' }`
 
 ## Auth
 

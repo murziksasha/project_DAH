@@ -1,7 +1,8 @@
 'use client';
 
 import { FormEvent, Fragment, useMemo, useState } from 'react';
-import { STATUS_LABELS } from './constants';
+import { useI18n } from '@/components/LocaleProvider';
+import { getStatusLabel } from './constants';
 import { ApartmentRow, UserRow } from './types';
 
 interface ApartmentFormState {
@@ -52,6 +53,7 @@ export function ApartmentsSection({
   onExportCsv,
   onImportCsv,
 }: ApartmentsSectionProps) {
+  const { t } = useI18n();
   const [search, setSearch] = useState('');
   const [form, setForm] = useState(emptyAptForm);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -110,7 +112,7 @@ export function ApartmentsSection({
   }
 
   async function handleDelete(id: string, number: string) {
-    if (!confirm(`Видалити квартиру ${number}?`)) return;
+    if (!confirm(t('orgDeleteAptConfirm', { number }))) return;
     await onDelete(id);
     if (expandedId === id) setExpandedId(null);
     if (editingId === id) cancelEdit();
@@ -125,7 +127,7 @@ export function ApartmentsSection({
   return (
     <section className="card">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-        <h2 style={{ margin: 0 }}>Квартири ({apartments.length})</h2>
+        <h2 style={{ margin: 0 }}>{t('orgAptsCount', { count: apartments.length })}</h2>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
         {onExportCsv && (
           <button type="button" className="btn btn-sm btn-ghost" onClick={onExportCsv}>
@@ -134,7 +136,7 @@ export function ApartmentsSection({
         )}
         {onImportCsv && (
           <label className="btn btn-sm btn-ghost" style={{ cursor: 'pointer' }}>
-            {importing ? 'Імпорт…' : 'CSV ↑'}
+            {importing ? t('importing') : 'CSV ↑'}
             <input
               type="file"
               accept=".csv,text/csv,text/plain"
@@ -156,7 +158,7 @@ export function ApartmentsSection({
           </label>
         )}
         <input
-          placeholder="Пошук квартири…"
+          placeholder={t('search')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           style={{ maxWidth: 220 }}
@@ -165,7 +167,7 @@ export function ApartmentsSection({
       </div>
       {onImportCsv && (
         <p style={{ color: 'var(--muted)', fontSize: '0.8rem', marginBottom: '0.75rem' }}>
-          Імпорт CSV: <code>number,entrance,floor,area</code> (рядок заголовка опційний)
+          {t('orgCsvImportHint')}
         </p>
       )}
 
@@ -179,16 +181,16 @@ export function ApartmentsSection({
           alignItems: 'end',
         }}
       >
-        <input placeholder="№" value={form.number} onChange={(e) => setForm({ ...form, number: e.target.value })} required />
-        <input placeholder="Під'їзд" value={form.entrance} onChange={(e) => setForm({ ...form, entrance: e.target.value })} />
-        <input placeholder="Поверх" value={form.floor} onChange={(e) => setForm({ ...form, floor: e.target.value })} />
-        <input placeholder="Площа" value={form.area} onChange={(e) => setForm({ ...form, area: e.target.value })} required />
+        <input placeholder={t('orgNumber')} value={form.number} onChange={(e) => setForm({ ...form, number: e.target.value })} required />
+        <input placeholder={t('entrance')} value={form.entrance} onChange={(e) => setForm({ ...form, entrance: e.target.value })} />
+        <input placeholder={t('floor')} value={form.floor} onChange={(e) => setForm({ ...form, floor: e.target.value })} />
+        <input placeholder={t('area')} value={form.area} onChange={(e) => setForm({ ...form, area: e.target.value })} required />
         <button type="submit" disabled={saving}>
-          {editingId ? 'Зберегти' : '+'}
+          {editingId ? t('save') : '+'}
         </button>
         {editingId && (
           <button type="button" onClick={cancelEdit}>
-            Скасувати
+            {t('cancel')}
           </button>
         )}
       </form>
@@ -197,11 +199,11 @@ export function ApartmentsSection({
         <table style={{ width: '100%', fontSize: '0.9rem', minWidth: 640 }}>
           <thead>
             <tr style={{ textAlign: 'left', color: 'var(--muted)' }}>
-              <th>№</th>
-              <th>Під&apos;їзд</th>
-              <th>Поверх</th>
-              <th>Площа</th>
-              <th>Мешканці</th>
+              <th>{t('orgNumber')}</th>
+              <th>{t('entrance')}</th>
+              <th>{t('floor')}</th>
+              <th>{t('area')}</th>
+              <th>{t('orgResidents')}</th>
               <th></th>
             </tr>
           </thead>
@@ -212,7 +214,7 @@ export function ApartmentsSection({
                   <td style={{ padding: '0.35rem 0.5rem' }}>{a.number}</td>
                   <td style={{ padding: '0.35rem 0.5rem' }}>{a.entrance}</td>
                   <td style={{ padding: '0.35rem 0.5rem' }}>{a.floor ?? '—'}</td>
-                  <td style={{ padding: '0.35rem 0.5rem' }}>{a.area} м²</td>
+                  <td style={{ padding: '0.35rem 0.5rem' }}>{a.area} {t('sqm')}</td>
                   <td style={{ padding: '0.35rem 0.5rem' }}>{a.users?.length ?? 0}</td>
                   <td style={{ padding: '0.35rem 0.5rem', whiteSpace: 'nowrap' }}>
                     <button
@@ -220,13 +222,13 @@ export function ApartmentsSection({
                       style={{ fontSize: '0.8rem', marginRight: '0.35rem' }}
                       onClick={() => setExpandedId(expandedId === a.id ? null : a.id)}
                     >
-                      Деталі
+                      {t('details')}
                     </button>
                     <button type="button" style={{ fontSize: '0.8rem', marginRight: '0.35rem' }} onClick={() => startEdit(a)}>
-                      Редагувати
+                      {t('edit')}
                     </button>
                     <button type="button" style={{ fontSize: '0.8rem' }} onClick={() => handleDelete(a.id, a.number)}>
-                      Видалити
+                      {t('delete')}
                     </button>
                   </td>
                 </tr>
@@ -234,10 +236,12 @@ export function ApartmentsSection({
                   <tr>
                     <td colSpan={6} style={{ padding: '0.75rem 0.5rem', background: 'var(--bg-subtle, rgba(0,0,0,0.03))' }}>
                       <div style={{ fontWeight: 600, marginBottom: '0.5rem', fontSize: '0.9rem' }}>
-                        Прив&apos;язані облікові записи
+                        {t('orgLinkedAccounts')}
                       </div>
                       {(a.users ?? []).length === 0 && (
-                        <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '0 0 0.5rem' }}>Немає прив&apos;язаних мешканців</p>
+                        <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '0 0 0.5rem' }}>
+                          {t('orgNoLinkedResidents')}
+                        </p>
                       )}
                       <ul style={{ margin: '0 0 0.75rem', paddingLeft: '1.25rem', fontSize: '0.9rem' }}>
                         {(a.users ?? []).map((u) => {
@@ -247,14 +251,14 @@ export function ApartmentsSection({
                               {formatUser(u)}
                               {u.isPrimary && ' ★'}
                               {' · '}
-                              {STATUS_LABELS[u.status] ?? u.status}
+                              {getStatusLabel(u.status, t)}
                               {' '}
                               <button
                                 type="button"
                                 style={{ fontSize: '0.75rem' }}
                                 onClick={() => full && onEditUser(full)}
                               >
-                                Редагувати
+                                {t('edit')}
                               </button>
                               {' '}
                               <button
@@ -262,7 +266,7 @@ export function ApartmentsSection({
                                 style={{ fontSize: '0.75rem' }}
                                 onClick={() => onUnlinkUser(a.id, u.id)}
                               >
-                                Відв&apos;язати
+                                {t('orgUnlinkUser')}
                               </button>
                             </li>
                           );
@@ -271,7 +275,7 @@ export function ApartmentsSection({
                       {linkableUsers.length > 0 && (
                         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
                           <select value={linkUserId} onChange={(e) => setLinkUserId(e.target.value)} style={{ minWidth: 220 }}>
-                            <option value="">Оберіть мешканця…</option>
+                            <option value="">{t('orgSelectResident')}</option>
                             {linkableUsers.map((u) => (
                               <option key={u.id} value={u.id}>
                                 {formatUser(u)}
@@ -279,7 +283,7 @@ export function ApartmentsSection({
                             ))}
                           </select>
                           <button type="button" disabled={!linkUserId} onClick={handleLink}>
-                            Прив&apos;язати
+                            {t('orgLinkUser')}
                           </button>
                         </div>
                       )}

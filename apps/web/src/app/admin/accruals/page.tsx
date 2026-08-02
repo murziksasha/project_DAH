@@ -1,10 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
 import { downloadAuthFile } from '@/lib/download';
+import { meterTypeLabel } from '@/lib/i18n';
 import { formatMoney } from '@/lib/money';
 
 interface Fund {
@@ -31,21 +33,15 @@ interface ApartmentPreview {
 type Distribution = 'by_area' | 'fixed_per_apartment' | 'manual' | 'by_meter';
 type Step = 1 | 2 | 3 | 4;
 
-const STEPS: { id: Step; label: string }[] = [
-  { id: 1, label: 'Параметри' },
-  { id: 2, label: 'Перегляд' },
-  { id: 3, label: 'Підтвердження' },
-  { id: 4, label: 'Готово' },
-];
-
 export default function AccrualsPage() {
+  const { t, locale } = useI18n();
   const [step, setStep] = useState<Step>(1);
   const [funds, setFunds] = useState<Fund[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [fundId, setFundId] = useState('');
   const [templateId, setTemplateId] = useState('');
   const [period, setPeriod] = useState(new Date().toISOString().slice(0, 7));
-  const [title, setTitle] = useState('Внесок на утримання');
+  const [title, setTitle] = useState('');
   const [distribution, setDistribution] = useState<Distribution>('by_area');
   const [rate, setRate] = useState('8.5');
   const [fixedAmount, setFixedAmount] = useState('450');
@@ -57,6 +53,24 @@ export default function AccrualsPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [titleTouched, setTitleTouched] = useState(false);
+
+  const steps = useMemo(
+    () =>
+      [
+        { id: 1 as Step, label: t('accrualStepParams') },
+        { id: 2 as Step, label: t('accrualStepPreview') },
+        { id: 3 as Step, label: t('accrualStepConfirm') },
+        { id: 4 as Step, label: t('accrualStepDone') },
+      ] as const,
+    [t],
+  );
+
+  useEffect(() => {
+    if (!titleTouched) {
+      setTitle(t('accrualDefaultTitle'));
+    }
+  }, [t, titleTouched]);
 
   useEffect(() => {
     const token = getToken();
@@ -67,9 +81,9 @@ export default function AccrualsPage() {
     Promise.all([
       apiFetch<Fund[]>('/finance/funds', { token }),
       apiFetch<Template[]>('/accruals/templates', { token }),
-    ]).then(([f, t]) => {
+    ]).then(([f, tpl]) => {
       setFunds(f);
-      setTemplates(t);
+      setTemplates(tpl);
       if (f[0]) setFundId(f[0].id);
     });
   }, []);
@@ -77,10 +91,11 @@ export default function AccrualsPage() {
   function applyTemplate(id: string) {
     setTemplateId(id);
     if (!id) return;
-    const tpl = templates.find((t) => t.id === id);
+    const tpl = templates.find((x) => x.id === id);
     if (!tpl) return;
     setFundId(tpl.fundId);
     setTitle(tpl.name);
+    setTitleTouched(true);
     setDistribution(tpl.distribution as Distribution);
     if (tpl.rate) setRate(String(tpl.rate));
     if (tpl.fixedAmount) setFixedAmount(String(tpl.fixedAmount));
@@ -127,7 +142,7 @@ export default function AccrualsPage() {
       }
       setStep(2);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     } finally {
       setLoading(false);
     }
@@ -137,7 +152,7 @@ export default function AccrualsPage() {
     const token = getToken();
     if (!token) return;
     if (distribution === 'manual') {
-      setError('Шаблон не підтримує ручний розподіл');
+      setError(t('accrualTemplateManualError'));
       return;
     }
     setError('');
@@ -153,11 +168,11 @@ export default function AccrualsPage() {
           fixedAmount: distribution === 'fixed_per_apartment' ? Number(fixedAmount) : undefined,
         }),
       });
-      setMessage('Шаблон збережено');
-      const t = await apiFetch<Template[]>('/accruals/templates', { token });
-      setTemplates(t);
+      setMessage(t('accrualTemplateSaved'));
+      const tpl = await apiFetch<Template[]>('/accruals/templates', { token });
+      setTemplates(tpl);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка шаблону');
+      setError(err instanceof Error ? err.message : t('accrualTemplateError'));
     }
   }
 
@@ -175,10 +190,10 @@ export default function AccrualsPage() {
         body: JSON.stringify(buildPayload()),
       });
       setCreatedId(created.id);
-      setMessage('Нарахування проведено');
+      setMessage(t('accrualPosted'));
       setStep(4);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     } finally {
       setLoading(false);
     }
@@ -204,17 +219,17 @@ export default function AccrualsPage() {
   return (
     <main>
       <PageHeader
-        title="Нарахування внесків"
-        description="Майстер: параметри → перегляд → підтвердження → квитанції"
+        title={t('accrualsWizardTitle')}
+        description={t('accrualsWizardDesc')}
         actions={
           <Link href="/admin/accruals/list" className="btn btn-sm btn-ghost">
-            Історія
+            {t('accrualHistory')}
           </Link>
         }
       />
 
       <div className="setup-steps" style={{ marginBottom: '1.25rem' }}>
-        {STEPS.map((s) => (
+        {steps.map((s) => (
           <span
             key={s.id}
             className={`setup-step-pill${step === s.id ? ' active' : ''}${step > s.id ? ' done' : ''}`}
@@ -230,19 +245,19 @@ export default function AccrualsPage() {
       {step === 1 && (
         <section className="card" style={{ display: 'grid', gap: '1rem' }}>
           <div>
-            <label>Шаблон</label>
+            <label>{t('accrualTemplate')}</label>
             <select value={templateId} onChange={(e) => applyTemplate(e.target.value)}>
-              <option value="">— без шаблону —</option>
-              {templates.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} ({t.distribution})
+              <option value="">{t('accrualNoTemplate')}</option>
+              {templates.map((tpl) => (
+                <option key={tpl.id} value={tpl.id}>
+                  {tpl.name} ({tpl.distribution})
                 </option>
               ))}
             </select>
           </div>
           <div className="grid-2">
             <div>
-              <label>Фонд</label>
+              <label>{t('expenseFund')}</label>
               <select value={fundId} onChange={(e) => setFundId(e.target.value)} required>
                 {funds.map((f) => (
                   <option key={f.id} value={f.id}>
@@ -252,16 +267,23 @@ export default function AccrualsPage() {
               </select>
             </div>
             <div>
-              <label>Період</label>
+              <label>{t('accrualPeriodShort')}</label>
               <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} required />
             </div>
           </div>
           <div>
-            <label>Назва нарахування</label>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} required />
+            <label>{t('accrualName')}</label>
+            <input
+              value={title}
+              onChange={(e) => {
+                setTitleTouched(true);
+                setTitle(e.target.value);
+              }}
+              required
+            />
           </div>
           <div>
-            <label>Тип розподілу</label>
+            <label>{t('accrualDist')}</label>
             <select
               value={distribution}
               onChange={(e) => {
@@ -269,15 +291,15 @@ export default function AccrualsPage() {
                 setPreview([]);
               }}
             >
-              <option value="by_area">По площі (грн/м²)</option>
-              <option value="fixed_per_apartment">Фіксована сума на квартиру</option>
-              <option value="by_meter">За лічильниками (грн/од.)</option>
-              <option value="manual">Вручну по квартирах</option>
+              <option value="by_area">{t('accrualByArea')}</option>
+              <option value="fixed_per_apartment">{t('accrualFixed')}</option>
+              <option value="by_meter">{t('accrualByMeter')}</option>
+              <option value="manual">{t('accrualManualApts')}</option>
             </select>
           </div>
           {(distribution === 'by_area' || distribution === 'by_meter') && (
             <div>
-              <label>{distribution === 'by_meter' ? 'Тариф (грн/од.)' : 'Тариф (грн/м²)'}</label>
+              <label>{distribution === 'by_meter' ? t('accrualRateUnit') : t('accrualRate')}</label>
               <input
                 type="number"
                 step="0.01"
@@ -290,23 +312,23 @@ export default function AccrualsPage() {
           )}
           {distribution === 'by_meter' && (
             <div>
-              <label>Тип лічильника (опційно)</label>
+              <label>{t('accrualMeterTypeOptional')}</label>
               <select value={meterType} onChange={(e) => setMeterType(e.target.value)}>
-                <option value="">Усі типи</option>
-                <option value="cold_water">Холодна вода</option>
-                <option value="hot_water">Гаряча вода</option>
-                <option value="heating">Опалення</option>
-                <option value="electricity">Електроенергія</option>
-                <option value="other">Інше</option>
+                <option value="">{t('allTypes')}</option>
+                <option value="cold_water">{meterTypeLabel('cold_water', locale)}</option>
+                <option value="hot_water">{meterTypeLabel('hot_water', locale)}</option>
+                <option value="heating">{meterTypeLabel('heating', locale)}</option>
+                <option value="electricity">{meterTypeLabel('electricity', locale)}</option>
+                <option value="other">{meterTypeLabel('other', locale)}</option>
               </select>
               <p style={{ color: 'var(--muted)', fontSize: '0.8rem', marginTop: 4 }}>
-                Споживання береться з показників за обраний період (див. «Лічильники»).
+                {t('accrualMeterHint')}
               </p>
             </div>
           )}
           {distribution === 'fixed_per_apartment' && (
             <div>
-              <label>Сума на квартиру (₴)</label>
+              <label>{t('accrualFixedAmountUah')}</label>
               <input
                 type="number"
                 step="0.01"
@@ -318,16 +340,16 @@ export default function AccrualsPage() {
             </div>
           )}
           <div>
-            <label>Термін оплати</label>
+            <label>{t('accrualDueDate')}</label>
             <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
             <button type="button" onClick={loadPreview} disabled={loading || !fundId || !title}>
-              {loading ? 'Розрахунок…' : 'Далі: попередній перегляд'}
+              {loading ? t('calculating') : t('accrualNextPreview')}
             </button>
             {distribution !== 'manual' && (
               <button type="button" className="btn btn-ghost" onClick={saveAsTemplate}>
-                Зберегти як шаблон
+                {t('accrualSaveTemplate')}
               </button>
             )}
           </div>
@@ -337,7 +359,7 @@ export default function AccrualsPage() {
       {step === 2 && (
         <section className="card">
           <h2 style={{ marginBottom: '0.75rem', fontSize: '1.1rem' }}>
-            Перегляд · {preview.length} кв. · {formatMoney(previewTotal)}
+            {t('accrualPreviewHead', { count: preview.length, total: formatMoney(previewTotal) })}
           </h2>
           <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginBottom: '1rem' }}>
             {title} · {period} · {fundName}
@@ -346,10 +368,10 @@ export default function AccrualsPage() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Кв.</th>
-                  <th>Під&apos;їзд</th>
-                  <th>м²</th>
-                  <th>Сума</th>
+                  <th>{t('metersColApt')}</th>
+                  <th>{t('entrance')}</th>
+                  <th>{t('sqm')}</th>
+                  <th>{t('amount')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -381,10 +403,10 @@ export default function AccrualsPage() {
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
             <button type="button" className="btn btn-ghost" onClick={() => setStep(1)}>
-              Назад
+              {t('back')}
             </button>
             <button type="button" onClick={() => setStep(3)} disabled={preview.length === 0 || previewTotal <= 0}>
-              Далі: підтвердження
+              {t('accrualNextConfirm')}
             </button>
           </div>
         </section>
@@ -392,29 +414,26 @@ export default function AccrualsPage() {
 
       {step === 3 && (
         <form onSubmit={handleSubmit} className="card" style={{ display: 'grid', gap: '1rem' }}>
-          <h2 style={{ fontSize: '1.1rem' }}>Підтвердження</h2>
+          <h2 style={{ fontSize: '1.1rem' }}>{t('accrualStepConfirm')}</h2>
           <ul style={{ listStyle: 'none', display: 'grid', gap: '0.35rem', color: 'var(--muted)' }}>
             <li>
               <strong style={{ color: 'var(--text)' }}>{title}</strong>
             </li>
-            <li>Період: {period}</li>
-            <li>Фонд: {fundName}</li>
-            <li>Квартир: {preview.length}</li>
+            <li>{t('accrualPeriodValue', { period })}</li>
+            <li>{t('accrualFundValue', { name: fundName })}</li>
+            <li>{t('accrualAptsCount', { count: preview.length })}</li>
             <li>
-              Разом: <strong style={{ color: 'var(--text)' }}>{formatMoney(previewTotal)}</strong>
+              {t('total')}: <strong style={{ color: 'var(--text)' }}>{formatMoney(previewTotal)}</strong>
             </li>
-            {dueDate && <li>Термін: {dueDate}</li>}
+            {dueDate && <li>{t('accrualDueValue', { date: dueDate })}</li>}
           </ul>
-          <p style={{ fontSize: '0.9rem' }}>
-            Після підтвердження мешканцям піде email (якщо увімкнено сповіщення), зʼявляться рядки
-            особових рахунків.
-          </p>
+          <p style={{ fontSize: '0.9rem' }}>{t('accrualConfirmEmail')}</p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
             <button type="button" className="btn btn-ghost" onClick={() => setStep(2)}>
-              Назад
+              {t('back')}
             </button>
             <button type="submit" disabled={loading}>
-              {loading ? 'Проведення…' : 'Провести нарахування'}
+              {loading ? t('accrualPosting') : t('accrualPostConfirm')}
             </button>
           </div>
         </form>
@@ -422,9 +441,9 @@ export default function AccrualsPage() {
 
       {step === 4 && (
         <section className="card" style={{ display: 'grid', gap: '1rem' }}>
-          <h2 style={{ fontSize: '1.15rem', color: 'var(--success)' }}>Готово</h2>
+          <h2 style={{ fontSize: '1.15rem', color: 'var(--success)' }}>{t('accrualStepDone')}</h2>
           <p>
-            Нарахування <strong>{title}</strong> за {period} проведено
+            {t('accrualDoneMsg', { title, period })}
             {createdId ? ` (id …${createdId.slice(-6)})` : ''}.
           </p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
@@ -439,7 +458,7 @@ export default function AccrualsPage() {
                     )
                   }
                 >
-                  PDF квитанції
+                  {t('accrualReceiptsPdf')}
                 </button>
                 <button
                   type="button"
@@ -450,15 +469,15 @@ export default function AccrualsPage() {
                     )
                   }
                 >
-                  ZIP
+                  {t('accrualDownloadZip')}
                 </button>
               </>
             )}
             <Link href="/admin/accruals/list" className="btn btn-sm btn-ghost">
-              Історія нарахувань
+              {t('accrualListTitle')}
             </Link>
             <button type="button" className="btn btn-sm btn-ghost" onClick={resetWizard}>
-              Нове нарахування
+              {t('accrualNew')}
             </button>
           </div>
         </section>
