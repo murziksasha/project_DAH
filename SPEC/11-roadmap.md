@@ -29,6 +29,22 @@
 10. [x] SMS + identity mock
 11. [x] Multi-tenant Tenant model + isolation + admin UI + X-Tenant-Id
 
+## v1.6–1.7 product polish — **COMPLETE**
+
+| Версія | Зміст | Статус |
+|--------|--------|--------|
+| **1.6** | Excel exports, deep resident account UX | ✅ |
+| **1.7** | Бренд **«Мій дім»**; `Tenant.orgType` ОСББ \| УК; labels UI | ✅ |
+
+## v1.8 — document constructor
+
+| Тема | Статус |
+|------|--------|
+| Конструктор PDF (квитанції, звіт правління) | ✅ layout blocks + `{{variables}}` |
+| Конструктор Excel / export pack | ✅ увімкнення колонок і файлів ZIP |
+| Збереження в `Building.settings.documentTemplates` | ✅ |
+| UI `/admin/document-templates` | ✅ |
+
 ## Beyond plan (future product, not blocking)
 
 | Тема | Примітка |
@@ -38,6 +54,8 @@
 | SaaS billing | Плани/оплата за tenant |
 | Email unique per tenant | Зараз global unique email |
 | WayForPay multi-product arrays | Розширення під кошик |
+| Окремі ролі диспетчер/бригада (УК) | Можна поверх `board` |
+| Візуальний drag-and-drop WYSIWYG для PDF | Зараз блоковий конструктор + preview |
 
 ## Версіонування
 

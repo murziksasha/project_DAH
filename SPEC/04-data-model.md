@@ -22,16 +22,28 @@ erDiagram
 
 ## Основні сутності
 
-### Building
-Один запис на інстанс (single-tenant).
+### Tenant
+Одна **організація** (ОСББ або УК) на спільному інстансі.
 
 | Поле | Тип | Опис |
 |------|-----|------|
-| name | String | Назва ОСМД |
+| name | String | Назва організації |
+| slug | String | Унікальний slug |
+| orgType | `osbb` \| `management_company` | Тип: ОСББ або УК (default `osbb`) |
+| isActive | Boolean | Деактивація блокує login користувачів tenant |
+| settings | Json | Розширені опції |
+
+### Building
+Будинок / об’єкт у складі tenant (multi-building).
+
+| Поле | Тип | Опис |
+|------|-----|------|
+| tenantId | String | Організація-власник |
+| name | String | Назва будинку / ОСББ-об’єкта |
 | address | String | Адреса |
-| edrpou | String? | ЄДРПОУ |
+| edrpou | String? | ЄДРПОУ (за потреби) |
 | showDebtorsToResidents | Boolean | Показувати боржників мешканцям |
-| settings (JSON) | Object | `deferredSetupRoles?: ('accountant' \| 'auditor')[]` — ролі, відкладені в майстрі налаштування |
+| settings (JSON) | Object | `deferredSetupRoles`, **`documentTemplates`** (`forms` PDF-макети + `exports` Excel-профілі), locale, features… |
 
 ### Apartment
 | Поле | Тип | Опис |

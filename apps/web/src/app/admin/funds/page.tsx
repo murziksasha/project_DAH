@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
@@ -28,6 +29,7 @@ interface Fund {
 type Tab = 'funds' | 'banks';
 
 export default function FundsPage() {
+  const { t } = useI18n();
   const [tab, setTab] = useState<Tab>('funds');
   const [editing, setEditing] = useState<Fund | null>(null);
   const [creating, setCreating] = useState(false);
@@ -86,7 +88,7 @@ export default function FundsPage() {
             }),
           ),
         });
-        setMessage('Фонд створено');
+        setMessage(t('fundsCreated'));
         setCreating(false);
       } else if (editing) {
         await apiFetch(`/finance/funds/${editing.id}`, {
@@ -98,7 +100,7 @@ export default function FundsPage() {
             bankAccountId: bankAccountId || null,
           }),
         });
-        setMessage('Фонд оновлено');
+        setMessage(t('fundsUpdated'));
         setEditing(null);
       }
       setName('');
@@ -106,7 +108,7 @@ export default function FundsPage() {
       setBankAccountId('');
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     }
   }
 
@@ -126,7 +128,7 @@ export default function FundsPage() {
             description: bankForm.description || null,
           }),
         });
-        setMessage('Рахунок оновлено');
+        setMessage(t('fundsBankUpdated'));
       } else {
         await apiFetch('/finance/bank-accounts', {
           method: 'POST',
@@ -139,34 +141,34 @@ export default function FundsPage() {
             }),
           ),
         });
-        setMessage('Рахунок додано');
+        setMessage(t('fundsBankAdded'));
       }
       setBankForm({ bankName: '', iban: '', description: '' });
       setEditingBankId(null);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     }
   }
 
   async function deleteBank(id: string) {
-    if (!window.confirm('Видалити банківський рахунок?')) return;
+    if (!window.confirm(t('fundsBankDeleteConfirm'))) return;
     const token = getToken();
     if (!token) return;
     try {
       await apiFetch(`/finance/bank-accounts/${id}`, { method: 'DELETE', token });
-      setMessage('Рахунок видалено');
+      setMessage(t('fundsBankDeleted'));
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     }
   }
 
   return (
     <main>
       <PageHeader
-        title="Фонди та рахунки"
-        description="Залишки фондів і банківські IBAN для квитанцій мешканців"
+        title={t('fundsPageTitle')}
+        description={t('fundsPageDesc')}
       />
 
       <nav className="nav-scroll">
@@ -175,14 +177,14 @@ export default function FundsPage() {
           className={`tab-btn${tab === 'funds' ? ' active' : ''}`}
           onClick={() => setTab('funds')}
         >
-          Фонди
+          {t('funds')}
         </button>
         <button
           type="button"
           className={`tab-btn${tab === 'banks' ? ' active' : ''}`}
           onClick={() => setTab('banks')}
         >
-          Банківські рахунки
+          {t('fundsTabBanks')}
         </button>
       </nav>
 
@@ -205,7 +207,7 @@ export default function FundsPage() {
                   setBankAccountId('');
                 }}
               >
-                + Новий фонд
+                {t('fundsNewPlus')}
               </button>
             </div>
           )}
@@ -217,24 +219,24 @@ export default function FundsPage() {
               style={{ display: 'grid', gap: '0.75rem', marginBottom: '1.25rem' }}
             >
               <h2 style={{ fontSize: '1.05rem' }}>
-                {creating ? 'Новий фонд' : `Редагувати: ${editing?.type}`}
+                {creating ? t('fundsNew') : t('fundsEditTitle', { type: editing?.type ?? '' })}
               </h2>
               <div>
-                <label>Назва</label>
+                <label>{t('name')}</label>
                 <input value={name} onChange={(e) => setName(e.target.value)} required />
               </div>
               {creating && (
                 <div>
-                  <label>Тип</label>
+                  <label>{t('type')}</label>
                   <select value={fundType} onChange={(e) => setFundType(e.target.value)}>
-                    <option value="maintenance">Утримання</option>
-                    <option value="capital_repair">Капремонт</option>
-                    <option value="special">Спеціальний</option>
+                    <option value="maintenance">{t('fundsTypeMaintenance')}</option>
+                    <option value="capital_repair">{t('fundsTypeCapital')}</option>
+                    <option value="special">{t('fundsTypeSpecial')}</option>
                   </select>
                 </div>
               )}
               <div>
-                <label>Початковий залишок (₴)</label>
+                <label>{t('fundsOpeningUah')}</label>
                 <input
                   type="number"
                   step="0.01"
@@ -245,9 +247,9 @@ export default function FundsPage() {
                 />
               </div>
               <div>
-                <label>Банківський рахунок</label>
+                <label>{t('fundsBankAccount')}</label>
                 <select value={bankAccountId} onChange={(e) => setBankAccountId(e.target.value)}>
-                  <option value="">— не привʼязано —</option>
+                  <option value="">{t('fundsNotLinked')}</option>
                   {banks.map((b) => (
                     <option key={b.id} value={b.id}>
                       {b.bankName} · {b.iban}
@@ -256,7 +258,7 @@ export default function FundsPage() {
                 </select>
               </div>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button type="submit">Зберегти</button>
+                <button type="submit">{t('save')}</button>
                 <button
                   type="button"
                   className="btn btn-ghost"
@@ -265,7 +267,7 @@ export default function FundsPage() {
                     setCreating(false);
                   }}
                 >
-                  Скасувати
+                  {t('cancel')}
                 </button>
               </div>
             </form>
@@ -273,19 +275,19 @@ export default function FundsPage() {
 
           <section className="card">
             {loading ? (
-              <p style={{ color: 'var(--muted)' }}>Завантаження…</p>
+              <p style={{ color: 'var(--muted)' }}>{t('loading')}</p>
             ) : funds.length === 0 ? (
-              <EmptyState title="Фондів немає" description="Створіть фонд або пройдіть майстер setup." />
+              <EmptyState title={t('fundsEmpty')} description={t('fundsEmptyDesc')} />
             ) : (
               <DataTable
                 rows={funds}
                 rowKey={(f) => f.id}
                 columns={[
-                  { key: 'name', header: 'Назва', render: (f) => <strong>{f.name}</strong> },
-                  { key: 'type', header: 'Тип', render: (f) => f.type },
+                  { key: 'name', header: t('name'), render: (f) => <strong>{f.name}</strong> },
+                  { key: 'type', header: t('type'), render: (f) => f.type },
                   {
                     key: 'opening',
-                    header: 'Початковий',
+                    header: t('fundsOpeningCol'),
                     render: (f) => formatMoney(f.openingBalance),
                   },
                   {
@@ -306,7 +308,7 @@ export default function FundsPage() {
                           startEdit(f);
                         }}
                       >
-                        Редагувати
+                        {t('edit')}
                       </button>
                     ),
                   },
@@ -325,10 +327,10 @@ export default function FundsPage() {
             style={{ display: 'grid', gap: '0.75rem', marginBottom: '1.25rem' }}
           >
             <h2 style={{ fontSize: '1.05rem' }}>
-              {editingBankId ? 'Редагувати рахунок' : 'Новий рахунок'}
+              {editingBankId ? t('fundsEditBank') : t('fundsNewBank')}
             </h2>
             <div>
-              <label>Банк</label>
+              <label>{t('fundsBankName')}</label>
               <input
                 value={bankForm.bankName}
                 onChange={(e) => setBankForm({ ...bankForm, bankName: e.target.value })}
@@ -346,15 +348,14 @@ export default function FundsPage() {
               />
             </div>
             <div>
-              <label>Опис</label>
+              <label>{t('description')}</label>
               <input
                 value={bankForm.description}
                 onChange={(e) => setBankForm({ ...bankForm, description: e.target.value })}
-                placeholder="Основний рахунок"
               />
             </div>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button type="submit">{editingBankId ? 'Зберегти' : 'Додати'}</button>
+              <button type="submit">{editingBankId ? t('save') : t('add')}</button>
               {editingBankId && (
                 <button
                   type="button"
@@ -364,7 +365,7 @@ export default function FundsPage() {
                     setBankForm({ bankName: '', iban: '', description: '' });
                   }}
                 >
-                  Скасувати
+                  {t('cancel')}
                 </button>
               )}
             </div>
@@ -372,7 +373,7 @@ export default function FundsPage() {
 
           <section className="card">
             {banks.length === 0 ? (
-              <EmptyState title="Рахунків немає" description="Додайте IBAN для оплати внесків." />
+              <EmptyState title={t('fundsBanksEmpty')} description={t('fundsBanksEmptyDesc')} />
             ) : (
               <ul style={{ listStyle: 'none', display: 'grid', gap: '0.75rem' }}>
                 {banks.map((b) => (
@@ -415,14 +416,14 @@ export default function FundsPage() {
                           });
                         }}
                       >
-                        Редагувати
+                        {t('edit')}
                       </button>
                       <button
                         type="button"
                         className="btn btn-sm btn-ghost"
                         onClick={() => deleteBank(b.id)}
                       >
-                        Видалити
+                        {t('delete')}
                       </button>
                     </div>
                   </li>

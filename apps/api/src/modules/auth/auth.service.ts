@@ -209,7 +209,7 @@ export class AuthService {
     const otpauthUrl = buildOtpAuthUrl({
       secret,
       email: user.email,
-      issuer: 'DAH OSMD',
+      issuer: 'Мій дім',
     });
 
     return {
@@ -302,8 +302,18 @@ export class AuthService {
         role: true,
         status: true,
         apartmentId: true,
+        tenantId: true,
         emailNotifyEnabled: true,
         totpEnabled: true,
+        tenant: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            orgType: true,
+            isActive: true,
+          },
+        },
       },
     });
     if (!user) throw new NotFoundException('Користувача не знайдено');
@@ -383,8 +393,26 @@ export class AuthService {
 
     const updated = await this.prisma.user.update({
       where: { id: userId },
-      data: { status: UserStatus.active },
-      select: { id: true, email: true, status: true, role: true, firstName: true, lastName: true },
+      data: {
+        status: UserStatus.active,
+        approvedAt: new Date(),
+        approvedById: actorId,
+      },
+      select: {
+        id: true,
+        email: true,
+        status: true,
+        role: true,
+        firstName: true,
+        lastName: true,
+        approvedAt: true,
+        approvedById: true,
+      },
+    });
+
+    const approver = await this.prisma.user.findUnique({
+      where: { id: actorId },
+      select: { id: true, email: true, firstName: true, lastName: true, role: true },
     });
 
     await this.audit.log({
@@ -392,7 +420,19 @@ export class AuthService {
       action: 'auth.approve',
       entityType: 'User',
       entityId: userId,
-      payload: { email: user.email, role: user.role },
+      payload: {
+        email: user.email,
+        role: user.role,
+        approvedBy: approver
+          ? {
+              id: approver.id,
+              email: approver.email,
+              firstName: approver.firstName,
+              lastName: approver.lastName,
+              role: approver.role,
+            }
+          : { id: actorId },
+      },
     });
 
     void this.mail.sendTemplate(updated.email, 'registration.approved', {
@@ -543,8 +583,15 @@ export class AuthService {
       data: { refreshToken: await bcrypt.hash(tokens.refreshToken, 10) },
     });
 
+    const tenant = user.tenantId
+      ? await this.prisma.tenant.findUnique({
+          where: { id: user.tenantId },
+          select: { id: true, name: true, slug: true, orgType: true },
+        })
+      : null;
+
     return {
-      user: this.publicUser(user),
+      user: this.publicUser(user, tenant),
       ...tokens,
     };
   }
@@ -720,23 +767,33 @@ export class AuthService {
       payload: { role: user.role, tenantId },
     });
 
+    const tenant = tenantId
+      ? await this.prisma.tenant.findUnique({
+          where: { id: tenantId },
+          select: { id: true, name: true, slug: true, orgType: true },
+        })
+      : null;
+
     return {
       requires2fa: false as const,
-      user: this.publicUser({ ...user, tenantId }),
+      user: this.publicUser({ ...user, tenantId }, tenant),
       ...tokens,
     };
   }
 
-  private publicUser(user: {
-    id: string;
-    email: string;
-    firstName: string;
-    lastName: string;
-    role: UserRole;
-    status: UserStatus;
-    apartmentId: string | null;
-    tenantId?: string | null;
-  }) {
+  private publicUser(
+    user: {
+      id: string;
+      email: string;
+      firstName: string;
+      lastName: string;
+      role: UserRole;
+      status: UserStatus;
+      apartmentId: string | null;
+      tenantId?: string | null;
+    },
+    tenant?: { id: string; name: string; slug: string; orgType: string } | null,
+  ) {
     return {
       id: user.id,
       email: user.email,
@@ -746,6 +803,14 @@ export class AuthService {
       status: user.status,
       apartmentId: user.apartmentId,
       tenantId: user.tenantId ?? null,
+      tenant: tenant
+        ? {
+            id: tenant.id,
+            name: tenant.name,
+            slug: tenant.slug,
+            orgType: tenant.orgType,
+          }
+        : null,
     };
   }
 

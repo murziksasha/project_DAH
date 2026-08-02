@@ -2,9 +2,11 @@
 
 import Link from 'next/link';
 import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
+import { meterTypeLabel } from '@/lib/i18n';
 
 interface Meter {
   id: string;
@@ -15,15 +17,8 @@ interface Meter {
   readings: Array<{ period: string; value: string | number; consumption: string | number }>;
 }
 
-const TYPE_LABELS: Record<string, string> = {
-  cold_water: 'Холодна вода',
-  hot_water: 'Гаряча вода',
-  heating: 'Опалення',
-  electricity: 'Електроенергія',
-  other: 'Інше',
-};
-
 export default function ResidentMetersPage() {
+  const { t, locale } = useI18n();
   const [meters, setMeters] = useState<Meter[]>([]);
   const [apartmentId, setApartmentId] = useState('');
   const [error, setError] = useState('');
@@ -45,7 +40,7 @@ export default function ResidentMetersPage() {
       aptId = '';
     }
     if (!aptId) {
-      setError('Квартиру не привʼязано до облікового запису');
+      setError(t('residentMetersNoApt'));
       setLoading(false);
       return;
     }
@@ -57,11 +52,11 @@ export default function ResidentMetersPage() {
         setForm((f) => ({ ...f, meterId: list[0].id, period: new Date().toISOString().slice(0, 7) }));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     } finally {
       setLoading(false);
     }
-  }, [form.meterId]);
+  }, [form.meterId, t]);
 
   useEffect(() => {
     void load();
@@ -82,31 +77,31 @@ export default function ResidentMetersPage() {
           value: Number(form.value),
         }),
       });
-      setMessage('Показник прийнято');
+      setMessage(t('residentMetersAccepted'));
       setForm((f) => ({ ...f, value: '' }));
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     }
   }
 
   return (
     <main>
       <Link href="/resident" style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
-        ← Кабінет
+        {t('residentBackCabinet')}
       </Link>
       <PageHeader
-        title="Мої лічильники"
-        description={apartmentId ? 'Передача показників за період' : undefined}
+        title={t('residentMetersTitle')}
+        description={apartmentId ? t('residentMetersDesc') : undefined}
       />
       {error && <p className="error">{error}</p>}
       {message && <p className="success-banner">{message}</p>}
-      {loading && <p style={{ color: 'var(--muted)' }}>Завантаження…</p>}
+      {loading && <p style={{ color: 'var(--muted)' }}>{t('loading')}</p>}
 
       {!loading && meters.length === 0 && (
         <EmptyState
-          title="Лічильників немає"
-          description="Правління додасть лічильники в адмінці, після чого можна передавати показники."
+          title={t('residentMetersEmpty')}
+          description={t('residentMetersEmptyDesc')}
         />
       )}
 
@@ -117,9 +112,9 @@ export default function ResidentMetersPage() {
             className="card"
             style={{ display: 'grid', gap: '0.75rem', marginBottom: '1rem' }}
           >
-            <h2 style={{ fontSize: '1.05rem' }}>Новий показник</h2>
+            <h2 style={{ fontSize: '1.05rem' }}>{t('residentMetersNew')}</h2>
             <div>
-              <label>Лічильник</label>
+              <label>{t('metersMeter')}</label>
               <select
                 value={form.meterId}
                 onChange={(e) => setForm({ ...form, meterId: e.target.value })}
@@ -127,13 +122,13 @@ export default function ResidentMetersPage() {
               >
                 {meters.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.name} ({TYPE_LABELS[m.type] ?? m.type})
+                    {m.name} ({meterTypeLabel(m.type, locale)})
                   </option>
                 ))}
               </select>
             </div>
             <div>
-              <label>Період (YYYY-MM)</label>
+              <label>{t('metersPeriod')}</label>
               <input
                 value={form.period}
                 onChange={(e) => setForm({ ...form, period: e.target.value })}
@@ -142,7 +137,7 @@ export default function ResidentMetersPage() {
               />
             </div>
             <div>
-              <label>Показник</label>
+              <label>{t('metersValue')}</label>
               <input
                 type="number"
                 step="0.001"
@@ -152,25 +147,29 @@ export default function ResidentMetersPage() {
                 required
               />
             </div>
-            <button type="submit">Надіслати</button>
+            <button type="submit">{t('residentMetersSend')}</button>
           </form>
 
           <section className="card">
-            <h2 style={{ fontSize: '1.05rem', marginBottom: '0.75rem' }}>Історія</h2>
+            <h2 style={{ fontSize: '1.05rem', marginBottom: '0.75rem' }}>
+              {t('residentMetersHistory')}
+            </h2>
             <ul style={{ listStyle: 'none', display: 'grid', gap: '0.75rem' }}>
               {meters.map((m) => (
                 <li key={m.id} style={{ borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
                   <strong>{m.name}</strong>{' '}
                   <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>
-                    {TYPE_LABELS[m.type] ?? m.type} · {m.unit}
+                    {meterTypeLabel(m.type, locale)} · {m.unit}
                   </span>
                   {m.readings[0] ? (
                     <div style={{ fontSize: '0.9rem', marginTop: 4 }}>
-                      {m.readings[0].period}: {m.readings[0].value} (витрата{' '}
+                      {m.readings[0].period}: {m.readings[0].value} ({t('residentMetersConsumption')}{' '}
                       {m.readings[0].consumption} {m.unit})
                     </div>
                   ) : (
-                    <div style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Немає показників</div>
+                    <div style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>
+                      {t('residentMetersNoReadings')}
+                    </div>
                   )}
                 </li>
               ))}

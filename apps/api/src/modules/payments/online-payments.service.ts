@@ -65,7 +65,7 @@ export class OnlinePaymentsService {
     }
 
     const orderId = `dah_${randomUUID().replace(/-/g, '').slice(0, 24)}`;
-    const description = dto.description ?? `Оплата ОСМД кв. ${apartment.number}`;
+    const description = dto.description ?? `Оплата внесків, кв. ${apartment.number}`;
     const provider = this.config.get('ONLINE_PAYMENTS_PROVIDER', 'generic');
     const appUrl = this.config.get('APP_URL', 'http://localhost:3000');
     const publicKey = this.config.get<string>('ONLINE_PAYMENTS_PUBLIC_KEY') ?? '';

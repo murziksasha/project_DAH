@@ -1,10 +1,11 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { apiFetch, getToken } from '@/lib/api';
 import { downloadCsv } from '@/lib/csv';
 import { ApartmentsSection } from './apartments-section';
-import { PAGE_SIZE, ROLE_LABELS } from './constants';
+import { getRoleLabel, PAGE_SIZE } from './constants';
 import { UserForm } from './user-form';
 import { UsersSection } from './users-section';
 import {
@@ -16,6 +17,7 @@ import {
 } from './types';
 
 export default function OrganizationPage() {
+  const { t } = useI18n();
   const [users, setUsers] = useState<UserRow[]>([]);
   const [residentUsers, setResidentUsers] = useState<UserRow[]>([]);
   const [apartments, setApartments] = useState<ApartmentRow[]>([]);
@@ -80,15 +82,15 @@ export default function OrganizationPage() {
   }, [loadApartments, loadResidents, loadUsers, page, search]);
 
   useEffect(() => {
-    reload().catch((err) => setError(err instanceof Error ? err.message : 'Помилка'));
-  }, [reload]);
+    reload().catch((err) => setError(err instanceof Error ? err.message : t('error')));
+  }, [reload, t]);
 
   useEffect(() => {
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       setSearch(searchInput);
       setPage(1);
     }, 300);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [searchInput]);
 
   function startEditUser(user: UserRow) {
@@ -155,7 +157,7 @@ export default function OrganizationPage() {
           token,
           body: JSON.stringify(body),
         });
-        setMessage('Користувача оновлено');
+        setMessage(t('orgUserUpdated'));
         cancelEditUser();
       } else {
         await apiFetch('/users', {
@@ -170,12 +172,12 @@ export default function OrganizationPage() {
             role: userForm.role,
           }),
         });
-        setMessage('Користувача створено');
+        setMessage(t('orgUserCreated'));
         setUserForm(emptyUserForm());
       }
       await reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     } finally {
       setSaving(false);
     }
@@ -184,8 +186,9 @@ export default function OrganizationPage() {
   async function handleToggleBlock(user: UserRow) {
     const token = getToken();
     if (!token) return;
+    const name = `${user.firstName} ${user.lastName}`;
     if (user.status === 'blocked') {
-      if (!confirm(`Розблокувати ${user.firstName} ${user.lastName}?`)) return;
+      if (!confirm(t('orgUnblockConfirm', { name }))) return;
       setSaving(true);
       try {
         await apiFetch(`/users/${user.id}`, {
@@ -193,24 +196,24 @@ export default function OrganizationPage() {
           token,
           body: JSON.stringify({ status: 'active' }),
         });
-        setMessage('Користувача розблоковано');
+        setMessage(t('orgUserUnblocked'));
         await reload();
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Помилка');
+        setError(err instanceof Error ? err.message : t('error'));
       } finally {
         setSaving(false);
       }
       return;
     }
-    if (!confirm(`Заблокувати ${user.firstName} ${user.lastName}?`)) return;
+    if (!confirm(t('orgBlockConfirm', { name }))) return;
     setSaving(true);
     try {
       await apiFetch(`/users/${user.id}/block`, { method: 'PATCH', token });
-      setMessage('Користувача заблоковано');
+      setMessage(t('orgUserBlocked'));
       if (editingUser?.id === user.id) cancelEditUser();
       await reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     } finally {
       setSaving(false);
     }
@@ -234,10 +237,10 @@ export default function OrganizationPage() {
         token,
         body: JSON.stringify({ ...data, ...(buildingId ? { buildingId } : {}) }),
       });
-      setMessage('Квартиру додано');
+      setMessage(t('orgAptAdded'));
       await reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
       throw err;
     } finally {
       setSaving(false);
@@ -258,10 +261,10 @@ export default function OrganizationPage() {
         token,
         body: JSON.stringify(data),
       });
-      setMessage('Квартиру оновлено');
+      setMessage(t('orgAptUpdated'));
       await reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
       throw err;
     } finally {
       setSaving(false);
@@ -275,10 +278,10 @@ export default function OrganizationPage() {
     setError('');
     try {
       await apiFetch(`/building/apartments/${id}`, { method: 'DELETE', token });
-      setMessage('Квартиру видалено');
+      setMessage(t('orgAptDeleted'));
       await reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
       throw err;
     } finally {
       setSaving(false);
@@ -292,10 +295,10 @@ export default function OrganizationPage() {
     setError('');
     try {
       await apiFetch(`/users/${userId}/apartments/${apartmentId}`, { method: 'POST', token });
-      setMessage('Мешканця прив\'язано до квартири');
+      setMessage(t('orgResidentLinked'));
       await reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
       throw err;
     } finally {
       setSaving(false);
@@ -305,15 +308,15 @@ export default function OrganizationPage() {
   async function handleUnlinkUser(apartmentId: string, userId: string) {
     const token = getToken();
     if (!token) return;
-    if (!confirm('Відв\'язати мешканця від цієї квартири?')) return;
+    if (!confirm(t('orgUnlinkConfirm'))) return;
     setSaving(true);
     setError('');
     try {
       await apiFetch(`/users/${userId}/apartments/${apartmentId}`, { method: 'DELETE', token });
-      setMessage('Мешканця відв\'язано');
+      setMessage(t('orgResidentUnlinked'));
       await reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
       throw err;
     } finally {
       setSaving(false);
@@ -323,8 +326,8 @@ export default function OrganizationPage() {
   return (
     <main>
       <header style={{ marginBottom: '1.5rem' }}>
-        <h1>Організація ОСМД</h1>
-        <p style={{ color: 'var(--muted)' }}>Користувачі та квартири (системний адміністратор)</p>
+        <h1>{t('orgTitle')}</h1>
+        <p style={{ color: 'var(--muted)' }}>{t('orgSubtitle')}</p>
       </header>
 
       {error && <p className="error">{error}</p>}
@@ -340,14 +343,14 @@ export default function OrganizationPage() {
             gap: '0.75rem',
           }}
         >
-          <h2 style={{ fontSize: '1rem' }}>Завершіть первинне налаштування</h2>
+          <h2 style={{ fontSize: '1rem' }}>{t('orgFinishSetup')}</h2>
           <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
-            Під час майстра ви відклали створення цих ролей. Додайте їх тут, щоб відкрити повний фінансовий кабінет.
+            {t('orgDeferredRolesHint')}
           </p>
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
             {pendingDeferredRoles.map((role) => (
               <button key={role} type="button" onClick={() => startCreateDeferredRole(role)}>
-                Створити: {ROLE_LABELS[role]}
+                {t('orgCreateRole', { role: getRoleLabel(role, t) })}
               </button>
             ))}
           </div>
@@ -389,6 +392,7 @@ export default function OrganizationPage() {
         onUnlinkUser={handleUnlinkUser}
         onEditUser={startEditUser}
         onExportCsv={() => {
+          // CSV column headers intentionally left in Ukrainian (export content)
           const rows: Array<Array<string | number>> = [
             ['Номер', "Під'їзд", 'Поверх', 'Площа', 'Мешканці'],
             ...apartments.map((a) => [
@@ -418,12 +422,12 @@ export default function OrganizationPage() {
               body: JSON.stringify({ csv }),
             });
             setMessage(
-              `Імпорт: додано ${res.created}, пропущено ${res.skipped}` +
-                (res.errors.length ? `, помилок рядків: ${res.errors.length}` : ''),
+              t('orgImportResult', { created: res.created, skipped: res.skipped }) +
+                (res.errors.length ? t('orgImportErrors', { count: res.errors.length }) : ''),
             );
             await loadApartments(token);
           } catch (err) {
-            setError(err instanceof Error ? err.message : 'Помилка імпорту');
+            setError(err instanceof Error ? err.message : t('orgImportError'));
           }
         }}
       />

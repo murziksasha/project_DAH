@@ -71,6 +71,12 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-dah}:${POSTGRES_PASSWORD:-dah_secret_change_me}@postgres:5432/${POSTGRES_DB:-dah}
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://minio:9000
+      BACKUP_DIR: /backups
+      BACKUP_STATUS_PATH: /backups/last-backup.json
+      # Weekly dumps are fine for health "stale" threshold (default was 48h)
+      BACKUP_MAX_AGE_HOURS: ${BACKUP_MAX_AGE_HOURS:-192}
+    volumes:
+      - ./backups:/backups
     depends_on:
       postgres:
         condition: service_healthy
@@ -92,6 +98,10 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-dah}:${POSTGRES_PASSWORD:-dah_secret_change_me}@postgres:5432/${POSTGRES_DB:-dah}
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://minio:9000
+      BACKUP_DIR: /backups
+      BACKUP_STATUS_PATH: /backups/last-backup.json
+    volumes:
+      - ./backups:/backups
     depends_on:
       api:
         condition: service_started
@@ -101,7 +111,10 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
       args:
+        # Client/public hint only; browser calls same-origin /api
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001/api}
+        # Server-side rewrite target (must be Docker DNS name, not localhost)
+        API_UPSTREAM: ${API_UPSTREAM:-http://api:3001}
     restart: unless-stopped
     env_file: .env
     environment:

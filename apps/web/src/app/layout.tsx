@@ -1,17 +1,18 @@
 import type { Metadata, Viewport } from 'next';
 import { AuthCookieSync } from '@/components/AuthCookieSync';
+import { LocaleProvider } from '@/components/LocaleProvider';
 import { PwaPrompt } from '@/components/PwaPrompt';
 import { QueryProvider } from '@/components/QueryProvider';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'DAH — ОСМД у смартфоні',
-  description: 'Управління ОСМД: фінанси, внески, прозорість для мешканців',
+  title: 'Мій дім — ОСББ та УК у смартфоні',
+  description: 'Управління ОСББ і управляючими компаніями: фінанси, внески, прозорість для мешканців',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'DAH',
+    title: 'Мій дім',
   },
 };
 
@@ -35,9 +36,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <QueryProvider>
-          <AuthCookieSync />
-          {children}
-          <PwaPrompt />
+          <LocaleProvider>
+            <AuthCookieSync />
+            {children}
+            <PwaPrompt />
+          </LocaleProvider>
         </QueryProvider>
       </body>
     </html>

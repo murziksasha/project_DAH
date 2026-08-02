@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { SkeletonCards } from '@/components/ui/Skeleton';
@@ -9,7 +10,9 @@ import { StatCard } from '@/components/ui/StatCard';
 import { apiFetch, getToken } from '@/lib/api';
 import { getStoredUser } from '@/lib/auth';
 import { formatDateUk, formatMoney } from '@/lib/money';
+import { navLabelForHref } from '@/lib/i18n';
 import { getQuickActions } from '@/lib/nav-config';
+import { labelsForOrg } from '@/lib/org-labels';
 import { useDebtorsQuery, useOpsSummaryQuery } from '@/lib/queries';
 
 interface CashFlowReport {
@@ -63,6 +66,7 @@ function today() {
 }
 
 export default function AdminDashboard() {
+  const { t, locale } = useI18n();
   const [report, setReport] = useState<CashFlowReport | null>(null);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [from, setFrom] = useState(monthStart());
@@ -105,11 +109,11 @@ export default function AdminDashboard() {
       setExpenses(e.items ?? []);
       await Promise.all([debtorsQuery.refetch(), opsQuery.refetch()]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     } finally {
       setLoading(false);
     }
-  }, [from, to, debtorsQuery, opsQuery]);
+  }, [from, to, debtorsQuery, opsQuery, t]);
 
   useEffect(() => {
     load().catch(() => undefined);
@@ -121,16 +125,30 @@ export default function AdminDashboard() {
     report && report.totalIncome + totalDebt > 0
       ? Math.round((report.totalIncome / (report.totalIncome + totalDebt)) * 100)
       : null;
+  const orgLabels = labelsForOrg(getStoredUser()?.tenant?.orgType);
 
   return (
     <main>
-      <PageHeader title="Кабінет правління" description="Фінансовий стан ОСМД за період" />
+      <PageHeader
+        title={orgLabels.boardCabinet}
+        description={t('dashFinancialPeriod', { org: orgLabels.orgNoun })}
+      />
 
       {quickActions.length > 0 && (
         <div className="quick-actions">
           {quickActions.map((a) => (
             <Link key={a.href} href={a.href} className="quick-action">
-              {a.label}
+              {a.href === '/admin/payments'
+                ? t('qaRecordPayment')
+                : a.href === '/admin/expenses'
+                  ? t('qaNewExpense')
+                  : a.href === '/admin/accruals'
+                    ? t('qaAccrual')
+                    : a.href === '/admin/search'
+                      ? t('qaAccount')
+                      : a.href === '/admin/reports'
+                        ? t(a.label === 'Боржники' ? 'qaDebtors' : 'qaReports')
+                        : navLabelForHref(a.href, a.label, locale)}
             </Link>
           ))}
         </div>
@@ -147,15 +165,15 @@ export default function AdminDashboard() {
         }}
       >
         <div>
-          <label htmlFor="from">Від</label>
+          <label htmlFor="from">{t('from')}</label>
           <input id="from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
         </div>
         <div>
-          <label htmlFor="to">До</label>
+          <label htmlFor="to">{t('to')}</label>
           <input id="to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </div>
         <button type="button" onClick={() => load()}>
-          Оновити
+          {t('refresh')}
         </button>
       </div>
 
@@ -166,7 +184,7 @@ export default function AdminDashboard() {
         <div className="grid-2 no-print" style={{ marginBottom: '1.25rem' }}>
           {ops.pendingResidents > 0 && (
             <Link href="/admin/residents" className="card" style={{ textDecoration: 'none', color: 'inherit' }}>
-              <div className="stat-label">Заявки на реєстрацію</div>
+              <div className="stat-label">{t('residents')}</div>
               <div className="stat-value tone-warning" style={{ color: 'var(--warning)' }}>
                 {ops.pendingResidents}
               </div>
@@ -178,13 +196,13 @@ export default function AdminDashboard() {
               className="card"
               style={{ textDecoration: 'none', color: 'inherit' }}
             >
-              <div className="stat-label">Відкриті заявки мешканців</div>
+              <div className="stat-label">{t('dashOpenRequestsResidents')}</div>
               <div className="stat-value">{ops.openRequests}</div>
             </Link>
           )}
           {ops.openAccrualLines > 0 && (
             <Link href="/admin/reports" className="card" style={{ textDecoration: 'none', color: 'inherit' }}>
-              <div className="stat-label">Відкриті рядки нарахувань</div>
+              <div className="stat-label">{t('dashOpenAccrualLines')}</div>
               <div className="stat-value">{ops.openAccrualLines}</div>
             </Link>
           )}
@@ -193,19 +211,21 @@ export default function AdminDashboard() {
 
       {!loading && report && (
         <div className="grid-2" style={{ marginBottom: '1.5rem' }}>
-          <StatCard label="Надходження" value={formatMoney(report.totalIncome)} tone="success" />
-          <StatCard label="Витрати" value={formatMoney(report.totalExpenses)} tone="danger" />
+          <StatCard label={t('dashIncome')} value={formatMoney(report.totalIncome)} tone="success" />
+          <StatCard label={t('dashExpense')} value={formatMoney(report.totalExpenses)} tone="danger" />
           <StatCard
-            label="Чистий рух"
+            label={t('dashNet')}
             value={formatMoney(report.netFlow, { signed: true })}
             tone={report.netFlow >= 0 ? 'success' : 'danger'}
           />
           <StatCard
-            label="Дебіторська заборгованість"
+            label={t('dashReceivables')}
             value={formatMoney(totalDebt)}
             tone={totalDebt > 0 ? 'danger' : 'success'}
             hint={
-              collectionRate !== null ? `Орієнтовна зібраність: ${collectionRate}%` : undefined
+              collectionRate !== null
+                ? t('dashCollectionHint', { rate: collectionRate })
+                : undefined
             }
           />
         </div>
@@ -213,7 +233,7 @@ export default function AdminDashboard() {
 
       {!loading && report?.fundBalances && report.fundBalances.length > 0 && (
         <section className="card" style={{ marginBottom: '1.5rem' }}>
-          <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>Баланс фондів</h2>
+          <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>{t('dashFunds')}</h2>
           <div className="grid-2">
             {report.fundBalances.map((f) => (
               <div
@@ -246,9 +266,9 @@ export default function AdminDashboard() {
               flexWrap: 'wrap',
             }}
           >
-            <h2 style={{ fontSize: '1.1rem' }}>Топ боржників</h2>
+            <h2 style={{ fontSize: '1.1rem' }}>{t('dashTopDebtors')}</h2>
             <Link href="/admin/reports" className="btn btn-sm btn-ghost">
-              Усі звіти
+              {t('dashAllReports')}
             </Link>
           </div>
           <ul style={{ listStyle: 'none', display: 'grid', gap: '0.65rem' }}>
@@ -264,10 +284,10 @@ export default function AdminDashboard() {
                 }}
               >
                 <Link href={`/admin/apartments/${d.apartmentId}`}>
-                  Кв. {d.number}
+                  {t('aptPrefix')} {d.number}
                   {d.isOverdue && (
                     <span className="badge badge-danger" style={{ marginLeft: '0.5rem' }}>
-                      Прострочено
+                      {t('overdue')}
                     </span>
                   )}
                 </Link>
@@ -289,19 +309,19 @@ export default function AdminDashboard() {
             flexWrap: 'wrap',
           }}
         >
-          <h2 style={{ fontSize: '1.1rem' }}>Останні витрати</h2>
+          <h2 style={{ fontSize: '1.1rem' }}>{t('dashRecentExpenses')}</h2>
           <Link href="/admin/expenses/list" className="btn btn-sm btn-ghost">
-            Усі витрати
+            {t('dashAllExpenses')}
           </Link>
         </div>
         {loading ? (
-          <p style={{ color: 'var(--muted)' }}>Завантаження…</p>
+          <p style={{ color: 'var(--muted)' }}>{t('loading')}</p>
         ) : expenses.length === 0 ? (
           <EmptyState
-            title="Ще немає витрат"
-            description="Додайте першу витрату з чеком або рахунком постачальника."
+            title={t('dashNoExpensesTitle')}
+            description={t('dashNoExpensesDesc')}
             actionHref="/admin/expenses"
-            actionLabel="Нова витрата"
+            actionLabel={t('newExpense')}
           />
         ) : (
           <ul style={{ listStyle: 'none', display: 'grid', gap: '0.75rem' }}>

@@ -6,6 +6,13 @@ export interface StoredUser {
   firstName: string;
   lastName: string;
   role: string;
+  tenantId?: string | null;
+  tenant?: {
+    id: string;
+    name: string;
+    slug: string;
+    orgType: 'osbb' | 'management_company' | string;
+  } | null;
 }
 
 const ADMIN_ROLES = ['chairman', 'accountant', 'board', 'auditor'];

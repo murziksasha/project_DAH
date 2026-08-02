@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
 import { logout } from '@/lib/auth';
@@ -12,6 +13,7 @@ import {
 } from '@/lib/push';
 
 export default function ResidentSecurityPage() {
+  const { t } = useI18n();
   const [emailNotify, setEmailNotify] = useState(true);
   const [phone, setPhone] = useState('');
   const [firstName, setFirstName] = useState('');
@@ -52,9 +54,9 @@ export default function ResidentSecurityPage() {
       setFirstName(profile.firstName);
       setLastName(profile.lastName);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     load().catch(() => undefined);
@@ -71,9 +73,9 @@ export default function ResidentSecurityPage() {
         body: JSON.stringify({ enabled: next }),
       });
       setEmailNotify(next);
-      setMessage(next ? 'Email увімкнено' : 'Email вимкнено');
+      setMessage(next ? t('residentEmailEnabledMsg') : t('residentEmailDisabledMsg'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     }
   }
 
@@ -100,7 +102,7 @@ export default function ResidentSecurityPage() {
           phone: phone.trim() || null,
         }),
       });
-      setMessage('Профіль збережено');
+      setMessage(t('residentProfileSaved'));
       const prev = localStorage.getItem('dah_user');
       if (prev) {
         try {
@@ -118,7 +120,7 @@ export default function ResidentSecurityPage() {
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     } finally {
       setLoading(false);
     }
@@ -127,7 +129,7 @@ export default function ResidentSecurityPage() {
   async function changePassword(e: FormEvent) {
     e.preventDefault();
     if (newPassword !== newPassword2) {
-      setError('Нові паролі не збігаються');
+      setError(t('residentPasswordMismatch'));
       return;
     }
     const token = getToken();
@@ -140,36 +142,36 @@ export default function ResidentSecurityPage() {
         token,
         body: JSON.stringify({ currentPassword, newPassword }),
       });
-      setMessage('Пароль змінено. Увійдіть знову…');
+      setMessage(t('residentPasswordChanged'));
       setTimeout(() => logout(), 1200);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
       setLoading(false);
     }
   }
 
   return (
     <main>
-      <PageHeader title="Безпека" description="Профіль, телефон для SMS-входу, пароль" />
+      <PageHeader title={t('residentSecurityTitle')} description={t('residentSecurityDesc')} />
       {error && <p className="error">{error}</p>}
       {message && <p className="success-banner">{message}</p>}
 
       <section className="card" style={{ marginBottom: '1rem' }}>
-        <h2 style={{ fontSize: '1.05rem', marginBottom: '0.75rem' }}>Профіль і телефон</h2>
+        <h2 style={{ fontSize: '1.05rem', marginBottom: '0.75rem' }}>{t('residentProfilePhone')}</h2>
         <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
-          Телефон потрібен для входу по SMS (якщо увімкнено на сервері).
+          {t('residentProfilePhoneHint')}
         </p>
         <form onSubmit={saveProfile} style={{ display: 'grid', gap: '0.75rem' }}>
           <div>
-            <label>Імʼя</label>
+            <label>{t('firstName')}</label>
             <input value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
           </div>
           <div>
-            <label>Прізвище</label>
+            <label>{t('lastName')}</label>
             <input value={lastName} onChange={(e) => setLastName(e.target.value)} required />
           </div>
           <div>
-            <label>Телефон</label>
+            <label>{t('phone')}</label>
             <input
               type="tel"
               value={phone}
@@ -178,16 +180,16 @@ export default function ResidentSecurityPage() {
             />
           </div>
           <button type="submit" disabled={loading}>
-            Зберегти профіль
+            {t('residentSaveProfile')}
           </button>
         </form>
       </section>
 
       <section className="card" style={{ marginBottom: '1rem' }}>
-        <h2 style={{ fontSize: '1.05rem', marginBottom: '0.75rem' }}>Зміна пароля</h2>
+        <h2 style={{ fontSize: '1.05rem', marginBottom: '0.75rem' }}>{t('residentChangePassword')}</h2>
         <form onSubmit={changePassword} style={{ display: 'grid', gap: '0.75rem' }}>
           <div>
-            <label>Поточний пароль</label>
+            <label>{t('securityCurrentPassword')}</label>
             <input
               type="password"
               value={currentPassword}
@@ -197,7 +199,7 @@ export default function ResidentSecurityPage() {
             />
           </div>
           <div>
-            <label>Новий пароль</label>
+            <label>{t('securityNewPassword')}</label>
             <input
               type="password"
               value={newPassword}
@@ -207,7 +209,7 @@ export default function ResidentSecurityPage() {
             />
           </div>
           <div>
-            <label>Повтор</label>
+            <label>{t('residentPasswordRepeat')}</label>
             <input
               type="password"
               value={newPassword2}
@@ -217,24 +219,24 @@ export default function ResidentSecurityPage() {
             />
           </div>
           <button type="submit" disabled={loading}>
-            Змінити
+            {t('residentChange')}
           </button>
         </form>
       </section>
 
       <section className="card" style={{ marginBottom: '1rem' }}>
-        <h2 style={{ fontSize: '1.05rem', marginBottom: '0.5rem' }}>Email</h2>
+        <h2 style={{ fontSize: '1.05rem', marginBottom: '0.5rem' }}>{t('email')}</h2>
         <button type="button" className="btn btn-sm" onClick={toggleEmail}>
-          {emailNotify ? 'Вимкнути email-сповіщення' : 'Увімкнути email-сповіщення'}
+          {emailNotify ? t('residentEmailToggleOff') : t('residentEmailToggleOn')}
         </button>
       </section>
 
       <section className="card">
-        <h2 style={{ fontSize: '1.05rem', marginBottom: '0.5rem' }}>Web Push</h2>
+        <h2 style={{ fontSize: '1.05rem', marginBottom: '0.5rem' }}>{t('securityPush')}</h2>
         {!canUsePush() || !pushStatus?.supported ? (
-          <p style={{ color: 'var(--muted)' }}>Не підтримується в цьому браузері</p>
+          <p style={{ color: 'var(--muted)' }}>{t('residentPushUnsupported')}</p>
         ) : !pushStatus.configured ? (
-          <p style={{ color: 'var(--muted)' }}>Push не налаштовано на сервері</p>
+          <p style={{ color: 'var(--muted)' }}>{t('residentPushNotConfigured')}</p>
         ) : (
           <button
             type="button"
@@ -243,14 +245,16 @@ export default function ResidentSecurityPage() {
               try {
                 if (pushStatus.subscribed) await unsubscribeFromPush();
                 else await subscribeToPush();
-                setMessage(pushStatus.subscribed ? 'Push вимкнено' : 'Push увімкнено');
+                setMessage(
+                  pushStatus.subscribed ? t('residentPushOffMsg') : t('residentPushOnMsg'),
+                );
                 await load();
               } catch (err) {
-                setError(err instanceof Error ? err.message : 'Помилка');
+                setError(err instanceof Error ? err.message : t('error'));
               }
             }}
           >
-            {pushStatus.subscribed ? 'Вимкнути push' : 'Увімкнути push'}
+            {pushStatus.subscribed ? t('securityPushDisable') : t('securityPushEnable')}
           </button>
         )}
       </section>

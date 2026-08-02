@@ -39,7 +39,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         select: { isActive: true },
       });
       if (!tenant?.isActive) {
-        throw new UnauthorizedException('ОСББ (tenant) деактивовано');
+        throw new UnauthorizedException('Організацію (tenant) деактивовано');
       }
     }
     const apartmentIds = user.apartmentLinks.map((l) => l.apartmentId);

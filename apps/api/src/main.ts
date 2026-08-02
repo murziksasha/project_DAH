@@ -33,8 +33,8 @@ async function bootstrap() {
   const swaggerEnabled = process.env.SWAGGER_ENABLED !== 'false';
   if (swaggerEnabled) {
     const config = new DocumentBuilder()
-      .setTitle('DAH OSMD API')
-      .setDescription('API для управління ОСМД')
+      .setTitle('Мій дім API')
+      .setDescription('API для управління ОСББ та управляючих компаній (УК)')
       .setVersion('1.0.0')
       .addBearerAuth()
       .build();

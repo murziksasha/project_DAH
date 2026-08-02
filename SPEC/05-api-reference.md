@@ -4,7 +4,23 @@
 
 **Auth:** `Authorization: Bearer <accessToken>`
 
-**Swagger:** `/api/docs` (інтерактивна документація)
+**Swagger:** `/api/docs` — **Мій дім API**
+
+**Tenancy headers:** super_admin може передати `X-Tenant-Id` для контексту організації.
+
+---
+
+## Tenants (super_admin)
+
+| Method | Path | Опис |
+|--------|------|------|
+| GET | `/tenants` | Список організацій (`orgType`, counts) |
+| GET | `/tenants/:id` | Деталі + buildings |
+| POST | `/tenants` | Створити: `name`, `slug`, **`orgType`** (`osbb` \| `management_company`), optional chairman email/password |
+| PATCH | `/tenants/:id` | `name`, `isActive`, **`orgType`** |
+
+Login / refresh: `user.tenant = { id, name, slug, orgType }`.  
+`GET /auth/me` також повертає `tenant`.
 
 ---
 
@@ -13,7 +29,7 @@
 | Method | Path | Auth | Опис |
 |--------|------|------|------|
 | GET | `/setup/status` | super_admin | Стан майстра + resume |
-| POST | `/setup/building` | super_admin | Створити/оновити ОСМД (upsert) |
+| POST | `/setup/building` | super_admin | Створити/оновити будинок організації (upsert) |
 | POST | `/setup/bank` | super_admin | Банк + фонди (ідемпотентно) |
 | POST | `/setup/apartments` | super_admin | Масове додавання квартир |
 | POST | `/setup/users` | super_admin | Ключові ролі (ідемпотентно) |
@@ -66,7 +82,66 @@
 
 | Method | Path | Auth | Опис |
 |--------|------|------|------|
-| GET | `/health` | — | `{ status: "ok" }` |
+| GET | `/health` | — | `{ status: "ok" }` (+ db/redis/storage/backup markers) |
+
+### Backups (копії даних)
+
+| Method | Path | Auth | Опис |
+|--------|------|------|------|
+| GET | `/backups/status` | admin* | Поточний ISO-тиждень, `weeklyExists`, `lastBackupAt`, `backupDir` |
+| GET | `/backups` | admin* | Список weekly/manual копій (з `source`) |
+| POST | `/backups` | write** | Ручна копія PostgreSQL (`manual/{stamp}`, `source: api`) |
+| POST | `/backups/weekly` | write** | Ensure тижнева; **skip** якщо вже є (`source: api` \| schedule у worker) |
+| GET | `/backups/:kind/:id/download` | admin* | Stream `database.sql.gz` на ПК |
+| POST | `/backups/upload` | write** | multipart `file` (.sql.gz) → `manual/…`, `source: upload` (**без** restore БД) |
+
+\* `super_admin`, `chairman`, `board`, `accountant`, `auditor`  
+\*\* без `auditor` і без `resident`
+
+#### Каталог і файли
+
+- Корінь: `BACKUP_DIR` (default monorepo `./backups`, Docker `/backups`)
+- `weekly/{YYYY-Www}/database.sql.gz` + `manifest.json`
+- `manual/{stamp}/database.sql.gz` + `manifest.json`
+- Marker здоровʼя: `BACKUP_STATUS_PATH` / `last-backup.json` — оновлюється лише після **успішного live dump** (weekly/manual create), **не** після upload
+
+#### `GET /backups` — елемент списку
+
+```ts
+{
+  kind: 'weekly' | 'manual';
+  id: string;              // folder name
+  weekKey?: string;
+  finishedAt: string | null;
+  sizeBytes: number | null;
+  status: string;          // ok | failed | unknown | corrupt
+  relativePath: string;    // e.g. manual/20260802_083334
+  source: string | null;   // schedule | api | manual | upload | …
+}
+```
+
+| `source` | Значення |
+|----------|----------|
+| `schedule` | Worker / auto weekly |
+| `api` | POST `/backups` або POST `/backups/weekly` з UI/API |
+| `upload` | POST `/backups/upload` — файл з ПК у каталог |
+| `null` | Старий/пошкоджений manifest без поля |
+
+#### Download
+
+- `kind`: `weekly` \| `manual`; `id` — лише `[A-Za-z0-9][A-Za-z0-9._-]*` (без path traversal)
+- Відповідь: `Content-Type: application/gzip`,  
+  `Content-Disposition: attachment; filename="dah-backup-{kind}-{id}.sql.gz"`
+- 404 якщо dump відсутній
+
+#### Upload
+
+- `multipart/form-data`, поле `file`; розширення `.sql.gz` / `.gz`
+- Перевірка gzip magic (`1f 8b`)
+- Розмір: **без ліміту** за замовчуванням; опційно `BACKUP_UPLOAD_MAX_MB=<MB>` (позитивне число). `0` / порожнє / відсутнє = unlimited
+- Створює нову теку `manual/{stamp}/`, audit action `backup.upload`
+- **Не** викликає `psql` / restore і **не** оновлює health marker
+- Відповідь: `{ relativePath, finishedAt, sizeBytes, id, kind: 'manual', status: 'ok' }`
 
 ## Auth
 
@@ -113,6 +188,8 @@ Query для `GET /users`: `?search=&page=1&limit=20`
 | DELETE | `/building/apartments/:id` | super_admin, chairman | Видалити (без пов'язаних даних) |
 | GET | `/building/settings` | JWT | Налаштування |
 | PATCH | `/building/settings` | chairman, board | `showDebtorsToResidents` |
+| GET | `/building/document-templates` | JWT | Конструктор: PDF-шаблони + Excel-профілі |
+| PATCH | `/building/document-templates` | chairman, board, accountant | Зберегти `{ forms, exports }` у `Building.settings.documentTemplates` |
 
 ## Finance
 
@@ -129,6 +206,8 @@ Query для `GET /users`: `?search=&page=1&limit=20`
 | PATCH | `/finance/expenses/:id/void` | chairman, accountant | Анулювати |
 | GET | `/finance/reports/cash-flow` | JWT | Рух коштів |
 | GET | `/finance/reports/expenses-summary` | JWT | Витрати по категоріях |
+| GET | `/finance/reports/board.pdf` | JWT | PDF для зборів |
+| GET | `/finance/reports/export-pack.zip` | JWT | ZIP з Excel (`.xlsx`) звітами |
 
 `write` = chairman, accountant, board
 
@@ -142,6 +221,7 @@ Query для `GET /users`: `?search=&page=1&limit=20`
 | GET | `/accruals/:id` | JWT | Деталі |
 | GET | `/accruals/my-account` | JWT | Особовий рахунок (resident) |
 | GET | `/accruals/apartments/:id/account` | admin | Рахунок квартири |
+| GET | `/accruals/apartments/:id/statement.xlsx` | admin / own resident | Excel-виписка |
 | POST | `/accruals/preview` | write | Попередній розрахунок сум |
 | POST | `/accruals` | write | Створити нарахування |
 | GET | `/accruals/lines/:lineId/receipt` | JWT | PDF-квитанція |

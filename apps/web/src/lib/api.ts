@@ -177,7 +177,7 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     });
   } catch {
     throw new Error(
-      'Немає зв\'язку з сервером ОСМД. Перевірте мережу, KeenDNS або що API запущено.',
+      'Немає зв\'язку з сервером «Мій дім». Перевірте мережу, KeenDNS або що API запущено.',
     );
   }
 

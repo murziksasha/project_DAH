@@ -34,7 +34,7 @@ export function renderTemplate(
   ctx: TemplateContext,
 ): { subject: string; text: string; html: string } {
   const name = [ctx.firstName, ctx.lastName].filter(Boolean).join(' ') || 'мешканцю';
-  const building = ctx.buildingName ?? 'ОСМД';
+  const building = ctx.buildingName ?? 'Мій дім';
   const app = ctx.appUrl ?? '';
 
   switch (id) {
@@ -94,7 +94,7 @@ export function renderTemplate(
         `Шановний(а) ${name},\n\nНагадуємо про заборгованість${ctx.apartmentNumber ? ` кв. ${ctx.apartmentNumber}` : ''}: ${ctx.amount ?? '—'} ₴.${ctx.dueDate ? `\nТермін: ${ctx.dueDate}` : ''}\nБудь ласка, сплатіть внесок.\n${app}`,
       );
     case 'test':
-      return wrap(`${building}: тестовий лист`, `Це тестове email-сповіщення DAH.\n${app}`);
+      return wrap(`${building}: тестовий лист`, `Це тестове email-сповіщення Мій дім.\n${app}`);
     default:
       return wrap(`${building}: повідомлення`, String(ctx.body ?? ''));
   }
@@ -104,7 +104,7 @@ function wrap(subject: string, text: string) {
   const html = `<!DOCTYPE html><html><body style="font-family:system-ui,sans-serif;line-height:1.5;color:#0f172a">
   <div style="max-width:560px;margin:0 auto;padding:1.25rem">
     <p style="white-space:pre-wrap">${escapeHtml(text)}</p>
-    <p style="color:#64748b;font-size:12px;margin-top:2rem">DAH — self-hosted кабінет ОСМД</p>
+    <p style="color:#64748b;font-size:12px;margin-top:2rem">Мій дім — self-hosted кабінет ОСББ та УК</p>
   </div></body></html>`;
   return { subject, text, html };
 }

@@ -35,7 +35,7 @@ async function main() {
     );
   }
 
-  const buildingName = process.env.BUILDING_NAME ?? 'ОСББ вул. Прикладна 1';
+  const buildingName = process.env.BUILDING_NAME ?? 'Мій дім — демо (ОСББ вул. Прикладна 1)';
 
   await prisma.auditLog.deleteMany();
   await prisma.emailLog.deleteMany();
@@ -70,7 +70,7 @@ async function main() {
   await prisma.tenant.deleteMany();
 
   const tenant = await prisma.tenant.create({
-    data: { name: buildingName, slug: 'default' },
+    data: { name: buildingName, slug: 'default', orgType: 'osbb' },
   });
 
   const building = await prisma.building.create({
@@ -94,7 +94,7 @@ async function main() {
       buildingId: building.id,
       bankName: 'ПриватБанк',
       iban: 'UA123456789012345678901234567',
-      description: 'Основний рахунок ОСББ',
+      description: 'Основний рахунок організації',
     },
   });
 

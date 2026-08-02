@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
 import { Worker, Queue } from 'bullmq';
 import { AppModule } from './app.module';
+import { BackupsService } from './modules/backups/backups.service';
 import { RemindersService } from './modules/reminders/reminders.service';
 
 const logger = new Logger('Worker');
@@ -21,6 +22,7 @@ async function bootstrap() {
     logger: ['error', 'warn', 'log'],
   });
   const reminders = app.get(RemindersService);
+  const backups = app.get(BackupsService);
   const connection = redisConnection();
 
   const queue = new Queue('dah-jobs', { connection });
@@ -37,8 +39,21 @@ async function bootstrap() {
     },
   );
 
+  // Daily ~03:00 UTC: ensure one weekly DB copy (skips if week already exists)
+  await queue.add(
+    'backups.weekly',
+    {},
+    {
+      repeat: { pattern: '0 3 * * *' },
+      removeOnComplete: 50,
+      removeOnFail: 20,
+      jobId: 'backups-weekly-repeat',
+    },
+  );
+
   // Run once on start
   await queue.add('reminders.scan', { boot: true }, { removeOnComplete: true });
+  await queue.add('backups.weekly', { boot: true }, { removeOnComplete: true });
 
   const worker = new Worker(
     'dah-jobs',
@@ -46,6 +61,15 @@ async function bootstrap() {
       if (job.name === 'reminders.scan') {
         const result = await reminders.processDue();
         logger.log(`reminders.scan: custom=${result.customSent} debt=${result.debtSent}`);
+        return result;
+      }
+      if (job.name === 'backups.weekly') {
+        const result = await backups.ensureWeeklyBackup({ source: 'schedule' });
+        logger.log(
+          result.skipped
+            ? `backups.weekly: skipped (${result.weekKey} exists)`
+            : `backups.weekly: created ${result.relativePath}`,
+        );
         return result;
       }
       logger.warn(`Unknown job ${job.name}`);
@@ -58,7 +82,7 @@ async function bootstrap() {
     logger.error(`Job ${job?.name} failed: ${err.message}`);
   });
 
-  logger.log('DAH worker started (email reminders + job queue)');
+  logger.log('Мій дім worker started (reminders + weekly backups)');
 
   const shutdown = async () => {
     await worker.close();

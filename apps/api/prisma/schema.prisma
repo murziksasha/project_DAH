@@ -77,15 +77,22 @@ enum VoteWeightMode {
   by_area
 }
 
-/** One legal ОСББ (organization) on a shared install. Multi-tenant SaaS foundation. */
+/** ОСББ or managing company (УК) — same product «Мій дім». */
+enum OrganizationType {
+  osbb
+  management_company
+}
+
+/** One legal organization (ОСББ or УК) on a shared install. Multi-tenant foundation. */
 model Tenant {
-  id        String   @id @default(cuid())
+  id        String           @id @default(cuid())
   name      String
-  slug      String   @unique
-  isActive  Boolean  @default(true)
-  settings  Json     @default("{}")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  slug      String           @unique
+  orgType   OrganizationType @default(osbb)
+  isActive  Boolean          @default(true)
+  settings  Json             @default("{}")
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
 
   buildings Building[]
   users     User[]
@@ -100,11 +107,16 @@ model User {
   phone        String?
   role         UserRole   @default(resident)
   status       UserStatus @default(pending)
-  /// null = platform super_admin (cross-tenant); otherwise ОСББ tenant
+  /// null = platform super_admin (cross-tenant); otherwise organization tenant
   tenantId     String?
   tenant       Tenant?    @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   apartmentId  String?
   primaryApartment Apartment? @relation("UserPrimaryApartment", fields: [apartmentId], references: [id])
+  /// Who activated the account (registration approve or admin status→active)
+  approvedAt   DateTime?
+  approvedById String?
+  approvedBy   User?      @relation("UserApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedUsers User[]    @relation("UserApprovedBy")
   refreshToken String?
   totpSecret         String?
   totpEnabled        Boolean  @default(false)
@@ -125,6 +137,7 @@ model User {
   createdReminders   Reminder[]          @relation("ReminderCreator")
 
   @@index([tenantId])
+  @@index([approvedById])
 }
 
 /** Refresh-token session with rotation + reuse detection (v1.0). */

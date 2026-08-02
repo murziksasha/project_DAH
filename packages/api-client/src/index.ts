@@ -1,5 +1,5 @@
 /**
- * Lightweight shared API types for DAH web/admin clients.
+ * Lightweight shared API types for «Мій дім» web/admin clients.
  * Full OpenAPI codegen can replace this package later.
  */
 

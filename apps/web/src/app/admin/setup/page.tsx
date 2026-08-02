@@ -1,7 +1,9 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { apiFetch, getToken } from '@/lib/api';
+import type { I18nKey } from '@/lib/i18n';
 
 interface SetupStatus {
   hasBuilding: boolean;
@@ -33,15 +35,23 @@ interface SetupStatus {
 type SetupRole = 'chairman' | 'accountant' | 'auditor';
 type DeferrableRole = 'accountant' | 'auditor';
 
-const DEFERRABLE_ROLE_LABELS: Record<DeferrableRole, string> = {
-  accountant: 'Бухгалтер',
-  auditor: 'Ревізійна комісія',
-};
-
-const STEPS = ['ОСМД', 'Банк', 'Квартири', 'Користувачі', 'Підтвердження'];
 const STEP_KEYS = ['building', 'bank', 'apartments', 'users'] as const;
 
+const STEP_LABEL_KEYS: I18nKey[] = [
+  'setupStepOrg',
+  'setupStepBank',
+  'setupStepApts',
+  'setupStepUsers',
+  'setupStepConfirm',
+];
+
+const DEFERRABLE_ROLE_KEYS: Record<DeferrableRole, I18nKey> = {
+  accountant: 'setupRoleAccountant',
+  auditor: 'setupRoleAuditor',
+};
+
 export default function SetupPage() {
+  const { t } = useI18n();
   const [step, setStep] = useState(0);
   const [status, setStatus] = useState<SetupStatus | null>(null);
   const [error, setError] = useState('');
@@ -53,7 +63,7 @@ export default function SetupPage() {
   const [bank, setBank] = useState({
     bankName: 'ПриватБанк',
     iban: '',
-    description: 'Основний рахунок ОСМД',
+    description: '',
   });
   const [apartmentText, setApartmentText] = useState('101,1,5,52.5\n102,1,5,48.0');
   const [users, setUsers] = useState({
@@ -70,6 +80,12 @@ export default function SetupPage() {
     accountant: false,
     auditor: false,
   });
+
+  function roleTitle(role: SetupRole): string {
+    if (role === 'chairman') return t('setupRoleChairman');
+    if (role === 'accountant') return t('setupRoleAccountant');
+    return t('setupRoleAuditor');
+  }
 
   function applyStatus(s: SetupStatus) {
     setStatus(s);
@@ -129,6 +145,7 @@ export default function SetupPage() {
 
   useEffect(() => {
     loadStatus().catch((err) => setError(err.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount
   }, []);
 
   function isStepDone(stepIndex: number): boolean {
@@ -156,12 +173,12 @@ export default function SetupPage() {
   function missingForComplete(): string[] {
     if (!status) return [];
     const missing: string[] = [];
-    if (!status.stepDone.building) missing.push('дані ОСМД');
-    if (!status.stepDone.bank) missing.push('банківські реквізити');
-    if (!status.stepDone.apartments) missing.push('квартири');
-    if (!status.hasChairman) missing.push('голова правління');
-    if (!status.hasAccountant && !isRoleDeferred('accountant')) missing.push('бухгалтер');
-    if (!status.hasAuditor && !isRoleDeferred('auditor')) missing.push('ревізійна комісія');
+    if (!status.stepDone.building) missing.push(t('setupMissingBuilding'));
+    if (!status.stepDone.bank) missing.push(t('setupMissingBank'));
+    if (!status.stepDone.apartments) missing.push(t('setupMissingApts'));
+    if (!status.hasChairman) missing.push(t('setupMissingChairman'));
+    if (!status.hasAccountant && !isRoleDeferred('accountant')) missing.push(t('setupMissingAccountant'));
+    if (!status.hasAuditor && !isRoleDeferred('auditor')) missing.push(t('setupMissingAuditor'));
     return missing;
   }
 
@@ -185,20 +202,21 @@ export default function SetupPage() {
           token,
           body: JSON.stringify(building),
         });
-        setMessage('Дані ОСМД збережено');
+        setMessage(t('setupSavedBuilding'));
       } else if (step === 1) {
         await apiFetch('/setup/bank', {
           method: 'POST',
           token,
           body: JSON.stringify({
             ...bank,
+            // Fund names are stored as business data (UK); not UI chrome
             funds: [
               { name: 'Фонд утримання', type: 'maintenance', openingBalance: 0 },
               { name: 'Фонд капітального ремонту', type: 'capital_repair', openingBalance: 0 },
             ],
           }),
         });
-        setMessage('Банківські реквізити збережено');
+        setMessage(t('setupSavedBank'));
       } else if (step === 2) {
         const apartments = apartmentText
           .split('\n')
@@ -218,7 +236,7 @@ export default function SetupPage() {
           token,
           body: JSON.stringify({ apartments }),
         });
-        setMessage(`Додано ${apartments.length} квартир`);
+        setMessage(t('setupAptsAdded', { count: apartments.length }));
       } else if (step === 3) {
         const deferRoles = (['accountant', 'auditor'] as const).filter(
           (role) => isRoleDeferred(role) && !hasRoleFilled(role),
@@ -248,8 +266,8 @@ export default function SetupPage() {
         });
         setMessage(
           deferRoles.length > 0
-            ? 'Користувачів збережено. Відкладені ролі можна створити в Організації.'
-            : 'Ключових користувачів створено',
+            ? t('setupUsersSavedDeferred')
+            : t('setupUsersCreated'),
         );
       } else if (step === 4) {
         await apiFetch('/setup/complete', { method: 'POST', token });
@@ -260,7 +278,7 @@ export default function SetupPage() {
       await loadStatus();
       if (step < 4) setStep(step + 1);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     } finally {
       setLoading(false);
     }
@@ -271,18 +289,19 @@ export default function SetupPage() {
 
   return (
     <main>
-      <h1>Налаштування ОСМД</h1>
+      <h1>{t('setupTitle')}</h1>
       <p style={{ color: 'var(--muted)', marginBottom: '1rem' }}>
-        Майстер першого запуску для системного адміністратора
+        {t('setupSubtitle')}
       </p>
 
       <div className="setup-steps">
-        {STEPS.map((label, i) => {
+        {STEP_LABEL_KEYS.map((labelKey, i) => {
           const done = i < 4 && status?.stepDone[STEP_KEYS[i]];
           const active = i === step;
+          const label = t(labelKey);
           return (
             <button
-              key={label}
+              key={labelKey}
               type="button"
               className={`setup-step-pill${active ? ' active' : ''}${done ? ' done' : ''}`}
               onClick={() => done && setStep(i)}
@@ -298,14 +317,15 @@ export default function SetupPage() {
 
       {status && (
         <div className="card" style={{ marginBottom: '1rem', fontSize: '0.9rem', color: 'var(--muted)' }}>
-          Квартири: {status.apartmentCount} · Фонди: {status.fundCount} ·
-          Голова: {status.hasChairman ? 'так' : 'ні'} · Бухгалтер: {status.hasAccountant ? 'так' : 'ні'} ·
-          Ревізія: {status.hasAuditor ? 'так' : 'ні'}
+          {t('setupStatusApts')}: {status.apartmentCount} · {t('setupStatusFunds')}: {status.fundCount} ·
+          {' '}{t('setupStatusChairman')}: {status.hasChairman ? t('yes') : t('no')} ·{' '}
+          {t('setupStatusAccountant')}: {status.hasAccountant ? t('yes') : t('no')} ·{' '}
+          {t('setupStatusAuditor')}: {status.hasAuditor ? t('yes') : t('no')}
         </div>
       )}
 
       {stepComplete && (
-        <p className="success-banner">Цей крок уже виконано. Натисніть «Продовжити», щоб перейти далі.</p>
+        <p className="success-banner">{t('setupStepDoneBanner')}</p>
       )}
 
       {error && <p className="error">{error}</p>}
@@ -315,7 +335,7 @@ export default function SetupPage() {
         {step === 0 && (
           <>
             <div>
-              <label>Назва ОСМД</label>
+              <label>{t('setupOrgName')}</label>
               <input
                 value={building.name}
                 onChange={(e) => setBuilding({ ...building, name: e.target.value })}
@@ -324,7 +344,7 @@ export default function SetupPage() {
               />
             </div>
             <div>
-              <label>Адреса</label>
+              <label>{t('setupAddress')}</label>
               <input
                 value={building.address}
                 onChange={(e) => setBuilding({ ...building, address: e.target.value })}
@@ -333,7 +353,7 @@ export default function SetupPage() {
               />
             </div>
             <div>
-              <label>ЄДРПОУ</label>
+              <label>{t('setupEdrpou')}</label>
               <input
                 value={building.edrpou}
                 onChange={(e) => setBuilding({ ...building, edrpou: e.target.value })}
@@ -346,7 +366,7 @@ export default function SetupPage() {
         {step === 1 && (
           <>
             <div>
-              <label>Банк</label>
+              <label>{t('setupBank')}</label>
               <input
                 value={bank.bankName}
                 onChange={(e) => setBank({ ...bank, bankName: e.target.value })}
@@ -355,7 +375,7 @@ export default function SetupPage() {
               />
             </div>
             <div>
-              <label>IBAN</label>
+              <label>{t('setupIban')}</label>
               <input
                 value={bank.iban}
                 onChange={(e) => setBank({ ...bank, iban: e.target.value })}
@@ -364,7 +384,7 @@ export default function SetupPage() {
               />
             </div>
             <div>
-              <label>Опис рахунку</label>
+              <label>{t('setupAccountDesc')}</label>
               <input
                 value={bank.description}
                 onChange={(e) => setBank({ ...bank, description: e.target.value })}
@@ -373,7 +393,7 @@ export default function SetupPage() {
             </div>
             {!readOnly && (
               <p style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>
-                Автоматично створюються фонди утримання та капремонту.
+                {t('setupFundsAuto')}
               </p>
             )}
           </>
@@ -381,7 +401,7 @@ export default function SetupPage() {
 
         {step === 2 && (
           <div>
-            <label>Квартири (CSV: номер,під&apos;їзд,поверх,площа)</label>
+            <label>{t('setupAptsCsv')}</label>
             <textarea
               rows={8}
               value={apartmentText}
@@ -402,17 +422,17 @@ export default function SetupPage() {
               return (
               <fieldset key={role} style={{ border: '1px solid var(--border)', padding: '1rem', borderRadius: 8 }}>
                 <legend style={{ padding: '0 0.5rem' }}>
-                  {role === 'chairman' ? 'Голова правління' : role === 'accountant' ? 'Бухгалтер' : 'Ревізійна комісія'}
+                  {roleTitle(role)}
                   {roleDone ? ' ✓' : deferred ? ' ⏳' : ''}
                 </legend>
                 {roleDone && (
                   <p className="success-banner" style={{ marginBottom: '0.75rem' }}>
-                    Вже створено
+                    {t('setupAlreadyCreated')}
                   </p>
                 )}
                 {deferred && !roleDone && (
                   <p className="success-banner" style={{ marginBottom: '0.75rem' }}>
-                    Створення відкладено — додайте в розділі Організація
+                    {t('setupDeferredHint')}
                   </p>
                 )}
                 {deferrable && !roleDone && !readOnly && (
@@ -424,13 +444,13 @@ export default function SetupPage() {
                         setCreateLater((prev) => ({ ...prev, [role]: e.target.checked }))
                       }
                     />
-                    Створити пізніше
+                    {t('setupCreateLater')}
                   </label>
                 )}
                 {!deferred && (
                 <div style={{ display: 'grid', gap: '0.75rem' }}>
                   <input
-                    placeholder="Email"
+                    placeholder={t('email')}
                     value={users[role].email}
                     onChange={(e) => setUsers({ ...users, [role]: { ...users[role], email: e.target.value } })}
                     required={!roleReadOnly}
@@ -439,21 +459,21 @@ export default function SetupPage() {
                   {!roleReadOnly && (
                     <input
                       type="password"
-                      placeholder="Пароль (мін. 8 символів)"
+                      placeholder={t('setupPasswordMin')}
                       value={users[role].password}
                       onChange={(e) => setUsers({ ...users, [role]: { ...users[role], password: e.target.value } })}
                       required
                     />
                   )}
                   <input
-                    placeholder="Ім'я"
+                    placeholder={t('firstName')}
                     value={users[role].firstName}
                     onChange={(e) => setUsers({ ...users, [role]: { ...users[role], firstName: e.target.value } })}
                     required={!roleReadOnly}
                     readOnly={roleReadOnly}
                   />
                   <input
-                    placeholder="Прізвище"
+                    placeholder={t('lastName')}
                     value={users[role].lastName}
                     onChange={(e) => setUsers({ ...users, [role]: { ...users[role], lastName: e.target.value } })}
                     required={!roleReadOnly}
@@ -472,14 +492,14 @@ export default function SetupPage() {
                     checked={users.addBoard}
                     onChange={(e) => setUsers({ ...users, addBoard: e.target.checked })}
                   />
-                  Додати члена правління (опційно)
+                  {t('setupAddBoard')}
                 </label>
                 {users.addBoard && (
                   <div style={{ display: 'grid', gap: '0.75rem' }}>
-                    <input placeholder="Email" value={users.boardEmail} onChange={(e) => setUsers({ ...users, boardEmail: e.target.value })} />
-                    <input type="password" placeholder="Пароль" value={users.boardPassword} onChange={(e) => setUsers({ ...users, boardPassword: e.target.value })} />
-                    <input placeholder="Ім'я" value={users.boardFirstName} onChange={(e) => setUsers({ ...users, boardFirstName: e.target.value })} />
-                    <input placeholder="Прізвище" value={users.boardLastName} onChange={(e) => setUsers({ ...users, boardLastName: e.target.value })} />
+                    <input placeholder={t('email')} value={users.boardEmail} onChange={(e) => setUsers({ ...users, boardEmail: e.target.value })} />
+                    <input type="password" placeholder={t('password')} value={users.boardPassword} onChange={(e) => setUsers({ ...users, boardPassword: e.target.value })} />
+                    <input placeholder={t('firstName')} value={users.boardFirstName} onChange={(e) => setUsers({ ...users, boardFirstName: e.target.value })} />
+                    <input placeholder={t('lastName')} value={users.boardLastName} onChange={(e) => setUsers({ ...users, boardLastName: e.target.value })} />
                   </div>
                 )}
               </>
@@ -489,18 +509,19 @@ export default function SetupPage() {
 
         {step === 4 && (
           <>
-            <p>
-              Перевірте дані та завершіть налаштування. Після цього фінансовий кабінет стане доступним для голови
-              правління. Бухгалтера та ревізію можна додати зараз або пізніше в Організації.
-            </p>
+            <p>{t('setupConfirmBody')}</p>
             {status && status.pendingDeferredRoles.length > 0 && (
               <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
-                Відкладено: {status.pendingDeferredRoles.map((r) => DEFERRABLE_ROLE_LABELS[r]).join(', ')}
+                {t('setupDeferred', {
+                  roles: status.pendingDeferredRoles
+                    .map((r) => t(DEFERRABLE_ROLE_KEYS[r]))
+                    .join(', '),
+                })}
               </p>
             )}
             {status && !status.canComplete && (
               <p className="error">
-                Ще потрібно: {missingForComplete().join(', ')}
+                {t('setupStillNeed', { items: missingForComplete().join(', ') })}
               </p>
             )}
           </>
@@ -509,7 +530,7 @@ export default function SetupPage() {
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
           {step > 0 && (
             <button type="button" onClick={() => setStep(step - 1)} style={{ background: 'var(--surface-2)' }}>
-              Назад
+              {t('back')}
             </button>
           )}
           <button
@@ -517,12 +538,12 @@ export default function SetupPage() {
             disabled={loading || (step === 4 && status !== null && !status.canComplete)}
           >
             {loading
-              ? 'Збереження...'
+              ? t('saving')
               : step === 4
-                ? 'Завершити налаштування'
+                ? t('setupFinish')
                 : stepComplete
-                  ? 'Продовжити'
-                  : 'Далі'}
+                  ? t('setupContinue')
+                  : t('next')}
           </button>
         </div>
       </form>

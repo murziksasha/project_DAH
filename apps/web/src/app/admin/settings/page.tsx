@@ -1,9 +1,10 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
-import { setStoredLocale, type Locale } from '@/lib/i18n';
+import type { Locale } from '@/lib/i18n';
 
 interface Settings {
   id?: string;
@@ -19,6 +20,7 @@ interface Settings {
 }
 
 export default function SettingsPage() {
+  const { t, setLocale } = useI18n();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [profile, setProfile] = useState({ name: '', address: '', edrpou: '' });
   const [message, setMessage] = useState('');
@@ -99,7 +101,7 @@ export default function SettingsPage() {
             }
           : s,
       );
-      setMessage('Дані ОСМД збережено');
+      setMessage('Дані організації збережено');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Помилка');
     } finally {
@@ -194,7 +196,7 @@ export default function SettingsPage() {
         className="card"
         style={{ display: 'grid', gap: '0.75rem', marginBottom: '1rem' }}
       >
-        <h2 style={{ fontSize: '1rem' }}>Профіль ОСМД</h2>
+        <h2 style={{ fontSize: '1rem' }}>Профіль організації</h2>
         <div>
           <label htmlFor="bname">Назва</label>
           <input
@@ -254,6 +256,17 @@ export default function SettingsPage() {
             }}
           />
         )}
+      </section>
+
+      <section className="card" style={{ marginBottom: '1rem' }}>
+        <h2 style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>Документи та звіти</h2>
+        <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+          Конструктор квитанцій, PDF для зборів і колонок Excel — які поля бачать мешканці та
+          які дані потрапляють у вигрузки.
+        </p>
+        <a className="btn btn-sm" href="/admin/document-templates">
+          Відкрити конструктор документів
+        </a>
       </section>
 
       <section className="card" style={{ marginBottom: '1rem' }}>
@@ -318,14 +331,14 @@ export default function SettingsPage() {
           />
         </div>
         <div>
-          <label htmlFor="locale">Мова інтерфейсу</label>
+          <label htmlFor="locale">{t('settingsLocale')}</label>
           <select
             id="locale"
             value={settings.locale}
             onChange={(e) => {
               const locale = e.target.value as Locale;
               setSettings({ ...settings, locale });
-              setStoredLocale(locale);
+              setLocale(locale);
               patch({ locale });
             }}
           >

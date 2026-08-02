@@ -31,16 +31,37 @@ export function useFundsQuery(enabled = true) {
   });
 }
 
+export type ApartmentListItem = {
+  id: string;
+  number: string;
+  entrance: number;
+  area: number;
+  floor?: number | null;
+  users?: Array<{
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    status: string;
+    isPrimary?: boolean;
+  }>;
+  residents?: Array<{
+    id?: string;
+    firstName: string;
+    lastName: string;
+    isOwner?: boolean;
+    phone?: string | null;
+    email?: string | null;
+  }>;
+};
+
 export function useApartmentsQuery(enabled = true) {
   const buildingId = getSelectedBuildingId();
   return useQuery({
     queryKey: queryKeys.apartments(buildingId),
     enabled,
     queryFn: () =>
-      apiFetch<Array<{ id: string; number: string; entrance: number; area: number }>>(
-        '/building/apartments',
-        { token: authToken() },
-      ),
+      apiFetch<ApartmentListItem[]>('/building/apartments', { token: authToken() }),
   });
 }
 

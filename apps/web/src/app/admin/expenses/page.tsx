@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken, uploadFile } from '@/lib/api';
 
@@ -19,6 +20,7 @@ interface Supplier {
 }
 
 export default function ExpensesPage() {
+  const { t } = useI18n();
   const [funds, setFunds] = useState<Fund[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -64,7 +66,7 @@ export default function ExpensesPage() {
       setDocumentKey(uploaded.key);
       setFileName(file.name);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка файлу');
+      setError(err instanceof Error ? err.message : t('error'));
       setDocumentKey(null);
       setFileName('');
     }
@@ -91,14 +93,14 @@ export default function ExpensesPage() {
           documentKey: documentKey || undefined,
         }),
       });
-      setMessage('Витрату зафіксовано');
+      setMessage(t('expenseSaved'));
       setCreated(true);
       setAmount('');
       setDescription('');
       setDocumentKey(null);
       setFileName('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     } finally {
       setLoading(false);
     }
@@ -107,19 +109,19 @@ export default function ExpensesPage() {
   return (
     <main>
       <PageHeader
-        title="Нова витрата"
-        description="Оплата підрядників, комунальних, зарплат — з документом"
+        title={t('expenseNewTitle')}
+        description={t('expenseNewDesc')}
         actions={
           <Link href="/admin/expenses/list" className="btn btn-sm btn-ghost">
-            Список витрат
+            {t('expenseList')}
           </Link>
         }
       />
 
       {created && (
         <p className="success-banner">
-          Збережено.{' '}
-          <Link href="/admin/expenses/list">Відкрити список</Link>
+          {t('settingsSaved')}{' '}
+          <Link href="/admin/expenses/list">{t('openList')}</Link>
           {' · '}
           <button
             type="button"
@@ -127,7 +129,7 @@ export default function ExpensesPage() {
             onClick={() => setCreated(false)}
             style={{ display: 'inline' }}
           >
-            Додати ще
+            {t('addMore')}
           </button>
         </p>
       )}
@@ -135,7 +137,7 @@ export default function ExpensesPage() {
       <form onSubmit={handleSubmit} className="card" style={{ display: 'grid', gap: '1rem' }}>
         <div className="grid-2">
           <div>
-            <label>Фонд</label>
+            <label>{t('expenseFund')}</label>
             <select value={fundId} onChange={(e) => setFundId(e.target.value)} required>
               {funds.map((f) => (
                 <option key={f.id} value={f.id}>
@@ -145,9 +147,9 @@ export default function ExpensesPage() {
             </select>
           </div>
           <div>
-            <label>Категорія</label>
+            <label>{t('expenseCategory')}</label>
             <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required>
-              {categories.length === 0 && <option value="">Немає категорій</option>}
+              {categories.length === 0 && <option value="">{t('categoriesEmpty')}</option>}
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -156,15 +158,15 @@ export default function ExpensesPage() {
             </select>
             {categories.length === 0 && (
               <p style={{ fontSize: '0.8rem', marginTop: '0.35rem' }}>
-                <Link href="/admin/suppliers">Додайте категорію в Довідниках</Link>
+                <Link href="/admin/suppliers">{t('expenseAddCategoryHint')}</Link>
               </p>
             )}
           </div>
         </div>
         <div>
-          <label>Постачальник</label>
+          <label>{t('expenseSupplier')}</label>
           <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
-            <option value="">— не вказано —</option>
+            <option value="">{t('notSpecified')}</option>
             {suppliers.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
@@ -174,7 +176,7 @@ export default function ExpensesPage() {
         </div>
         <div className="grid-2">
           <div>
-            <label>Сума (₴)</label>
+            <label>{t('amountUah')}</label>
             <input
               type="number"
               step="0.01"
@@ -185,16 +187,16 @@ export default function ExpensesPage() {
             />
           </div>
           <div>
-            <label>Дата</label>
+            <label>{t('expenseDate')}</label>
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
           </div>
         </div>
         <div>
-          <label>Опис</label>
+          <label>{t('expenseDesc')}</label>
           <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
         </div>
         <div>
-          <label>Платіжка / документ (PDF, JPEG, PNG)</label>
+          <label>{t('expenseDocument')}</label>
           <input
             type="file"
             accept=".pdf,.jpg,.jpeg,.png,.webp"
@@ -202,14 +204,14 @@ export default function ExpensesPage() {
           />
           {fileName && (
             <p style={{ color: 'var(--success)', fontSize: '0.85rem', marginTop: '0.35rem' }}>
-              Завантажено: {fileName}
+              {t('uploadedFile', { name: fileName })}
             </p>
           )}
         </div>
         {error && <p className="error">{error}</p>}
         {message && !created && <p className="success-banner">{message}</p>}
         <button type="submit" disabled={loading || !categoryId}>
-          {loading ? 'Збереження…' : 'Зберегти витрату'}
+          {loading ? t('saving') : t('expenseSave')}
         </button>
       </form>
     </main>
