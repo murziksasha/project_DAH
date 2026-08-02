@@ -237,7 +237,7 @@ export class FinanceController {
     res.send(buffer);
   }
 
-  /** ZIP of Excel-friendly CSV reports (cash-flow, debtors, expenses, 1C-style). */
+  /** ZIP of Excel (.xlsx) reports (cash-flow, debtors, expenses, 1C-style). */
   @Get('reports/export-pack.zip')
   async exportPack(
     @Query('from') from: string | undefined,

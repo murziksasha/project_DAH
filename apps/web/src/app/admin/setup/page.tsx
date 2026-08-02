@@ -38,7 +38,7 @@ const DEFERRABLE_ROLE_LABELS: Record<DeferrableRole, string> = {
   auditor: 'Ревізійна комісія',
 };
 
-const STEPS = ['ОСМД', 'Банк', 'Квартири', 'Користувачі', 'Підтвердження'];
+const STEPS = ['Організація', 'Банк', 'Квартири', 'Користувачі', 'Підтвердження'];
 const STEP_KEYS = ['building', 'bank', 'apartments', 'users'] as const;
 
 export default function SetupPage() {
@@ -53,7 +53,7 @@ export default function SetupPage() {
   const [bank, setBank] = useState({
     bankName: 'ПриватБанк',
     iban: '',
-    description: 'Основний рахунок ОСМД',
+    description: 'Основний рахунок організації',
   });
   const [apartmentText, setApartmentText] = useState('101,1,5,52.5\n102,1,5,48.0');
   const [users, setUsers] = useState({
@@ -156,7 +156,7 @@ export default function SetupPage() {
   function missingForComplete(): string[] {
     if (!status) return [];
     const missing: string[] = [];
-    if (!status.stepDone.building) missing.push('дані ОСМД');
+    if (!status.stepDone.building) missing.push('дані організації');
     if (!status.stepDone.bank) missing.push('банківські реквізити');
     if (!status.stepDone.apartments) missing.push('квартири');
     if (!status.hasChairman) missing.push('голова правління');
@@ -185,7 +185,7 @@ export default function SetupPage() {
           token,
           body: JSON.stringify(building),
         });
-        setMessage('Дані ОСМД збережено');
+        setMessage('Дані організації збережено');
       } else if (step === 1) {
         await apiFetch('/setup/bank', {
           method: 'POST',
@@ -271,9 +271,9 @@ export default function SetupPage() {
 
   return (
     <main>
-      <h1>Налаштування ОСМД</h1>
+      <h1>Налаштування організації</h1>
       <p style={{ color: 'var(--muted)', marginBottom: '1rem' }}>
-        Майстер першого запуску для системного адміністратора
+        Майстер першого запуску «Мій дім» (ОСББ або УК) — для системного адміністратора
       </p>
 
       <div className="setup-steps">
@@ -315,7 +315,7 @@ export default function SetupPage() {
         {step === 0 && (
           <>
             <div>
-              <label>Назва ОСМД</label>
+              <label>Назва організації (ОСББ / УК)</label>
               <input
                 value={building.name}
                 onChange={(e) => setBuilding({ ...building, name: e.target.value })}

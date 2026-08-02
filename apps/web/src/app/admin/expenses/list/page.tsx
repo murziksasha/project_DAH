@@ -6,7 +6,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Pagination } from '@/components/ui/Pagination';
 import { apiFetch, getToken } from '@/lib/api';
-import { downloadCsv } from '@/lib/csv';
+import { downloadXlsx } from '@/lib/xlsx';
 import { formatDateUk, formatMoney } from '@/lib/money';
 import { useExpensesPageQuery, useFundsQuery } from '@/lib/queries';
 
@@ -74,19 +74,23 @@ export default function ExpensesListPage() {
     }
   }
 
-  function exportCsv() {
-    const rows: Array<Array<string | number>> = [
-      ['Дата', 'Опис', 'Категорія', 'Фонд', 'Постачальник', 'Сума'],
-      ...expenses.map((e) => [
-        formatDateUk(e.date),
-        e.description ?? '',
-        e.category.name,
-        e.fund.name,
-        e.supplier?.name ?? '',
-        Number(e.amount),
-      ]),
-    ];
-    downloadCsv(`vytraty-p${page}-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+  async function exportExcel() {
+    await downloadXlsx(`vytraty-p${page}-${new Date().toISOString().slice(0, 10)}.xlsx`, [
+      {
+        name: 'Витрати',
+        rows: [
+          ['Дата', 'Опис', 'Категорія', 'Фонд', 'Постачальник', 'Сума'],
+          ...expenses.map((e) => [
+            formatDateUk(e.date),
+            e.description ?? '',
+            e.category.name,
+            e.fund.name,
+            e.supplier?.name ?? '',
+            Number(e.amount),
+          ]),
+        ],
+      },
+    ]);
   }
 
   const pageTotal = expenses.reduce((s, e) => s + Number(e.amount), 0);
@@ -97,12 +101,17 @@ export default function ExpensesListPage() {
         ← Нова витрата
       </Link>
       <PageHeader
-        title="Витрати ОСМД"
-        description="Фільтр, пагінація, CSV, анулювання"
+        title="Витрати організації"
+        description="Фільтр, пагінація, Excel, анулювання"
         actions={
           <>
-            <button type="button" className="btn btn-sm btn-ghost" onClick={exportCsv} disabled={!expenses.length}>
-              CSV (сторінка)
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              onClick={() => void exportExcel()}
+              disabled={!expenses.length}
+            >
+              Excel (сторінка)
             </button>
             <Link href="/admin/expenses" className="btn btn-sm">
               + Витрата

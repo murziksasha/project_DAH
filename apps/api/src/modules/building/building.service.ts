@@ -1,4 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  normalizeDocumentTemplatesConfig,
+  type DocumentTemplatesConfig,
+} from '@dah/shared';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -12,6 +16,7 @@ import { CreateResidentDto } from './dto/create-resident.dto';
 import { UpdateApartmentDto } from './dto/update-apartment.dto';
 import { UpdateResidentDto } from './dto/update-resident.dto';
 import { UpdateBuildingSettingsDto } from './dto/update-settings.dto';
+import { UpdateDocumentTemplatesDto } from './dto/update-document-templates.dto';
 
 @Injectable()
 export class BuildingService {
@@ -240,6 +245,56 @@ export class BuildingService {
       reminderDaysBeforeDue: json.reminderDaysBeforeDue ?? 3,
       locale: json.locale ?? DEFAULT_BUILDING_SETTINGS.locale,
     };
+  }
+
+  /**
+   * Document constructor: PDF templates (receipts, board reports) + Excel export field profiles.
+   * Defaults from @dah/shared when nothing saved yet.
+   */
+  async getDocumentTemplates(buildingId?: string): Promise<DocumentTemplatesConfig> {
+    const building = buildingId
+      ? await this.prisma.building.findFirst({
+          where: { id: buildingId },
+          select: { settings: true },
+        })
+      : await this.prisma.building.findFirst({ select: { settings: true } });
+    const json = parseBuildingSettings(building?.settings);
+    return normalizeDocumentTemplatesConfig(json.documentTemplates);
+  }
+
+  async updateDocumentTemplates(
+    dto: UpdateDocumentTemplatesDto,
+    userId: string,
+  ): Promise<DocumentTemplatesConfig> {
+    const building = await this.prisma.building.findFirst();
+    if (!building) throw new NotFoundException('Будинок не налаштовано');
+
+    const normalized = normalizeDocumentTemplatesConfig({
+      forms: dto.forms,
+      exports: dto.exports,
+    });
+
+    await this.prisma.building.update({
+      where: { id: building.id },
+      data: {
+        settings: mergeBuildingSettings(building.settings, {
+          documentTemplates: normalized,
+        }) as Prisma.InputJsonValue,
+      },
+    });
+
+    await this.audit.log({
+      userId,
+      action: 'building.document_templates_updated',
+      entityType: 'Building',
+      entityId: building.id,
+      payload: {
+        forms: normalized.forms.length,
+        exports: normalized.exports.length,
+      },
+    });
+
+    return normalized;
   }
 
   async listApartments(buildingId?: string, tenantId?: string | null) {

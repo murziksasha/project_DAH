@@ -1,3 +1,5 @@
+import type { DocumentTemplatesConfig } from '@dah/shared';
+
 export type DeferredSetupRole = 'accountant' | 'auditor';
 
 export interface BuildingSettingsJson {
@@ -15,6 +17,11 @@ export interface BuildingSettingsJson {
     webPush?: boolean;
     email?: boolean;
   };
+  /**
+   * Constructor templates: PDF receipts / board reports + Excel export columns.
+   * Shape: { forms: DocTemplate[], exports: ExportProfile[] }
+   */
+  documentTemplates?: DocumentTemplatesConfig;
 }
 
 export function clearDeferredSetupRole(

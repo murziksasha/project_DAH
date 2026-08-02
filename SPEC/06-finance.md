@@ -1,5 +1,8 @@
 # 06. Фінансовий модуль
 
+Фінансова логіка **однакова** для ОСББ і УК (`Tenant.orgType` впливає лише на labels UI, не на FIFO/фонди).  
+Продукт: **«Мій дім»**.
+
 ## Фонди
 
 Кожен фонд має `openingBalance` — початковий залишок. Баланс розраховується:
@@ -40,6 +43,17 @@ Soft-delete: `isVoided = true`, причина в `voidReason`. Запис за�
 GET `/accruals/lines/:lineId/receipt` — PDFKit, доступ:
 - Мешканець — лише свої лінії
 - Admin — будь-яка лінія
+
+Макет квитанції — **конструктор документів** (`Building.settings.documentTemplates.forms`, kind=`receipt`):
+блоки (heading, paragraph, fieldGrid, signatures, …) + змінні `{{apartmentNumber}}`, `{{balance}}`, `{{bankIban}}` тощо.
+Активний шаблон застосовується при генерації PDF (окремо / ZIP / multi-page).
+
+### PDF-звіт для зборів
+GET `/finance/reports/board.pdf` — макет kind=`board_report` (таблиці фондів / витрат / боржників як `dataTable`).
+
+### Excel / export pack
+Колонки та склад ZIP налаштовуються в `documentTemplates.exports` (профілі `debtors`, `cash_flow`, `expenses`, `statement`, `export_pack`).
+UI: `/admin/document-templates`.
 
 ## Платежі та FIFO
 

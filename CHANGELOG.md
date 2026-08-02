@@ -1,5 +1,49 @@
 # Changelog
 
+## 1.8.0 — Конструктор документів і звітів
+
+- **Конструктор PDF** (практика layout-блоків + `{{змінні}}`, як у print forms CRM):
+  - квитанції мешканців (`kind: receipt`)
+  - звіт для зборів / правління (`kind: board_report`)
+  - довільні шаблони
+- **Конструктор Excel / вигрузок**: увімкнення колонок (боржники, рух коштів, витрати, виписка) і склад export-pack ZIP
+- Збереження: `Building.settings.documentTemplates` (`forms` + `exports`)
+- API: `GET/PATCH /building/document-templates`
+- UI: `/admin/document-templates` (блоки, preview, змінні); посилання з Налаштувань і Звітів
+- PDF-генерація квитанцій і board PDF читає **активний** шаблон; export pack фільтрує файли/колонки
+- Shared: `@dah/shared` → `document-templates/*`
+
+## 1.7.0 — «Мій дім» + ОСББ / УК
+
+- **Ребрендинг:** DAH / ОСМД → **Мій дім** (UI, PWA, PDF, TOTP, email, landing, docs/SPEC)
+- **`Tenant.orgType`:** `osbb` \| `management_company` (міграція, default `osbb`)
+- API: create/patch tenants з `orgType`; login/`/auth/me` → `user.tenant`
+- Web: `/admin/tenants` — створення ОСББ або УК; labels кабінету/ролей для УК
+- `org-labels.ts`, інструкції, setup/settings без «лише ОСББ»
+- SPEC: 01, 03, 04, 12-organization-types, README, DEPLOY
+
+## 1.6.0 — Excel exports + resident account UX
+
+- Усі **експорти** → Excel (`.xlsx`): витрати, виписка квартири, export-pack ZIP, звіти
+- API: `GET /accruals/apartments/:id/statement.xlsx`
+- Кабінет мешканця: фільтри рік/місяць/тип/статус/пошук, історія за періодами, Excel-виписка, адаптив
+- Пошук на вкладках новин, документів, боржників, прозорості
+- SPEC/08, інструкції мешканця
+
+## 1.5.3 — weekly + manual data backups
+
+- In-app **тижневі копії** PostgreSQL (`backups/weekly/{ISO}`) — worker daily ~03:00 UTC, **skip** якщо за тиждень уже є
+- **Ручна копія** з `/admin/ops` + `POST /api/backups` (ролі правління/бухгалтер; не resident)
+- API: `GET /backups`, `/backups/status`, `POST /backups/weekly`
+- Docker: `postgresql-client`, volume `./backups` на api/worker
+- Документація: SPEC/09, 03, 05, DEPLOY, README, інструкції
+
+## 1.5.2 — reports: Cyrillic PDF + Excel exports
+
+- PDF для зборів / квитанції: вбудований **DejaVu Sans** (кирилиця замість «кракозябр» Helvetica)
+- Звіти: **Excel: рух** та **Excel: боржники** (`.xlsx` замість CSV)
+- Docker API: `assets/fonts` у production-образі
+
 ## 1.5.1 — plan complete: full tenant data scope
 
 - `@TenantId()` on finance, payments, accruals, meters, users

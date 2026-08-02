@@ -7,11 +7,13 @@ import { DataTable } from '@/components/ui/DataTable';
 import { apiFetch, getToken } from '@/lib/api';
 import { getStoredUser } from '@/lib/auth';
 import { getSelectedTenantId, setSelectedTenantId } from '@/lib/building-context';
+import { orgTypeLabel } from '@/lib/org-labels';
 
 interface TenantRow {
   id: string;
   name: string;
   slug: string;
+  orgType?: 'osbb' | 'management_company';
   isActive: boolean;
   _count?: { buildings: number; users: number };
 }
@@ -24,6 +26,7 @@ export default function TenantsPage() {
   const [form, setForm] = useState({
     name: '',
     slug: '',
+    orgType: 'osbb' as 'osbb' | 'management_company',
     chairmanEmail: '',
     chairmanPassword: '',
   });
@@ -63,12 +66,23 @@ export default function TenantsPage() {
         body: JSON.stringify({
           name: form.name,
           slug: form.slug || form.name.toLowerCase().replace(/\s+/g, '-'),
+          orgType: form.orgType,
           chairmanEmail: form.chairmanEmail || undefined,
           chairmanPassword: form.chairmanPassword || undefined,
         }),
       });
-      setMessage('ОСББ (tenant) створено');
-      setForm({ name: '', slug: '', chairmanEmail: '', chairmanPassword: '' });
+      setMessage(
+        form.orgType === 'management_company'
+          ? 'Управляючу компанію (УК) створено'
+          : 'ОСББ створено',
+      );
+      setForm({
+        name: '',
+        slug: '',
+        orgType: 'osbb',
+        chairmanEmail: '',
+        chairmanPassword: '',
+      });
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Помилка');
@@ -90,11 +104,29 @@ export default function TenantsPage() {
     }
   }
 
+  async function setOrgType(t: TenantRow, orgType: 'osbb' | 'management_company') {
+    const token = getToken();
+    if (!token || t.orgType === orgType) return;
+    try {
+      await apiFetch(`/tenants/${t.id}`, {
+        method: 'PATCH',
+        token,
+        body: JSON.stringify({ orgType }),
+      });
+      setMessage(`Тип оновлено: ${orgTypeLabel(orgType)}`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Помилка');
+    }
+  }
+
+  const isUk = form.orgType === 'management_company';
+
   return (
     <main>
       <PageHeader
-        title="ОСББ (tenants)"
-        description="Multi-tenant: кілька юридичних осіб на одному інстансі DAH"
+        title="Організації"
+        description="ОСББ або управляючі компанії (УК) на одному інстансі «Мій дім». Multi-tenant + multi-building."
       />
       {error && <p className="error">{error}</p>}
       {message && <p className="success-banner">{message}</p>}
@@ -104,13 +136,34 @@ export default function TenantsPage() {
         className="card"
         style={{ display: 'grid', gap: '0.75rem', marginBottom: '1rem' }}
       >
-        <h2 style={{ fontSize: '1.05rem' }}>Нове ОСББ</h2>
+        <h2 style={{ fontSize: '1.05rem' }}>Нова організація</h2>
+        <div>
+          <label>Тип</label>
+          <select
+            value={form.orgType}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                orgType: e.target.value as 'osbb' | 'management_company',
+              })
+            }
+          >
+            <option value="osbb">ОСББ</option>
+            <option value="management_company">Управляюча компанія (УК)</option>
+          </select>
+          <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '0.35rem' }}>
+            {isUk
+              ? 'УК: кілька об’єктів (будинків), роль «керівник» замість голови правління.'
+              : 'ОСББ: самоуправління співвласників, правління, ревізійна комісія.'}
+          </p>
+        </div>
         <div>
           <label>Назва</label>
           <input
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
             required
+            placeholder={isUk ? 'ТОВ «Комфорт-Сервіс»' : 'ОСББ «Зелений двір»'}
           />
         </div>
         <div>
@@ -118,11 +171,11 @@ export default function TenantsPage() {
           <input
             value={form.slug}
             onChange={(e) => setForm({ ...form, slug: e.target.value })}
-            placeholder="osbb-pryklad"
+            placeholder={isUk ? 'uk-comfort' : 'osbb-pryklad'}
           />
         </div>
         <div>
-          <label>Email голови (опційно)</label>
+          <label>{isUk ? 'Email керівника (опційно)' : 'Email голови (опційно)'}</label>
           <input
             type="email"
             value={form.chairmanEmail}
@@ -130,7 +183,7 @@ export default function TenantsPage() {
           />
         </div>
         <div>
-          <label>Пароль голови</label>
+          <label>{isUk ? 'Пароль керівника' : 'Пароль голови'}</label>
           <input
             type="password"
             value={form.chairmanPassword}
@@ -143,13 +196,36 @@ export default function TenantsPage() {
 
       <section className="card">
         {rows.length === 0 ? (
-          <EmptyState title="Немає tenants" description="Створіть перше ОСББ." />
+          <EmptyState
+            title="Немає організацій"
+            description="Створіть перше ОСББ або управляючу компанію."
+          />
         ) : (
           <DataTable
             rows={rows}
             rowKey={(t) => t.id}
             columns={[
               { key: 'name', header: 'Назва', render: (t) => t.name },
+              {
+                key: 'orgType',
+                header: 'Тип',
+                render: (t) => (
+                  <select
+                    value={t.orgType ?? 'osbb'}
+                    onChange={(e) =>
+                      void setOrgType(
+                        t,
+                        e.target.value as 'osbb' | 'management_company',
+                      )
+                    }
+                    aria-label={`Тип організації ${t.name}`}
+                    style={{ maxWidth: '12rem' }}
+                  >
+                    <option value="osbb">ОСББ</option>
+                    <option value="management_company">УК</option>
+                  </select>
+                ),
+              },
               { key: 'slug', header: 'Slug', render: (t) => t.slug },
               {
                 key: 'counts',
@@ -196,14 +272,14 @@ export default function TenantsPage() {
         )}
         {activeTenant && (
           <p style={{ marginTop: '0.75rem', fontSize: '0.85rem', color: 'var(--muted)' }}>
-            Активний tenant: <code>{activeTenant}</code>{' '}
+            Активна організація: <code>{activeTenant}</code>{' '}
             <button
               type="button"
               className="btn btn-sm btn-ghost"
               onClick={() => {
                 setSelectedTenantId(null);
                 setActiveTenant(null);
-                setMessage('Контекст скинуто (усі tenants)');
+                setMessage('Контекст скинуто');
               }}
             >
               Скинути

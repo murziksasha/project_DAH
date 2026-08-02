@@ -15,7 +15,7 @@
 ## Структура monorepo
 
 ```
-DAH/
+project_DAH/   # legacy folder name; product: «Мій дім»
 ├── apps/
 │   ├── api/          # NestJS backend
 │   │   ├── prisma/   # schema, migrations, seed
@@ -83,7 +83,7 @@ Layouts не використовують server-side auth (middleware вимк�
 | accruals | `/api/accruals` | Нарахування, квитанції PDF, timeline |
 | payments | `/api/payments` | Платежі, FIFO, боржники, online webhook |
 | journal | `/api/journal` | Immutable ledger + reconcile |
-| documents | `/api/documents` | Публічні документи ОСМД |
+| documents | `/api/documents` | Публічні документи організації |
 | transparency | `/api/transparency` | Дашборд прозорості |
 | communications | `/api/communications` | Оголошення, заявки, опитування (вага/кворум) |
 | notifications | `/api/notifications` | Web Push підписки |

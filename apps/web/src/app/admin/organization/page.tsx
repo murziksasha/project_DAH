@@ -323,7 +323,7 @@ export default function OrganizationPage() {
   return (
     <main>
       <header style={{ marginBottom: '1.5rem' }}>
-        <h1>Організація ОСМД</h1>
+        <h1>Організація</h1>
         <p style={{ color: 'var(--muted)' }}>Користувачі та квартири (системний адміністратор)</p>
       </header>
 

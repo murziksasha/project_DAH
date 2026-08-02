@@ -33,7 +33,7 @@ export function HealthBanner() {
 
   return (
     <div className="health-banner" role="status">
-      Немає зв&apos;язку з сервером ОСМД. Перевірте Wi‑Fi, KeenDNS або що Docker/API запущено.
+      Немає зв&apos;язку з сервером «Мій дім». Перевірте Wi‑Fi, KeenDNS або що Docker/API запущено.
       <button type="button" className="btn btn-ghost btn-sm" onClick={() => ping()} style={{ marginLeft: '0.75rem' }}>
         Спробувати знову
       </button>

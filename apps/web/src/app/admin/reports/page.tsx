@@ -2,14 +2,20 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
+import {
+  enabledExportFieldKeys,
+  getExportProfile,
+  normalizeDocumentTemplatesConfig,
+  type DocumentTemplatesConfig,
+} from '@dah/shared';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { SkeletonCards } from '@/components/ui/Skeleton';
 import { StatCard } from '@/components/ui/StatCard';
 import { apiFetch, getToken } from '@/lib/api';
-import { downloadCsv } from '@/lib/csv';
 import { downloadAuthFile } from '@/lib/download';
 import { formatDateUk, formatMoney } from '@/lib/money';
+import { downloadXlsx } from '@/lib/xlsx';
 
 interface Debtor {
   apartmentId: string;
@@ -37,9 +43,14 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function pickRow(keys: string[], map: Record<string, string | number>) {
+  return keys.map((k) => map[k] ?? '');
+}
+
 export default function ReportsPage() {
   const [debtors, setDebtors] = useState<Debtor[]>([]);
   const [cashFlow, setCashFlow] = useState<CashFlowReport | null>(null);
+  const [exportConfig, setExportConfig] = useState<DocumentTemplatesConfig | null>(null);
   const [from, setFrom] = useState(monthStart());
   const [to, setTo] = useState(today());
   const [error, setError] = useState('');
@@ -62,12 +73,16 @@ export default function ReportsPage() {
       if (from) qs.set('from', from);
       if (to) qs.set('to', to);
       const q = qs.toString();
-      const [d, c] = await Promise.all([
+      const [d, c, templates] = await Promise.all([
         apiFetch<Debtor[]>('/payments/reports/debtors', { token }),
         apiFetch<CashFlowReport>(`/finance/reports/cash-flow${q ? `?${q}` : ''}`, { token }),
+        apiFetch<DocumentTemplatesConfig>('/building/document-templates', { token }).catch(
+          () => null,
+        ),
       ]);
       setDebtors(d);
       setCashFlow(c);
+      if (templates) setExportConfig(normalizeDocumentTemplatesConfig(templates));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Помилка');
     } finally {
@@ -81,34 +96,98 @@ export default function ReportsPage() {
 
   const totalDebt = debtors.reduce((s, d) => s + d.debt, 0);
 
-  function exportDebtorsCsv() {
-    const rows: Array<Array<string | number>> = [
-      ['Квартира', "Під'їзд", 'Борг', 'Рядків', 'Найстаріший термін', 'Статус'],
-      ...debtors.map((d) => [
-        d.number,
-        d.entrance,
-        d.debt,
-        d.lines,
-        d.oldestDue ? formatDateUk(d.oldestDue) : '',
-        d.isOverdue ? 'Прострочено' : 'До сплати',
-      ]),
-    ];
-    downloadCsv(`borzhnyky-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+  async function exportDebtorsXlsx() {
+    const stamp = new Date().toISOString().slice(0, 10);
+    const profile = exportConfig
+      ? getExportProfile(exportConfig, 'debtors')
+      : undefined;
+    const keys = enabledExportFieldKeys(profile);
+    const activeKeys =
+      keys.length > 0
+        ? keys
+        : ['number', 'entrance', 'debt', 'lines', 'oldestDue', 'isOverdue'];
+    const labelByKey: Record<string, string> = Object.fromEntries(
+      (profile?.fields ?? []).map((f) => [f.key, f.label]),
+    );
+    const defaults: Record<string, string> = {
+      number: 'Квартира',
+      entrance: "Під'їзд",
+      debt: 'Борг',
+      lines: 'Рядків',
+      oldestDue: 'Найстаріший термін',
+      isOverdue: 'Статус',
+    };
+    await downloadXlsx(`borzhnyky-${stamp}.xlsx`, [
+      {
+        name: 'Боржники',
+        rows: [
+          activeKeys.map((k) => labelByKey[k] ?? defaults[k] ?? k),
+          ...debtors.map((d) =>
+            pickRow(activeKeys, {
+              number: d.number,
+              entrance: d.entrance,
+              debt: d.debt,
+              lines: d.lines,
+              oldestDue: d.oldestDue ? formatDateUk(d.oldestDue) : '',
+              isOverdue: d.isOverdue ? 'Прострочено' : 'До сплати',
+            }),
+          ),
+        ],
+      },
+    ]);
   }
 
-  function exportCashFlowCsv() {
+  async function exportCashFlowXlsx() {
     if (!cashFlow) return;
-    const rows: Array<Array<string | number>> = [
-      ['Показник', 'Сума'],
-      ['Надходження', cashFlow.totalIncome],
-      ['Витрати', cashFlow.totalExpenses],
-      ['Чистий рух', cashFlow.netFlow],
-      ['Дебіторка', totalDebt],
+    const stamp = new Date().toISOString().slice(0, 10);
+    const profile = exportConfig
+      ? getExportProfile(exportConfig, 'cash_flow')
+      : undefined;
+    const keys = new Set(
+      enabledExportFieldKeys(profile).length
+        ? enabledExportFieldKeys(profile)
+        : ['metric', 'amount', 'fundName', 'fundBalance', 'fundIncome', 'fundExpenses'],
+    );
+
+    const summaryRows: Array<Array<string | number>> = [
+      ['Період від', from],
+      ['Період до', to],
       [],
-      ['Фонд', 'Баланс', 'Надходження', 'Витрати'],
-      ...cashFlow.fundBalances.map((f) => [f.fundName, f.balance, f.income, f.expenses]),
     ];
-    downloadCsv(`rukh-koshtiv-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+    if (keys.has('metric') || keys.has('amount')) {
+      summaryRows.push(['Показник', 'Сума']);
+      summaryRows.push(['Надходження', cashFlow.totalIncome]);
+      summaryRows.push(['Витрати', cashFlow.totalExpenses]);
+      summaryRows.push(['Чистий рух', cashFlow.netFlow]);
+      summaryRows.push(['Дебіторка', totalDebt]);
+    }
+
+    const fundHeader = [
+      keys.has('fundName') ? 'Фонд' : null,
+      keys.has('fundBalance') ? 'Баланс' : null,
+      keys.has('fundIncome') ? 'Надходження' : null,
+      keys.has('fundExpenses') ? 'Витрати' : null,
+    ].filter(Boolean) as string[];
+
+    const fundRows =
+      fundHeader.length > 0
+        ? [
+            fundHeader,
+            ...cashFlow.fundBalances.map((f) =>
+              [
+                keys.has('fundName') ? f.fundName : null,
+                keys.has('fundBalance') ? f.balance : null,
+                keys.has('fundIncome') ? f.income : null,
+                keys.has('fundExpenses') ? f.expenses : null,
+              ].filter((v) => v !== null) as Array<string | number>,
+            ),
+          ]
+        : [];
+
+    await downloadXlsx(`rukh-koshtiv-${stamp}.xlsx`, [
+      { name: 'Підсумок', rows: summaryRows },
+      ...(fundRows.length ? [{ name: 'Фонди', rows: fundRows }] : []),
+    ]);
   }
 
   async function downloadBoardPdf() {
@@ -142,7 +221,7 @@ export default function ReportsPage() {
         `/finance/reports/export-pack.zip${q ? `?${q}` : ''}`,
         'dah-export.zip',
       );
-      setMessage('Пакет експорту завантажено (Excel CSV + 1C)');
+      setMessage('Пакет експорту завантажено (Excel .xlsx)');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Помилка export pack');
     } finally {
@@ -180,9 +259,12 @@ export default function ReportsPage() {
     <main>
       <PageHeader
         title="Звіти"
-        description="Рух коштів, боржники, PDF для зборів"
+        description="Рух коштів, боржники, PDF для зборів · колонки — у конструкторі документів"
         actions={
           <>
+            <Link href="/admin/document-templates" className="btn btn-sm btn-ghost">
+              Конструктор
+            </Link>
             <button
               type="button"
               className="btn btn-sm"
@@ -191,16 +273,21 @@ export default function ReportsPage() {
             >
               {busyPack ? 'ZIP…' : 'Export pack (Excel)'}
             </button>
-            <button type="button" className="btn btn-sm btn-ghost" onClick={exportCashFlowCsv} disabled={!cashFlow}>
-              CSV: рух
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              onClick={() => void exportCashFlowXlsx()}
+              disabled={!cashFlow}
+            >
+              Excel: рух
             </button>
             <button
               type="button"
               className="btn btn-sm btn-ghost"
-              onClick={exportDebtorsCsv}
+              onClick={() => void exportDebtorsXlsx()}
               disabled={debtors.length === 0}
             >
-              CSV: боржники
+              Excel: боржники
             </button>
             <button type="button" className="btn btn-sm" onClick={downloadBoardPdf} disabled={busyPdf}>
               {busyPdf ? 'PDF…' : 'PDF для зборів'}

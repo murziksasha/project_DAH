@@ -9,7 +9,7 @@ import {
 describe('bank-statement-import', () => {
   describe('extractApartmentNumber', () => {
     it('parses Ukrainian purpose lines', () => {
-      expect(extractApartmentNumber('Оплата внесків ОСМД, кв. 101')).toBe('101');
+      expect(extractApartmentNumber('Оплата внесків, кв. 101')).toBe('101');
       expect(extractApartmentNumber('квартплата квартира 12А')).toBe('12а');
       expect(extractApartmentNumber('кв 7')).toBe('7');
     });

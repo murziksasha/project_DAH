@@ -213,7 +213,7 @@ export class IdentityService {
 label{display:block;margin:.5rem 0 .2rem}input,button{width:100%;padding:.5rem;margin-bottom:.75rem}
 .card{border:1px solid #ddd;border-radius:8px;padding:1rem}</style></head><body>
 <div class="card"><h1>Mock Diia / BankID</h1>
-<p>Локальний тестовий IdP. Вкажіть email або phone існуючого користувача DAH.</p>
+<p>Локальний тестовий IdP. Вкажіть email або phone існуючого користувача «Мій дім».</p>
 <form method="GET" action="${esc(query.redirect_uri)}">
 <input type="hidden" name="identity" value="callback"/>
 <input type="hidden" name="state" value="${esc(query.state)}"/>

@@ -209,7 +209,7 @@ export class AuthService {
     const otpauthUrl = buildOtpAuthUrl({
       secret,
       email: user.email,
-      issuer: 'DAH OSMD',
+      issuer: 'Мій дім',
     });
 
     return {
@@ -302,8 +302,18 @@ export class AuthService {
         role: true,
         status: true,
         apartmentId: true,
+        tenantId: true,
         emailNotifyEnabled: true,
         totpEnabled: true,
+        tenant: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            orgType: true,
+            isActive: true,
+          },
+        },
       },
     });
     if (!user) throw new NotFoundException('Користувача не знайдено');
@@ -543,8 +553,15 @@ export class AuthService {
       data: { refreshToken: await bcrypt.hash(tokens.refreshToken, 10) },
     });
 
+    const tenant = user.tenantId
+      ? await this.prisma.tenant.findUnique({
+          where: { id: user.tenantId },
+          select: { id: true, name: true, slug: true, orgType: true },
+        })
+      : null;
+
     return {
-      user: this.publicUser(user),
+      user: this.publicUser(user, tenant),
       ...tokens,
     };
   }
@@ -720,23 +737,33 @@ export class AuthService {
       payload: { role: user.role, tenantId },
     });
 
+    const tenant = tenantId
+      ? await this.prisma.tenant.findUnique({
+          where: { id: tenantId },
+          select: { id: true, name: true, slug: true, orgType: true },
+        })
+      : null;
+
     return {
       requires2fa: false as const,
-      user: this.publicUser({ ...user, tenantId }),
+      user: this.publicUser({ ...user, tenantId }, tenant),
       ...tokens,
     };
   }
 
-  private publicUser(user: {
-    id: string;
-    email: string;
-    firstName: string;
-    lastName: string;
-    role: UserRole;
-    status: UserStatus;
-    apartmentId: string | null;
-    tenantId?: string | null;
-  }) {
+  private publicUser(
+    user: {
+      id: string;
+      email: string;
+      firstName: string;
+      lastName: string;
+      role: UserRole;
+      status: UserStatus;
+      apartmentId: string | null;
+      tenantId?: string | null;
+    },
+    tenant?: { id: string; name: string; slug: string; orgType: string } | null,
+  ) {
     return {
       id: user.id,
       email: user.email,
@@ -746,6 +773,14 @@ export class AuthService {
       status: user.status,
       apartmentId: user.apartmentId,
       tenantId: user.tenantId ?? null,
+      tenant: tenant
+        ? {
+            id: tenant.id,
+            name: tenant.name,
+            slug: tenant.slug,
+            orgType: tenant.orgType,
+          }
+        : null,
     };
   }
 

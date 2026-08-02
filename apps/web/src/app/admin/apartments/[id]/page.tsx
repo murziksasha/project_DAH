@@ -95,7 +95,7 @@ export default function ApartmentAccountPage() {
               const token = getToken();
               if (!token) return;
               const res = await fetch(
-                `${getApiBaseUrl()}/accruals/apartments/${id}/statement.csv`,
+                `${getApiBaseUrl()}/accruals/apartments/${id}/statement.xlsx`,
                 { headers: { Authorization: `Bearer ${token}` } },
               );
               if (!res.ok) {
@@ -106,12 +106,12 @@ export default function ApartmentAccountPage() {
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');
               a.href = url;
-              a.download = `account-kv-${account.apartment.number}.csv`;
+              a.download = `account-kv-${account.apartment.number}.xlsx`;
               a.click();
               URL.revokeObjectURL(url);
             }}
           >
-            Експорт виписки CSV
+            Експорт виписки Excel
           </button>
         </div>
       )}

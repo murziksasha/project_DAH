@@ -99,7 +99,7 @@ export default function SettingsPage() {
             }
           : s,
       );
-      setMessage('Дані ОСМД збережено');
+      setMessage('Дані організації збережено');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Помилка');
     } finally {
@@ -194,7 +194,7 @@ export default function SettingsPage() {
         className="card"
         style={{ display: 'grid', gap: '0.75rem', marginBottom: '1rem' }}
       >
-        <h2 style={{ fontSize: '1rem' }}>Профіль ОСМД</h2>
+        <h2 style={{ fontSize: '1rem' }}>Профіль організації</h2>
         <div>
           <label htmlFor="bname">Назва</label>
           <input
@@ -254,6 +254,17 @@ export default function SettingsPage() {
             }}
           />
         )}
+      </section>
+
+      <section className="card" style={{ marginBottom: '1rem' }}>
+        <h2 style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>Документи та звіти</h2>
+        <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+          Конструктор квитанцій, PDF для зборів і колонок Excel — які поля бачать мешканці та
+          які дані потрапляють у вигрузки.
+        </p>
+        <a className="btn btn-sm" href="/admin/document-templates">
+          Відкрити конструктор документів
+        </a>
       </section>
 
       <section className="card" style={{ marginBottom: '1rem' }}>

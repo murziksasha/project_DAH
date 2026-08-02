@@ -10,6 +10,7 @@ import { apiFetch, getToken } from '@/lib/api';
 import { getStoredUser } from '@/lib/auth';
 import { formatDateUk, formatMoney } from '@/lib/money';
 import { getQuickActions } from '@/lib/nav-config';
+import { labelsForOrg } from '@/lib/org-labels';
 import { useDebtorsQuery, useOpsSummaryQuery } from '@/lib/queries';
 
 interface CashFlowReport {
@@ -121,10 +122,14 @@ export default function AdminDashboard() {
     report && report.totalIncome + totalDebt > 0
       ? Math.round((report.totalIncome / (report.totalIncome + totalDebt)) * 100)
       : null;
+  const orgLabels = labelsForOrg(getStoredUser()?.tenant?.orgType);
 
   return (
     <main>
-      <PageHeader title="Кабінет правління" description="Фінансовий стан ОСМД за період" />
+      <PageHeader
+        title={orgLabels.boardCabinet}
+        description={`Фінансовий стан ${orgLabels.orgNoun} за період`}
+      />
 
       {quickActions.length > 0 && (
         <div className="quick-actions">

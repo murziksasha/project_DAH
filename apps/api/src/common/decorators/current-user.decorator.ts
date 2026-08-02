@@ -6,7 +6,7 @@ export interface AuthUser {
   role: string;
   apartmentId?: string | null;
   apartmentIds?: string[];
-  /** ОСББ tenant; null for platform super_admin */
+  /** Organization tenant; null for platform super_admin */
   tenantId?: string | null;
 }
 

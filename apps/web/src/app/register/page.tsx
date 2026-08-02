@@ -89,7 +89,7 @@ export default function RegisterPage() {
       {registrationClosed && !success ? (
         <div className="card">
           <p style={{ marginBottom: '0.75rem' }}>
-            Самостійна реєстрація зараз вимкнена. Зверніться до голови правління або бухгалтера ОСМД.
+            Самостійна реєстрація зараз вимкнена. Зверніться до керівництва або бухгалтера вашої організації.
           </p>
           <Link href="/login" className="btn btn-sm">
             На сторінку входу

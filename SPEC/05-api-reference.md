@@ -4,7 +4,23 @@
 
 **Auth:** `Authorization: Bearer <accessToken>`
 
-**Swagger:** `/api/docs` (інтерактивна документація)
+**Swagger:** `/api/docs` — **Мій дім API**
+
+**Tenancy headers:** super_admin може передати `X-Tenant-Id` для контексту організації.
+
+---
+
+## Tenants (super_admin)
+
+| Method | Path | Опис |
+|--------|------|------|
+| GET | `/tenants` | Список організацій (`orgType`, counts) |
+| GET | `/tenants/:id` | Деталі + buildings |
+| POST | `/tenants` | Створити: `name`, `slug`, **`orgType`** (`osbb` \| `management_company`), optional chairman email/password |
+| PATCH | `/tenants/:id` | `name`, `isActive`, **`orgType`** |
+
+Login / refresh: `user.tenant = { id, name, slug, orgType }`.  
+`GET /auth/me` також повертає `tenant`.
 
 ---
 
@@ -13,7 +29,7 @@
 | Method | Path | Auth | Опис |
 |--------|------|------|------|
 | GET | `/setup/status` | super_admin | Стан майстра + resume |
-| POST | `/setup/building` | super_admin | Створити/оновити ОСМД (upsert) |
+| POST | `/setup/building` | super_admin | Створити/оновити будинок організації (upsert) |
 | POST | `/setup/bank` | super_admin | Банк + фонди (ідемпотентно) |
 | POST | `/setup/apartments` | super_admin | Масове додавання квартир |
 | POST | `/setup/users` | super_admin | Ключові ролі (ідемпотентно) |
@@ -66,7 +82,20 @@
 
 | Method | Path | Auth | Опис |
 |--------|------|------|------|
-| GET | `/health` | — | `{ status: "ok" }` |
+| GET | `/health` | — | `{ status: "ok" }` (+ db/redis/storage/backup markers) |
+
+### Backups (копії даних)
+
+| Method | Path | Auth | Опис |
+|--------|------|------|------|
+| GET | `/backups/status` | admin* | Поточний ISO-тиждень, `weeklyExists`, `lastBackupAt` |
+| GET | `/backups` | admin* | Список weekly/manual копій |
+| POST | `/backups` | write** | Ручна копія PostgreSQL (`manual/…`) |
+| POST | `/backups/weekly` | write** | Ensure тижнева; **skip** якщо вже є |
+
+\* `super_admin`, `chairman`, `board`, `accountant`, `auditor`  
+\*\* без `auditor` і без `resident`  
+Файли: `BACKUP_DIR` (`weekly/{YYYY-Www}`, `manual/{stamp}`).
 
 ## Auth
 
@@ -113,6 +142,8 @@ Query для `GET /users`: `?search=&page=1&limit=20`
 | DELETE | `/building/apartments/:id` | super_admin, chairman | Видалити (без пов'язаних даних) |
 | GET | `/building/settings` | JWT | Налаштування |
 | PATCH | `/building/settings` | chairman, board | `showDebtorsToResidents` |
+| GET | `/building/document-templates` | JWT | Конструктор: PDF-шаблони + Excel-профілі |
+| PATCH | `/building/document-templates` | chairman, board, accountant | Зберегти `{ forms, exports }` у `Building.settings.documentTemplates` |
 
 ## Finance
 
@@ -129,6 +160,8 @@ Query для `GET /users`: `?search=&page=1&limit=20`
 | PATCH | `/finance/expenses/:id/void` | chairman, accountant | Анулювати |
 | GET | `/finance/reports/cash-flow` | JWT | Рух коштів |
 | GET | `/finance/reports/expenses-summary` | JWT | Витрати по категоріях |
+| GET | `/finance/reports/board.pdf` | JWT | PDF для зборів |
+| GET | `/finance/reports/export-pack.zip` | JWT | ZIP з Excel (`.xlsx`) звітами |
 
 `write` = chairman, accountant, board
 
@@ -142,6 +175,7 @@ Query для `GET /users`: `?search=&page=1&limit=20`
 | GET | `/accruals/:id` | JWT | Деталі |
 | GET | `/accruals/my-account` | JWT | Особовий рахунок (resident) |
 | GET | `/accruals/apartments/:id/account` | admin | Рахунок квартири |
+| GET | `/accruals/apartments/:id/statement.xlsx` | admin / own resident | Excel-виписка |
 | POST | `/accruals/preview` | write | Попередній розрахунок сум |
 | POST | `/accruals` | write | Створити нарахування |
 | GET | `/accruals/lines/:lineId/receipt` | JWT | PDF-квитанція |

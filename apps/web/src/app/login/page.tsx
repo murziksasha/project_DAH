@@ -201,7 +201,7 @@ export default function LoginPage() {
   return (
     <main style={{ maxWidth: 420, margin: '0 auto', padding: '2rem 1rem' }}>
       <h1 style={{ marginBottom: '0.5rem' }}>Вхід</h1>
-      <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>DAH — кабінет ОСМД</p>
+      <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>Мій дім — кабінет ОСББ та УК</p>
 
       {mode !== '2fa' && smsAvailable && (
         <div style={{ display: 'flex', gap: 8, marginBottom: '1rem' }}>

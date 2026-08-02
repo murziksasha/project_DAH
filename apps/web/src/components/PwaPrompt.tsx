@@ -115,7 +115,7 @@ export function PwaPrompt() {
     >
       {showInstall && (
         <div className="card" style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={{ flex: 1, fontSize: '0.9rem' }}>Встановити DAH на екран телефону?</span>
+          <span style={{ flex: 1, fontSize: '0.9rem' }}>Встановити «Мій дім» на екран телефону?</span>
           <button type="button" onClick={handleInstall} style={{ fontSize: '0.85rem' }}>
             Встановити
           </button>

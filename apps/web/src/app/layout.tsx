@@ -5,13 +5,13 @@ import { QueryProvider } from '@/components/QueryProvider';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'DAH — ОСМД у смартфоні',
-  description: 'Управління ОСМД: фінанси, внески, прозорість для мешканців',
+  title: 'Мій дім — ОСББ та УК у смартфоні',
+  description: 'Управління ОСББ і управляючими компаніями: фінанси, внески, прозорість для мешканців',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'DAH',
+    title: 'Мій дім',
   },
 };
 

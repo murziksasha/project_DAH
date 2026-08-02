@@ -5,11 +5,11 @@ export default function HomePage() {
     <main style={{ maxWidth: 800, margin: '0 auto', padding: '2rem 1rem' }}>
       <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
         <h1 style={{ fontSize: '2.25rem', marginBottom: '0.5rem', letterSpacing: '-0.03em' }}>
-          DAH
+          Мій дім
         </h1>
         <p style={{ color: 'var(--muted)', fontSize: '1.05rem', maxWidth: 480, margin: '0 auto' }}>
-          Self-hosted кабінет ОСМД: фінанси, внески, прозорість і комунікації — на вашому ноутбуці
-          або сервері (KeenDNS / LAN).
+          Self-hosted кабінет для ОСББ і управляючих компаній (УК): фінанси, внески, прозорість і
+          комунікації — на вашому сервері або ноутбуці (KeenDNS / LAN).
         </p>
       </div>
 
@@ -17,19 +17,19 @@ export default function HomePage() {
         <Link href="/login" className="card" style={{ display: 'block', color: 'inherit' }}>
           <h2 style={{ marginBottom: '0.5rem' }}>Увійти</h2>
           <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
-            Правління, бухгалтер, ревізія або мешканець
+            Керівництво, бухгалтер, контроль або мешканець
           </p>
         </Link>
         <Link href="/register" className="card" style={{ display: 'block', color: 'inherit' }}>
           <h2 style={{ marginBottom: '0.5rem' }}>Реєстрація</h2>
           <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
-            Мешканець: квартира + підтвердження правлінням
+            Мешканець: квартира + підтвердження організацією
           </p>
         </Link>
       </div>
 
       <div className="card" style={{ marginBottom: '1rem' }}>
-        <h3 style={{ marginBottom: '1rem' }}>Для правління</h3>
+        <h3 style={{ marginBottom: '1rem' }}>Для ОСББ і УК</h3>
         <ul
           style={{
             color: 'var(--muted)',
@@ -40,9 +40,9 @@ export default function HomePage() {
           }}
         >
           <li>Витрати, постачальники, фонди та IBAN</li>
-          <li>Нарахування (майстер), FIFO-платежі, імпорт виписки CSV</li>
-          <li>Звіти, PDF для зборів, email боржникам</li>
-          <li>2FA, аудит, backup, ops-панель</li>
+          <li>Нарахування, FIFO-платежі, імпорт виписки (CSV)</li>
+          <li>Звіти Excel/PDF, email боржникам</li>
+          <li>Кілька будинків (портфель УК), 2FA, backup, ops</li>
         </ul>
       </div>
 

@@ -73,7 +73,7 @@ export class MailService {
           secure: this.config.get('SMTP_SECURE') === 'true',
           user: this.config.get('SMTP_USER') || undefined,
           pass: this.config.get('SMTP_PASS') || undefined,
-          from: this.config.get('SMTP_FROM') ?? 'DAH <noreply@osbb.local>',
+          from: this.config.get('SMTP_FROM') ?? 'Мій дім <noreply@miydim.local>',
         },
         {
           to: opts.to,

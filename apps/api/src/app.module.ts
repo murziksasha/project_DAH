@@ -25,6 +25,7 @@ import { MetersModule } from './modules/meters/meters.module';
 import { SmsModule } from './modules/sms/sms.module';
 import { IdentityModule } from './modules/identity/identity.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
+import { BackupsModule } from './modules/backups/backups.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { TenantsModule } from './modules/tenants/tenants.module';
     MailModule,
     BootstrapModule,
     AuditModule,
+    BackupsModule,
     HealthModule,
     AuthModule,
     AccrualsModule,

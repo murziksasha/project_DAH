@@ -82,7 +82,7 @@ export class AccrualsController {
 
   @UseGuards(RolesGuard)
   @Roles(...ADMIN_ROLES, UserRole.resident)
-  @Get('apartments/:apartmentId/statement.csv')
+  @Get('apartments/:apartmentId/statement.xlsx')
   async apartmentStatement(
     @Param('apartmentId') apartmentId: string,
     @CurrentUser() user: AuthUser,
@@ -99,10 +99,13 @@ export class AccrualsController {
         return;
       }
     }
-    const { csv, filename } = await this.accruals.exportApartmentStatementCsv(apartmentId);
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    const { buffer, filename } = await this.accruals.exportApartmentStatementXlsx(apartmentId);
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.send(csv);
+    res.send(buffer);
   }
 
   @UseGuards(RolesGuard)

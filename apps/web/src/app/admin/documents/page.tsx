@@ -116,7 +116,7 @@ export default function DocumentsPage() {
   return (
     <main>
       <PageHeader
-        title="Документи ОСМД"
+        title="Документи організації"
         description="Публічні для мешканців і внутрішні для правління"
       />
 
