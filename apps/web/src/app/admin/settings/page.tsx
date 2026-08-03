@@ -17,6 +17,7 @@ interface Settings {
   defaultAccrualDueDays: number;
   reminderDaysBeforeDue?: number;
   locale: 'uk' | 'ru';
+  slaHoursByCategory?: Record<string, number>;
 }
 
 export default function SettingsPage() {
@@ -298,6 +299,60 @@ export default function SettingsPage() {
           onToggle={() => patch({ registrationEnabled: !settings.registrationEnabled })}
           disabled={saving}
         />
+      </section>
+
+      <section className="card" style={{ marginBottom: '1rem' }}>
+        <h2 style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>SLA заявок (години)</h2>
+        <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+          Дедлайн заявки = години × пріоритет (urgent скорочує). Зберігається в Building.settings.
+        </p>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+            gap: '0.75rem',
+          }}
+        >
+          {(
+            [
+              ['sanitary', 'Сантехніка', 24],
+              ['electric', 'Електрика', 24],
+              ['cleaning', 'Прибирання', 72],
+              ['elevator', 'Ліфт', 4],
+              ['heating', 'Опалення', 12],
+              ['other', 'Інше', 48],
+              ['default', 'За замовч.', 48],
+            ] as const
+          ).map(([key, label, def]) => (
+            <div key={key}>
+              <label htmlFor={`sla-${key}`}>{label}</label>
+              <input
+                id={`sla-${key}`}
+                type="number"
+                min={1}
+                max={720}
+                value={settings.slaHoursByCategory?.[key] ?? def}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    slaHoursByCategory: {
+                      ...(settings.slaHoursByCategory ?? {}),
+                      [key]: Number(e.target.value),
+                    },
+                  })
+                }
+                onBlur={() =>
+                  patch({
+                    slaHoursByCategory: {
+                      ...(settings.slaHoursByCategory ?? {}),
+                      [key]: settings.slaHoursByCategory?.[key] ?? def,
+                    },
+                  })
+                }
+              />
+            </div>
+          ))}
+        </div>
       </section>
 
       <section className="card">

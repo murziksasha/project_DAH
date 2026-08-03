@@ -7,6 +7,8 @@ const ROLE_KEYS: Record<string, I18nKey> = {
   chairman: 'roleChairman',
   accountant: 'roleAccountant',
   board: 'roleBoard',
+  dispatcher: 'roleDispatcher',
+  crew: 'roleCrew',
   auditor: 'roleAuditor',
   resident: 'roleResident',
 };
@@ -47,7 +49,14 @@ export const STATUS_COLORS: Record<string, string> = {
   blocked: 'var(--danger, #c0392b)',
 };
 
-export const CREATE_ROLES = ['chairman', 'accountant', 'auditor', 'board'] as const;
+export const CREATE_ROLES = [
+  'chairman',
+  'accountant',
+  'auditor',
+  'board',
+  'dispatcher',
+  'crew',
+] as const;
 
 export const EDIT_ROLES = [...CREATE_ROLES, 'resident'] as const;
 

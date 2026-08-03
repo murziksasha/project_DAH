@@ -45,21 +45,53 @@
 | Збереження в `Building.settings.documentTemplates` | ✅ |
 | UI `/admin/document-templates` | ✅ |
 
+## v1.9 — bank adapters + dispatcher SLA — **COMPLETE**
+
+| Тема | Статус |
+|------|--------|
+| Універсальний імпорт виписки (будь-який банк) | ✅ adapters + MT940 + UI format |
+| Роль `dispatcher` + `MANAGE_REQUESTS` | ✅ |
+| Request priority + auto SLA dueAt + queue API/UI | ✅ |
+| Фокус продукту: self-hosted one OSBB | ✅ (SaaS deprioritized) |
+
+## v1.10 — matching, crew, pay, meetings, messenger — **COMPLETE**
+
+| Тема | Статус |
+|------|--------|
+| Matching IBAN / ПІБ | ✅ Resident.iban + multi-strategy match |
+| SLA hours in Building.settings | ✅ |
+| Роль `crew` (бригада) | ✅ |
+| Production online pay + OnlinePaymentOrder | ✅ |
+| Збори + КЕП (mock + skeleton) | ✅ |
+| Production КЕП / Дія.Підпис (SignSession, webhook, CAdES) | ✅ 1.10.1 |
+| Месенджер | ✅ |
+
+## Product decisions (2026-08)
+
+| Рішення | |
+|---------|--|
+| Режим | Self-hosted (один ОСББ/інстанс у фокусі) |
+| Збори + КЕП | Відкладено (polls лишаються) |
+| Імпорт банку | Заготовка під **будь-який** банк (профілі + auto) |
+| УК vs messenger | **Диспетчер/SLA** > соц-месенджер |
+
 ## Beyond plan (future product, not blocking)
 
 | Тема | Примітка |
 |------|----------|
 | Production Diia/BankID | Потрібна реєстрація клієнта в IdP |
-| Subdomain per tenant | `slug.domain` routing + nginx |
-| SaaS billing | Плани/оплата за tenant |
+| Subdomain per tenant / SaaS billing | Низький пріоритет (self-hosted first) |
 | Email unique per tenant | Зараз global unique email |
 | WayForPay multi-product arrays | Розширення під кошик |
-| Окремі ролі диспетчер/бригада (УК) | Можна поверх `board` |
+| Messenger / збори + КЕП | Після dispatcher polish |
+| Бригада (crew) role | Можна поверх dispatcher |
 | Візуальний drag-and-drop WYSIWYG для PDF | Зараз блоковий конструктор + preview |
+| Bank matching by IBAN/resident profile | Наступний крок після adapters |
 
 ## Версіонування
 
 - `1.5.x` — patch на multi-tenant + plan completion
-- `2.0` — breaking: subdomain SaaS, billing, email@@tenant
+- `1.9` — bank adapters + dispatcher SLA
+- `2.0` — breaking: subdomain SaaS, billing, email@@tenant (лише якщо знадобиться)
 
 При зміні API/схеми — оновлювати `SPEC/`.

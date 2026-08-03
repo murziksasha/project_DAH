@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -22,6 +23,16 @@ import { UpdateRequestDto } from './dto/update-request.dto';
 import { VotePollDto } from './dto/vote-poll.dto';
 
 const WRITE_ROLES = [UserRole.chairman, UserRole.accountant, UserRole.board];
+const REQUEST_MANAGE_ROLES = [
+  UserRole.chairman,
+  UserRole.board,
+  UserRole.dispatcher,
+  UserRole.accountant,
+];
+const REQUEST_WORK_ROLES = [
+  ...REQUEST_MANAGE_ROLES,
+  UserRole.crew,
+];
 
 @ApiTags('communications')
 @ApiBearerAuth()
@@ -57,20 +68,41 @@ export class CommunicationsController {
     return this.communications.listRequests(user);
   }
 
+  /** Dispatcher / board / crew SLA queue (open tickets + filters). */
+  @UseGuards(RolesGuard)
+  @Roles(...REQUEST_WORK_ROLES)
+  @Get('requests/queue')
+  listRequestQueue(
+    @CurrentUser() user: AuthUser,
+    @Query('status') status?: string,
+    @Query('overdueOnly') overdueOnly?: string,
+    @Query('unassignedOnly') unassignedOnly?: string,
+    @Query('mineOnly') mineOnly?: string,
+    @Query('priority') priority?: string,
+  ) {
+    return this.communications.listRequestQueue(user, {
+      status,
+      overdueOnly: overdueOnly === '1' || overdueOnly === 'true',
+      unassignedOnly: unassignedOnly === '1' || unassignedOnly === 'true',
+      mineOnly: mineOnly === '1' || mineOnly === 'true',
+      priority,
+    });
+  }
+
   @Post('requests')
   createRequest(@Body() dto: CreateRequestDto, @CurrentUser() user: AuthUser) {
     return this.communications.createRequest(dto, user.id);
   }
 
   @UseGuards(RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @Roles(...REQUEST_WORK_ROLES)
   @Patch('requests/:id')
   updateRequest(
     @Param('id') id: string,
     @Body() dto: UpdateRequestDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.communications.updateRequest(id, dto, user.id);
+    return this.communications.updateRequest(id, dto, user.id, user.role);
   }
 
   @Get('polls')

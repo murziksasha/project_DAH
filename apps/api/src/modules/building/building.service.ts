@@ -182,6 +182,7 @@ export class BuildingService {
         json.defaultAccrualDueDays ?? DEFAULT_BUILDING_SETTINGS.defaultAccrualDueDays,
       reminderDaysBeforeDue: json.reminderDaysBeforeDue ?? 3,
       locale: json.locale ?? DEFAULT_BUILDING_SETTINGS.locale,
+      slaHoursByCategory: json.slaHoursByCategory ?? {},
       features: json.features ?? {},
     };
   }
@@ -204,6 +205,14 @@ export class BuildingService {
         ? { reminderDaysBeforeDue: dto.reminderDaysBeforeDue }
         : {}),
       ...(dto.locale !== undefined ? { locale: dto.locale } : {}),
+      ...(dto.slaHoursByCategory !== undefined
+        ? {
+            slaHoursByCategory: {
+              ...(parseBuildingSettings(building.settings).slaHoursByCategory ?? {}),
+              ...dto.slaHoursByCategory,
+            },
+          }
+        : {}),
     };
 
     const updated = await this.prisma.building.update({
@@ -229,7 +238,7 @@ export class BuildingService {
       action: 'building.settings_updated',
       entityType: 'Building',
       entityId: building.id,
-      payload: { changes: { ...dto } },
+      payload: { changes: JSON.parse(JSON.stringify(dto)) } as Prisma.InputJsonValue,
     });
 
     const json = parseBuildingSettings(updated.settings);
@@ -244,6 +253,7 @@ export class BuildingService {
         json.defaultAccrualDueDays ?? DEFAULT_BUILDING_SETTINGS.defaultAccrualDueDays,
       reminderDaysBeforeDue: json.reminderDaysBeforeDue ?? 3,
       locale: json.locale ?? DEFAULT_BUILDING_SETTINGS.locale,
+      slaHoursByCategory: json.slaHoursByCategory ?? {},
     };
   }
 
@@ -510,6 +520,7 @@ export class BuildingService {
         phone: dto.phone,
         email: dto.email,
         isOwner: dto.isOwner ?? true,
+        iban: dto.iban?.replace(/\s+/g, '').toUpperCase() || null,
       },
     });
 
@@ -536,6 +547,9 @@ export class BuildingService {
         ...(dto.phone !== undefined ? { phone: dto.phone } : {}),
         ...(dto.email !== undefined ? { email: dto.email } : {}),
         ...(dto.isOwner !== undefined ? { isOwner: dto.isOwner } : {}),
+        ...(dto.iban !== undefined
+          ? { iban: dto.iban ? dto.iban.replace(/\s+/g, '').toUpperCase() : null }
+          : {}),
       },
     });
 

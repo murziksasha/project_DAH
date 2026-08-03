@@ -50,6 +50,8 @@ interface ImportPreview {
     invalid: number;
     totalAmount: number;
   };
+  format?: string;
+  detectedFormat?: string;
 }
 
 type Tab = 'manual' | 'import' | 'history';
@@ -85,6 +87,7 @@ export default function PaymentsPage() {
   const [loading, setLoading] = useState(false);
 
   const [csvText, setCsvText] = useState('');
+  const [statementFormat, setStatementFormat] = useState('auto');
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [importLoading, setImportLoading] = useState(false);
 
@@ -252,7 +255,7 @@ export default function PaymentsPage() {
       const data = await apiFetch<ImportPreview>('/payments/import/preview', {
         method: 'POST',
         token,
-        body: JSON.stringify({ csv: csvText }),
+        body: JSON.stringify({ csv: csvText, format: statementFormat }),
       });
       setImportPreview(data);
     } catch (err) {
@@ -478,11 +481,30 @@ export default function PaymentsPage() {
           </div>
 
           <div>
+            <label htmlFor="statement-format">{t('paymentsStatementFormat')}</label>
+            <select
+              id="statement-format"
+              value={statementFormat}
+              onChange={(e) => {
+                setStatementFormat(e.target.value);
+                setImportPreview(null);
+              }}
+            >
+              <option value="auto">{t('paymentsFormatAuto')}</option>
+              <option value="generic_csv">{t('paymentsFormatGeneric')}</option>
+              <option value="privatbank">{t('paymentsFormatPrivat')}</option>
+              <option value="monobank">{t('paymentsFormatMono')}</option>
+              <option value="oschadbank">{t('paymentsFormatOschad')}</option>
+              <option value="mt940">{t('paymentsFormatMt940')}</option>
+            </select>
+          </div>
+
+          <div>
             <label htmlFor="csv-file">{t('paymentsCsvFile')}</label>
             <input
               id="csv-file"
               type="file"
-              accept=".csv,text/csv,text/plain"
+              accept=".csv,.txt,text/csv,text/plain"
               onChange={(e) => onFile(e.target.files?.[0] ?? null)}
             />
           </div>
@@ -520,6 +542,13 @@ export default function PaymentsPage() {
 
           {importPreview && (
             <>
+              {(importPreview.format || importPreview.detectedFormat) && (
+                <p style={{ color: 'var(--muted)', fontSize: '0.9rem', margin: 0 }}>
+                  {t('paymentsDetectedFormat', {
+                    format: importPreview.format ?? importPreview.detectedFormat ?? '',
+                  })}
+                </p>
+              )}
               <div className="grid-2">
                 <div className="card" style={{ boxShadow: 'none', background: 'var(--surface-2)' }}>
                   <div className="stat-label">{t('paymentsMatched')}</div>

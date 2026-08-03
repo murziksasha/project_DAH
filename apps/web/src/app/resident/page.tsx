@@ -280,33 +280,20 @@ export default function ResidentPage() {
     setPayBusy(true);
     setError('');
     try {
-      // Sandbox: immediately post payment + FIFO when ONLINE_PAYMENTS_SANDBOX/generic
-      try {
-        const paid = await apiFetch<{
-          ok: boolean;
-          paymentId?: string;
-          orderId?: string;
-          sandbox?: boolean;
-        }>('/payments/online/sandbox-complete', {
-          method: 'POST',
-          token,
-          body: JSON.stringify({ apartmentId, amount }),
-        });
-        setCommsMessage(
-          paid.ok
-            ? `Оплату зараховано${paid.sandbox ? ' (sandbox)' : ''}: ${paid.paymentId?.slice(-8) ?? paid.orderId}`
-            : 'Платіж не створено',
-        );
-        const refreshed = await apiFetch<Account>('/accruals/my-account', { token });
-        setAccount(refreshed);
-      } catch {
+      const status = await apiFetch<{
+        enabled: boolean;
+        sandbox: boolean;
+        productionReady?: boolean;
+      }>('/payments/online/status', { skipAuth: true });
+
+      // Production / real provider: open checkout form first
+      if (!status.sandbox) {
         const intent = await apiFetch<{
           checkoutUrl: string;
           orderId: string;
           message?: string;
           formAction?: string;
           form?: Record<string, string>;
-          provider?: string;
         }>('/payments/online/intent', {
           method: 'POST',
           token,
@@ -328,11 +315,31 @@ export default function ResidentPage() {
           f.submit();
           return;
         }
-        setCommsMessage(intent.message ?? `Створено замовлення ${intent.orderId}`);
+        setCommsMessage(intent.message ?? `Замовлення ${intent.orderId}`);
         if (intent.checkoutUrl) {
           window.open(intent.checkoutUrl, '_blank', 'noopener,noreferrer');
         }
+        return;
       }
+
+      // Sandbox / generic: immediate complete for local demos
+      const paid = await apiFetch<{
+        ok: boolean;
+        paymentId?: string;
+        orderId?: string;
+        sandbox?: boolean;
+      }>('/payments/online/sandbox-complete', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({ apartmentId, amount }),
+      });
+      setCommsMessage(
+        paid.ok
+          ? `Оплату зараховано${paid.sandbox ? ' (sandbox)' : ''}: ${paid.paymentId?.slice(-8) ?? paid.orderId}`
+          : 'Платіж не створено',
+      );
+      const refreshed = await apiFetch<Account>('/accruals/my-account', { token });
+      setAccount(refreshed);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Помилка онлайн-оплати');
     } finally {

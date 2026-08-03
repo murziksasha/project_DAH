@@ -11,11 +11,19 @@ export interface BuildingSettingsJson {
   locale?: 'uk' | 'ru';
   /** Ролі, відкладені на етапі майстра налаштування */
   deferredSetupRoles?: DeferredSetupRole[];
+  /**
+   * SLA response hours by request category (dispatcher).
+   * Keys: sanitary | electric | cleaning | elevator | heating | other | default
+   */
+  slaHoursByCategory?: Record<string, number>;
   features?: {
     polls?: boolean;
     requests?: boolean;
     webPush?: boolean;
     email?: boolean;
+    messenger?: boolean;
+    meetings?: boolean;
+    onlinePayments?: boolean;
   };
   /**
    * Constructor templates: PDF receipts / board reports + Excel export columns.

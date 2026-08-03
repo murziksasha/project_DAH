@@ -15,7 +15,14 @@ export interface StoredUser {
   } | null;
 }
 
-const ADMIN_ROLES = ['chairman', 'accountant', 'board', 'auditor'];
+const ADMIN_ROLES = [
+  'chairman',
+  'accountant',
+  'board',
+  'dispatcher',
+  'crew',
+  'auditor',
+];
 
 export function getStoredUser(): StoredUser | null {
   if (typeof window === 'undefined') return null;
@@ -32,6 +39,8 @@ export function getRoleHome(role: string, isInitialized = true): string {
   if (role === 'super_admin') {
     return isInitialized ? '/admin/organization' : '/admin/setup';
   }
+  if (role === 'dispatcher') return '/admin/dispatch';
+  if (role === 'crew') return '/admin/dispatch';
   if (ADMIN_ROLES.includes(role)) return '/admin';
   if (role === 'resident') return '/resident';
   return '/';

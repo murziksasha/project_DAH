@@ -1,5 +1,66 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsObject,
+  IsOptional,
+  Max,
+  Min,
+  ValidateNested,
+} from 'class-validator';
+
+export class SlaHoursByCategoryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(720)
+  sanitary?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(720)
+  electric?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(720)
+  cleaning?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(720)
+  elevator?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(720)
+  heating?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(720)
+  other?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(720)
+  default?: number;
+}
 
 export class UpdateBuildingSettingsDto {
   @ApiPropertyOptional()
@@ -35,4 +96,14 @@ export class UpdateBuildingSettingsDto {
   @IsOptional()
   @IsIn(['uk', 'ru'])
   locale?: 'uk' | 'ru';
+
+  @ApiPropertyOptional({
+    description: 'SLA hours per request category (dispatcher)',
+    type: SlaHoursByCategoryDto,
+  })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => SlaHoursByCategoryDto)
+  slaHoursByCategory?: SlaHoursByCategoryDto;
 }

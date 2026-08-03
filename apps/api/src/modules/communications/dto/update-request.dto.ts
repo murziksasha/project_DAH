@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { RequestStatus } from '@prisma/client';
+import { RequestPriority, RequestStatus } from '@prisma/client';
 import { IsArray, IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
 
 export class UpdateRequestDto {
@@ -7,6 +7,11 @@ export class UpdateRequestDto {
   @IsOptional()
   @IsEnum(RequestStatus)
   status?: RequestStatus;
+
+  @ApiPropertyOptional({ enum: RequestPriority })
+  @IsOptional()
+  @IsEnum(RequestPriority)
+  priority?: RequestPriority;
 
   @ApiPropertyOptional()
   @IsOptional()

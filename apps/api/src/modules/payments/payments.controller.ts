@@ -37,16 +37,23 @@ export class PaymentsController {
     private online: OnlinePaymentsService,
   ) {}
 
-  /** Public webhook for acquiring provider (no JWT). */
+  /** Public webhook for acquiring provider (no JWT). Accepts generic / LiqPay / WayForPay bodies. */
   @Throttle({ default: { limit: 60, ttl: 60000 } })
   @Post('online/webhook')
-  onlineWebhook(@Body() dto: OnlinePaymentWebhookDto) {
-    return this.online.handleWebhook(dto);
+  onlineWebhook(@Body() body: Record<string, unknown>) {
+    return this.online.handleWebhook(body);
   }
 
   @Get('online/status')
   onlineStatus() {
     return this.online.status();
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'))
+  @Get('online/orders/:orderId')
+  onlineOrder(@Param('orderId') orderId: string, @CurrentUser() user: AuthUser) {
+    return this.online.getOrder(orderId, user);
   }
 
   @ApiBearerAuth()
@@ -125,7 +132,7 @@ export class PaymentsController {
   @Roles(...WRITE_ROLES)
   @Post('import/preview')
   importPreview(@Body() dto: ImportPreviewDto) {
-    return this.payments.previewBankImport(dto.csv);
+    return this.payments.previewBankImport(dto.csv, dto.buildingId, dto.format);
   }
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)

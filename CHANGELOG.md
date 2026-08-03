@@ -1,5 +1,66 @@
 # Changelog
 
+## 1.10.1 — Production КЕП / Дія.Підпис
+
+- Модуль **`/api/kep`**: SignSession, providers `mock` | `diia` | `cloud_kep` | `cades`
+- Diia offer API + deeplink; webhook `POST /api/kep/webhook` (secret / HMAC)
+- Cloud QES OAuth authorize + token exchange
+- CAdES upload (`signatureCms` base64) for EUSign/token
+- Mock authorize page; meetings `POST /meetings/:id/sign` → session + poll UI
+- `docs/KEP.md`, env `KEP_*` у `.env.example`
+- Unit-тести `kep.service.spec.ts`
+
+## 1.10.0 — Matching, crew, production pay, збори+КЕП, месенджер
+
+### Matching платежів
+- Зіставлення виписки: **квартира → IBAN мешканця → ПІБ**
+- `Resident.iban` для імпорту; matching unit-тести
+
+### SLA в Building.settings
+- `slaHoursByCategory` (sanitary/electric/elevator/…)
+- UI `/admin/settings`; auto-`dueAt` при створенні заявки
+
+### Роль «бригада» (`crew`)
+- `WORK_REQUESTS`: лише призначені заявки, без фінансів
+- Черга `/admin/dispatch` (mine only)
+
+### Production online-оплата
+- Модель `OnlinePaymentOrder` (pending/paid, idempotent webhook)
+- LiqPay / WayForPay / generic webhook parsers + amount check
+- `sandbox-complete` заблоковано при `ONLINE_PAYMENTS_SANDBOX=false`
+- Resident pay: production → checkout form; sandbox → instant complete
+- `GET /payments/online/orders/:orderId`, status.productionReady
+
+### Збори + КЕП
+- Модуль `/api/meetings`: draft→open→closed, agenda, register, vote, protocol
+- Підпис: `mock` (demo) | `kep`/`diia` (pending + challenge)
+- UI `/admin/meetings`, `/resident/meetings`
+
+### Месенджер
+- Threads: building / board_residents / direct
+- API `/api/messenger/*`; UI `/admin/messenger`, `/resident/messenger`
+
+## 1.9.0 — Bank adapters + диспетчер / SLA
+
+### Банківська виписка (будь-який банк)
+- Адаптери форматів: `auto` | `generic_csv` | `privatbank` | `monobank` | `oschadbank` | `mt940`
+- `POST /payments/import/preview` приймає `format`, `buildingId`; відповідь: `format`, `detectedFormat`
+- UI `/admin/payments` — вибір формату + підказка визначеного профілю
+- Unit-тести MT940 / detect
+
+### УК-портфель: диспетчер + SLA
+- Роль Prisma `dispatcher` (без фінансів; `MANAGE_REQUESTS`)
+- `Request.priority` (`low` | `normal` | `high` | `urgent`)
+- Авто-`dueAt` з категорії × пріоритету (`request-sla.ts`)
+- API: `GET /communications/requests/queue` (фільтри overdue / unassigned / mine)
+- UI: `/admin/dispatch` — черга, SLA-бейджі, «Взяти в роботу»
+- Nav / labels / create-user для диспетчера
+
+### Продуктові рішення
+- Фокус: **self-hosted one OSBB** (не SaaS)
+- Месенджер і збори+КЕП — **відкладено**
+- Пріоритет: УК диспетчер/SLA + універсальний імпорт виписок
+
 ## 1.8.0 — Конструктор документів і звітів
 
 - **Конструктор PDF** (практика layout-блоків + `{{змінні}}`, як у print forms CRM):

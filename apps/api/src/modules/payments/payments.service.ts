@@ -14,7 +14,9 @@ import {
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import {
   matchStatementRows,
-  parseBankStatementCsv,
+  parseBankStatement,
+  STATEMENT_FORMATS,
+  type StatementFormat,
 } from '../../common/utils/bank-statement-import';
 import {
   FifoLineInput,
@@ -413,9 +415,20 @@ export class PaymentsService {
     return { id, isVoided: true };
   }
 
-  async previewBankImport(csv: string, buildingId?: string) {
+  async previewBankImport(
+    csv: string,
+    buildingId?: string,
+    format?: string,
+  ) {
     if (!csv?.trim()) {
-      throw new BadRequestException('Порожній CSV');
+      throw new BadRequestException('Порожній файл виписки');
+    }
+
+    const fmt = (format?.trim() || 'auto') as StatementFormat;
+    if (!STATEMENT_FORMATS.includes(fmt)) {
+      throw new BadRequestException(
+        `Невідомий format. Доступні: ${STATEMENT_FORMATS.join(', ')}`,
+      );
     }
 
     const apartments = await this.prisma.apartment.findMany({
@@ -424,8 +437,41 @@ export class PaymentsService {
       orderBy: [{ entrance: 'asc' }, { number: 'asc' }],
     });
 
-    const parsed = parseBankStatementCsv(csv);
-    const rows = matchStatementRows(parsed, apartments);
+    const residents = await this.prisma.resident.findMany({
+      where: buildingId
+        ? { apartment: { buildingId } }
+        : undefined,
+      select: {
+        firstName: true,
+        lastName: true,
+        iban: true,
+        apartment: { select: { id: true, number: true } },
+      },
+    });
+
+    const { rows: parsed, format: usedFormat, detectedFormat } = parseBankStatement(
+      csv,
+      { format: fmt },
+    );
+    // Enrich counterparty IBAN from purpose when column missing
+    const withIban = parsed.map((r) => ({
+      ...r,
+      counterpartyIban:
+        r.counterpartyIban ??
+        (r.reference.match(/UA\d{2}[\d\s]{20,}/i)
+          ? r.reference.replace(/\s/g, '').match(/UA\d{27}/i)?.[0] ?? null
+          : null),
+    }));
+    const rows = matchStatementRows(withIban, {
+      apartments,
+      residents: residents.map((r) => ({
+        apartmentId: r.apartment.id,
+        apartmentNumber: r.apartment.number,
+        firstName: r.firstName,
+        lastName: r.lastName,
+        iban: r.iban,
+      })),
+    });
 
     const matchedRefs = rows
       .filter((r) => r.status === 'matched' && r.reference)
@@ -472,7 +518,13 @@ export class PaymentsService {
       ),
     };
 
-    return { rows: enriched, summary };
+    return {
+      rows: enriched,
+      summary,
+      format: usedFormat,
+      detectedFormat,
+      formats: STATEMENT_FORMATS,
+    };
   }
 
   async importPayments(dto: ImportPaymentsDto, user: AuthUser) {
