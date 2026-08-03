@@ -12,8 +12,19 @@ enum UserRole {
   chairman
   accountant
   board
+  /// УК / ОСББ: диспетчер заявок (черга + SLA, без фінансів)
+  dispatcher
+  /// Виконавець / бригада (лише призначені заявки)
+  crew
   resident
   auditor
+}
+
+enum RequestPriority {
+  low
+  normal
+  high
+  urgent
 }
 
 enum FundType {
@@ -135,6 +146,12 @@ model User {
   pushSubscriptions  PushSubscription[]
   reminders          Reminder[]          @relation("ReminderTarget")
   createdReminders   Reminder[]          @relation("ReminderCreator")
+  meetingsCreated    Meeting[]           @relation("MeetingCreatedBy")
+  meetingParticipants MeetingParticipant[]
+  meetingVotes       MeetingVote[]
+  meetingSignatures  MeetingSignature[]
+  chatMemberships    ChatThreadMember[]
+  chatMessages       ChatMessage[]
 
   @@index([tenantId])
   @@index([approvedById])
@@ -256,9 +273,13 @@ model Resident {
   lastName    String
   phone       String?
   email       String?
+  /// Personal / payer IBAN for bank statement matching
+  iban        String?
   isOwner     Boolean   @default(true)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  @@index([iban])
 }
 
 model BankAccount {
@@ -393,6 +414,28 @@ model Payment {
   updatedAt   DateTime      @updatedAt
 
   allocations PaymentAllocation[]
+  onlineOrder OnlinePaymentOrder?
+}
+
+/// Persisted online checkout (LiqPay / WayForPay / generic) for idempotent webhooks.
+model OnlinePaymentOrder {
+  id           String    @id @default(cuid())
+  orderId      String    @unique
+  apartmentId  String
+  amount       Decimal   @db.Decimal(12, 2)
+  userId       String?
+  provider     String    @default("generic")
+  status       String    @default("pending") // pending | paid | failed | cancelled
+  description  String?
+  paymentId    String?   @unique
+  payment      Payment?  @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  providerMeta Json      @default("{}")
+  createdAt    DateTime  @default(now())
+  paidAt       DateTime?
+  updatedAt    DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@index([apartmentId])
 }
 
 model PaymentAllocation {
@@ -417,21 +460,25 @@ model Announcement {
 }
 
 model Request {
-  id          String        @id @default(cuid())
+  id          String          @id @default(cuid())
   title       String
   description String
   category    String
-  status      RequestStatus @default(new)
+  status      RequestStatus   @default(new)
+  priority    RequestPriority @default(normal)
   authorId    String
-  author      User          @relation("RequestAuthor", fields: [authorId], references: [id])
+  author      User            @relation("RequestAuthor", fields: [authorId], references: [id])
   assigneeId  String?
-  assignee    User?         @relation("RequestAssignee", fields: [assigneeId], references: [id])
-  /// SLA target datetime
+  assignee    User?           @relation("RequestAssignee", fields: [assigneeId], references: [id])
+  /// SLA target datetime (auto-filled from category/priority if omitted)
   dueAt       DateTime?
   /// MinIO object keys for attached photos
-  photoKeys   Json          @default("[]")
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  photoKeys   Json            @default("[]")
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([status, dueAt])
+  @@index([assigneeId, status])
 }
 
 model Poll {
@@ -569,4 +616,197 @@ model Reminder {
 
   @@index([dueAt, sentAt])
   @@index([userId])
+}
+
+// ─── Meetings (загальні збори) + КЕП ─────────────────────────────────────────
+
+enum MeetingStatus {
+  draft
+  scheduled
+  open
+  closed
+  cancelled
+}
+
+enum MeetingType {
+  general
+  board
+  founding
+  other
+}
+
+model Meeting {
+  id             String         @id @default(cuid())
+  buildingId     String?
+  title          String
+  description    String?
+  type           MeetingType    @default(general)
+  status         MeetingStatus  @default(draft)
+  scheduledAt    DateTime?
+  endsAt         DateTime?
+  quorumPercent  Decimal?       @db.Decimal(5, 2)
+  voteWeight     VoteWeightMode @default(one_per_apartment)
+  protocolText   String?
+  createdById    String?
+  createdBy      User?          @relation("MeetingCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  agendaItems  MeetingAgendaItem[]
+  participants MeetingParticipant[]
+  signatures   MeetingSignature[]
+
+  @@index([status, scheduledAt])
+  @@index([buildingId])
+}
+
+model MeetingAgendaItem {
+  id          String  @id @default(cuid())
+  meetingId   String
+  meeting     Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  sortOrder   Int     @default(0)
+  title       String
+  description String?
+  /// Vote options as JSON string array, e.g. ["За","Проти","Утримався"]
+  options     Json    @default("[\"За\",\"Проти\",\"Утримався\"]")
+
+  votes MeetingVote[]
+
+  @@index([meetingId])
+}
+
+model MeetingParticipant {
+  id          String   @id @default(cuid())
+  meetingId   String
+  meeting     Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apartmentId String?
+  weight      Decimal  @default(1) @db.Decimal(12, 4)
+  registeredAt DateTime @default(now())
+
+  @@unique([meetingId, userId])
+  @@index([meetingId])
+}
+
+model MeetingVote {
+  id           String            @id @default(cuid())
+  agendaItemId String
+  agendaItem   MeetingAgendaItem @relation(fields: [agendaItemId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apartmentId  String?
+  optionKey    String
+  weight       Decimal           @default(1) @db.Decimal(12, 4)
+  createdAt    DateTime          @default(now())
+
+  @@unique([agendaItemId, userId])
+  @@index([agendaItemId])
+}
+
+/// Qualified electronic signature (КЕП) / Diia.Sign — result linked to meeting.
+model MeetingSignature {
+  id                String   @id @default(cuid())
+  meetingId         String
+  meeting           Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider          String   @default("mock") // mock | diia | cloud_kep | cades
+  status            String   @default("pending") // pending | signed | failed
+  /// Link to SignSession when started via /api/kep
+  sessionId         String?
+  signaturePayload  Json     @default("{}")
+  signedAt          DateTime?
+  createdAt         DateTime @default(now())
+
+  @@unique([meetingId, userId])
+  @@index([meetingId])
+  @@index([sessionId])
+}
+
+/**
+ * Cross-document QES / Diia.Підпис session.
+ * purpose e.g. meeting_protocol | custom_document
+ */
+model SignSession {
+  id                 String    @id @default(cuid())
+  purpose            String
+  refType            String
+  refId              String
+  userId             String
+  provider           String
+  status             String    @default("pending") // pending | waiting_user | signed | failed | expired | cancelled
+  /// SHA-256 hex of canonical document bytes/text
+  digest             String
+  documentTitle      String
+  documentText       String?
+  challenge          String
+  /// External IdP session / request id (Diia offer id, cloud order id)
+  externalSessionId  String?
+  authorizeUrl       String?
+  deeplink           String?
+  /// Base64 CAdES / CMS signature when available
+  signatureCms       String?   @db.Text
+  certificateSubject String?
+  certificateSerial  String?
+  resultPayload      Json      @default("{}")
+  errorMessage       String?
+  expiresAt          DateTime
+  createdAt          DateTime  @default(now())
+  completedAt        DateTime?
+  updatedAt          DateTime  @updatedAt
+
+  @@index([userId, status])
+  @@index([refType, refId])
+  @@index([externalSessionId])
+  @@index([expiresAt])
+}
+
+// ─── Messenger ───────────────────────────────────────────────────────────────
+
+enum ChatThreadKind {
+  building
+  entrance
+  board_residents
+  direct
+}
+
+model ChatThread {
+  id         String         @id @default(cuid())
+  buildingId String?
+  kind       ChatThreadKind @default(building)
+  title      String?
+  entrance   Int?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  members  ChatThreadMember[]
+  messages ChatMessage[]
+
+  @@index([buildingId, kind])
+}
+
+model ChatThreadMember {
+  id         String     @id @default(cuid())
+  threadId   String
+  thread     ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastReadAt DateTime?
+  joinedAt   DateTime   @default(now())
+
+  @@unique([threadId, userId])
+  @@index([userId])
+}
+
+model ChatMessage {
+  id        String     @id @default(cuid())
+  threadId  String
+  thread    ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body      String
+  createdAt DateTime   @default(now())
+
+  @@index([threadId, createdAt])
 }

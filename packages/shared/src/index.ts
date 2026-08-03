@@ -5,6 +5,10 @@ export enum UserRole {
   CHAIRMAN = 'chairman',
   ACCOUNTANT = 'accountant',
   BOARD = 'board',
+  /** Dispatcher / queue operator (SLA requests, no finance). */
+  DISPATCHER = 'dispatcher',
+  /** Field crew — only assigned requests. */
+  CREW = 'crew',
   RESIDENT = 'resident',
   AUDITOR = 'auditor',
 }
@@ -51,6 +55,13 @@ export enum RequestStatus {
   DONE = 'done',
 }
 
+export enum RequestPriority {
+  LOW = 'low',
+  NORMAL = 'normal',
+  HIGH = 'high',
+  URGENT = 'urgent',
+}
+
 export enum VoteWeightMode {
   ONE_PER_USER = 'one_per_user',
   ONE_PER_APARTMENT = 'one_per_apartment',
@@ -78,6 +89,15 @@ export const ROLE_LABELS: Record<UserRole, { uk: string; ru: string }> = {
   [UserRole.CHAIRMAN]: { uk: 'Голова правління / керівник', ru: 'Председатель / руководитель' },
   [UserRole.ACCOUNTANT]: { uk: 'Бухгалтер', ru: 'Бухгалтер' },
   [UserRole.BOARD]: { uk: 'Член правління / працівник УК', ru: 'Член правления / сотрудник УК' },
+  [UserRole.DISPATCHER]: { uk: 'Диспетчер', ru: 'Диспетчер' },
+  [UserRole.CREW]: { uk: 'Бригада / виконавець', ru: 'Бригада / исполнитель' },
   [UserRole.RESIDENT]: { uk: 'Мешканець', ru: 'Жилец' },
   [UserRole.AUDITOR]: { uk: 'Ревізійна комісія / контроль', ru: 'Ревизионная комиссия / контроль' },
+};
+
+export const REQUEST_PRIORITY_LABELS: Record<RequestPriority, { uk: string; ru: string }> = {
+  [RequestPriority.LOW]: { uk: 'Низький', ru: 'Низкий' },
+  [RequestPriority.NORMAL]: { uk: 'Звичайний', ru: 'Обычный' },
+  [RequestPriority.HIGH]: { uk: 'Високий', ru: 'Высокий' },
+  [RequestPriority.URGENT]: { uk: 'Терміновий', ru: 'Срочный' },
 };

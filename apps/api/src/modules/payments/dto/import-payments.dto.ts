@@ -14,9 +14,25 @@ import {
 } from 'class-validator';
 
 export class ImportPreviewDto {
-  @ApiProperty({ description: 'CSV text of bank statement' })
+  @ApiProperty({
+    description: 'Bank statement text (CSV / TSV / MT940). Field name kept as csv for API compatibility.',
+  })
   @IsString()
   csv!: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Statement format: auto | generic_csv | privatbank | monobank | oschadbank | mt940',
+    default: 'auto',
+  })
+  @IsOptional()
+  @IsString()
+  format?: string;
+
+  @ApiPropertyOptional({ description: 'Limit apartment matching to building' })
+  @IsOptional()
+  @IsString()
+  buildingId?: string;
 }
 
 export class ImportPaymentRowDto {

@@ -26,6 +26,9 @@ import { SmsModule } from './modules/sms/sms.module';
 import { IdentityModule } from './modules/identity/identity.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { BackupsModule } from './modules/backups/backups.module';
+import { MeetingsModule } from './modules/meetings/meetings.module';
+import { MessengerModule } from './modules/messenger/messenger.module';
+import { KepModule } from './modules/kep/kep.module';
 
 @Module({
   imports: [
@@ -57,6 +60,9 @@ import { BackupsModule } from './modules/backups/backups.module';
     TransparencyModule,
     UsersModule,
     SetupModule,
+    MeetingsModule,
+    MessengerModule,
+    KepModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

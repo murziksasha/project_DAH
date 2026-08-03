@@ -237,6 +237,8 @@ Query для `GET /users`: `?search=&page=1&limit=20`
 | GET | `/payments/preview/allocation` | write | FIFO preview |
 | GET | `/payments/reports/debtors` | report | Звіт боржників |
 | POST | `/payments` | write | Новий платіж |
+| POST | `/payments/import/preview` | write | Парсинг виписки (`csv`, `format?`, `buildingId?`) → rows + summary + detectedFormat |
+| POST | `/payments/import` | write | Зафіксувати matched rows як платежі |
 | PATCH | `/payments/:id/void` | chairman, accountant | Анулювати |
 
 Query для preview: `?apartmentId=&amount=`
@@ -266,9 +268,18 @@ Query для preview: `?apartmentId=&amount=`
 | GET | `/communications/announcements` | JWT | Оголошення |
 | POST | `/communications/announcements` | write | Створити (+ push) |
 | DELETE | `/communications/announcements/:id` | chairman, board | Видалити |
-| GET | `/communications/requests` | JWT | Заявки |
-| POST | `/communications/requests` | JWT | Нова заявка |
-| PATCH | `/communications/requests/:id` | write | Оновити статус |
+| GET | `/kep/status` | public | Статус КЕП / Diia (provider, productionReady) |
+| POST | `/kep/meetings/:meetingId/sign` | JWT | Старт SignSession для протоколу зборів |
+| GET | `/kep/sessions/:id` | JWT | Статус сесії підпису |
+| POST | `/kep/sessions/:id/complete` | public (mock) | Завершення mock IdP |
+| POST | `/kep/sessions/:id/complete-auth` | JWT | CAdES / code complete |
+| POST | `/kep/webhook` | secret | Webhook Diia / cloud KEP |
+| POST | `/meetings/:id/sign` | JWT | Те саме через meetings (session + authorizeUrl) |
+
+| GET | `/communications/requests` | JWT | Заявки (+ `slaStatus`, `isOverdue`) |
+| GET | `/communications/requests/queue` | chairman/board/dispatcher/accountant | SLA-черга (фільтри: status, overdueOnly, unassignedOnly, mineOnly, priority) |
+| POST | `/communications/requests` | JWT | Нова заявка (`priority`, auto-`dueAt` з SLA) |
+| PATCH | `/communications/requests/:id` | request-manage | Статус / priority / assignee / dueAt |
 | GET | `/communications/polls` | JWT | Опитування |
 | GET | `/communications/polls/:id` | JWT | Деталі + userVote |
 | POST | `/communications/polls` | chairman, board | Створити |

@@ -6,6 +6,8 @@ const CREATABLE_ROLES = [
   UserRole.chairman,
   UserRole.accountant,
   UserRole.board,
+  UserRole.dispatcher,
+  UserRole.crew,
   UserRole.auditor,
 ] as const;
 

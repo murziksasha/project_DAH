@@ -53,7 +53,41 @@ export function getNavGroups(role: string, isInitialized = true): NavGroup[] {
         label: 'Кабінет',
         items: [
           { href: '/resident/meters', label: 'Лічильники', icon: 'gauge' },
+          { href: '/resident/messenger', label: 'Месенджер', icon: 'megaphone' },
+          { href: '/resident/meetings', label: 'Збори', icon: 'clipboard' },
           { href: '/resident/security', label: 'Безпека', icon: 'shield' },
+          instructionsItem(role),
+        ],
+      },
+    ];
+  }
+
+  // Dispatcher: focused queue UI (no finance)
+  if (role === 'dispatcher') {
+    return [
+      {
+        id: 'dispatch',
+        label: 'Диспетчерська',
+        items: [
+          { href: '/admin/dispatch', label: 'Черга заявок (SLA)', icon: 'bell' },
+          { href: '/admin/communications', label: 'Оголошення та заявки', icon: 'megaphone' },
+          { href: '/admin/messenger', label: 'Месенджер', icon: 'megaphone' },
+          { href: '/admin/security', label: 'Безпека / 2FA', icon: 'shield' },
+          instructionsItem(role),
+        ],
+      },
+    ];
+  }
+
+  // Crew: only assigned jobs
+  if (role === 'crew') {
+    return [
+      {
+        id: 'crew',
+        label: 'Бригада',
+        items: [
+          { href: '/admin/dispatch', label: 'Мої заявки', icon: 'bell' },
+          { href: '/admin/security', label: 'Безпека / 2FA', icon: 'shield' },
           instructionsItem(role),
         ],
       },
@@ -72,6 +106,9 @@ export function getNavGroups(role: string, isInitialized = true): NavGroup[] {
   ];
   if (hasPermission(role, Permission.READ_FINANCE)) {
     overview.push({ href: '/admin/reports', label: 'Звіти', icon: 'chart' });
+  }
+  if (hasPermission(role, Permission.MANAGE_REQUESTS)) {
+    overview.push({ href: '/admin/dispatch', label: 'Черга заявок (SLA)', icon: 'bell' });
   }
   groups.push({ id: 'overview', label: 'Огляд', items: overview });
 
@@ -128,7 +165,11 @@ export function getNavGroups(role: string, isInitialized = true): NavGroup[] {
   groups.push({
     id: 'comms',
     label: 'Комунікації',
-    items: [{ href: '/admin/communications', label: 'Оголошення та заявки', icon: 'megaphone' }],
+    items: [
+      { href: '/admin/communications', label: 'Оголошення та заявки', icon: 'megaphone' },
+      { href: '/admin/meetings', label: 'Збори + КЕП', icon: 'clipboard' },
+      { href: '/admin/messenger', label: 'Месенджер', icon: 'megaphone' },
+    ],
   });
 
   if (canWriteFinance(role) || role === 'auditor' || role === 'chairman') {
@@ -164,6 +205,12 @@ export function getNavGroups(role: string, isInitialized = true): NavGroup[] {
 export function getShellTitle(role: string, orgType?: string | null): string {
   if (role === 'super_admin') return 'Система · Мій дім';
   if (role === 'resident') return 'Кабінет мешканця';
+  if (role === 'dispatcher') {
+    return orgType === 'management_company' ? 'Диспетчерська УК' : 'Диспетчерська';
+  }
+  if (role === 'crew') {
+    return orgType === 'management_company' ? 'Бригада УК' : 'Бригада';
+  }
   if (['chairman', 'accountant', 'board', 'auditor'].includes(role)) {
     return orgType === 'management_company' ? 'Кабінет УК' : 'Кабінет правління';
   }

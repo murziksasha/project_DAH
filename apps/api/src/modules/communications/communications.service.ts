@@ -4,9 +4,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { RequestStatus, UserRole, VoteWeightMode } from '@prisma/client';
+import { RequestPriority, RequestStatus, UserRole, VoteWeightMode } from '@prisma/client';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { roundMoney } from '../../common/utils/money';
+import {
+  computeDueAt,
+  computeSlaStatus,
+  type RequestPriority as SlaPriority,
+} from '../../common/utils/request-sla';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { MailService } from '../mail/mail.service';
@@ -16,7 +21,19 @@ import { CreatePollDto } from './dto/create-poll.dto';
 import { CreateRequestDto } from './dto/create-request.dto';
 import { UpdateRequestDto } from './dto/update-request.dto';
 
-const ADMIN_ROLES: UserRole[] = [UserRole.chairman, UserRole.accountant, UserRole.board];
+const ADMIN_ROLES: UserRole[] = [
+  UserRole.chairman,
+  UserRole.accountant,
+  UserRole.board,
+  UserRole.dispatcher,
+];
+
+const REQUEST_ASSIGNEE_ROLES: UserRole[] = [
+  UserRole.chairman,
+  UserRole.board,
+  UserRole.dispatcher,
+  UserRole.crew,
+];
 
 @Injectable()
 export class CommunicationsService {
@@ -95,26 +112,124 @@ export class CommunicationsService {
     return { id, deleted: true };
   }
 
-  listRequests(user: AuthUser) {
+  private enrichRequestSla<T extends { dueAt: Date | null; status: string; priority?: string }>(
+    row: T,
+  ) {
+    const slaStatus = computeSlaStatus(row.dueAt, row.status);
+    return {
+      ...row,
+      slaStatus,
+      isOverdue: slaStatus === 'breached',
+    };
+  }
+
+  async listRequests(user: AuthUser) {
     const isAdmin = ADMIN_ROLES.includes(user.role as UserRole);
-    return this.prisma.request.findMany({
-      where: isAdmin ? undefined : { authorId: user.id },
-      orderBy: { createdAt: 'desc' },
+    const isCrew = user.role === UserRole.crew;
+    const rows = await this.prisma.request.findMany({
+      where: isAdmin
+        ? undefined
+        : isCrew
+          ? { assigneeId: user.id }
+          : { authorId: user.id },
+      orderBy: [{ priority: 'desc' }, { dueAt: 'asc' }, { createdAt: 'desc' }],
       include: {
         author: { select: { id: true, firstName: true, lastName: true, email: true } },
         assignee: { select: { id: true, firstName: true, lastName: true } },
       },
     });
+    return rows.map((r) => this.enrichRequestSla(r));
+  }
+
+  /**
+   * Dispatcher queue: open requests with SLA filters.
+   * query: status, overdueOnly, unassignedOnly, mineOnly, priority
+   */
+  async listRequestQueue(
+    user: AuthUser,
+    query: {
+      status?: string;
+      overdueOnly?: boolean;
+      unassignedOnly?: boolean;
+      mineOnly?: boolean;
+      priority?: string;
+    } = {},
+  ) {
+    const isCrew = user.role === UserRole.crew;
+    if (!ADMIN_ROLES.includes(user.role as UserRole) && !isCrew) {
+      throw new ForbiddenException('Немає доступу до черги заявок');
+    }
+
+    const where: {
+      status?: RequestStatus | { not: RequestStatus };
+      assigneeId?: string | null;
+      priority?: RequestPriority;
+    } = {};
+
+    if (query.status && Object.values(RequestStatus).includes(query.status as RequestStatus)) {
+      where.status = query.status as RequestStatus;
+    } else {
+      where.status = { not: RequestStatus.done };
+    }
+
+    if (isCrew || query.mineOnly) where.assigneeId = user.id;
+    else if (query.unassignedOnly) where.assigneeId = null;
+    if (
+      query.priority &&
+      Object.values(RequestPriority).includes(query.priority as RequestPriority)
+    ) {
+      where.priority = query.priority as RequestPriority;
+    }
+
+    const rows = await this.prisma.request.findMany({
+      where,
+      orderBy: [{ priority: 'desc' }, { dueAt: 'asc' }, { createdAt: 'asc' }],
+      include: {
+        author: { select: { id: true, firstName: true, lastName: true, email: true } },
+        assignee: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+
+    let enriched = rows.map((r) => this.enrichRequestSla(r));
+    if (query.overdueOnly) {
+      enriched = enriched.filter((r) => r.isOverdue);
+    }
+
+    const summary = {
+      open: enriched.length,
+      overdue: enriched.filter((r) => r.isOverdue).length,
+      warning: enriched.filter((r) => r.slaStatus === 'warning').length,
+      unassigned: enriched.filter((r) => !r.assigneeId).length,
+      urgent: enriched.filter((r) => r.priority === RequestPriority.urgent).length,
+    };
+
+    return { items: enriched, summary };
   }
 
   async createRequest(dto: CreateRequestDto, authorId: string) {
+    const priority = dto.priority ?? RequestPriority.normal;
+    const building = await this.prisma.building.findFirst({ select: { settings: true } });
+    const settings =
+      building?.settings && typeof building.settings === 'object'
+        ? (building.settings as { slaHoursByCategory?: Record<string, number> })
+        : {};
+    const dueAt = dto.dueAt
+      ? new Date(dto.dueAt)
+      : computeDueAt(
+          new Date(),
+          dto.category,
+          priority as SlaPriority,
+          settings.slaHoursByCategory ?? null,
+        );
+
     const request = await this.prisma.request.create({
       data: {
         title: dto.title,
         description: dto.description,
         category: dto.category,
+        priority,
         authorId,
-        dueAt: dto.dueAt ? new Date(dto.dueAt) : undefined,
+        dueAt,
         photoKeys: dto.photoKeys ?? [],
       },
       include: {
@@ -126,7 +241,12 @@ export class CommunicationsService {
       action: 'request.created',
       entityType: 'Request',
       entityId: request.id,
-      payload: { title: dto.title, category: dto.category, dueAt: dto.dueAt ?? null },
+      payload: {
+        title: dto.title,
+        category: dto.category,
+        priority,
+        dueAt: dueAt.toISOString(),
+      },
     });
 
     void this.mail.notifyAdmins('request.created', {
@@ -136,17 +256,29 @@ export class CommunicationsService {
       body: dto.description,
     });
 
-    return request;
+    return this.enrichRequestSla(request);
   }
 
-  async updateRequest(id: string, dto: UpdateRequestDto, userId: string) {
+  async updateRequest(id: string, dto: UpdateRequestDto, userId: string, actorRole?: string) {
     const request = await this.prisma.request.findUnique({ where: { id } });
     if (!request) throw new NotFoundException('Заявку не знайдено');
 
+    // Crew may only update own assigned tickets (status)
+    if (actorRole === UserRole.crew) {
+      if (request.assigneeId !== userId) {
+        throw new ForbiddenException('Бригада може змінювати лише призначені собі заявки');
+      }
+      if (dto.assigneeId && dto.assigneeId !== userId) {
+        throw new ForbiddenException('Бригада не може перепризначати заявки');
+      }
+    }
+
     if (dto.assigneeId) {
       const assignee = await this.prisma.user.findUnique({ where: { id: dto.assigneeId } });
-      if (!assignee || !ADMIN_ROLES.includes(assignee.role)) {
-        throw new BadRequestException('Виконавець має бути з правління');
+      if (!assignee || !REQUEST_ASSIGNEE_ROLES.includes(assignee.role)) {
+        throw new BadRequestException(
+          'Виконавець: диспетчер, бригада, правління або керівник',
+        );
       }
     }
 
@@ -154,6 +286,7 @@ export class CommunicationsService {
       where: { id },
       data: {
         status: dto.status,
+        priority: dto.priority,
         assigneeId: dto.assigneeId,
         ...(dto.dueAt !== undefined
           ? { dueAt: dto.dueAt ? new Date(dto.dueAt) : null }
@@ -193,9 +326,14 @@ export class CommunicationsService {
       action: 'request.updated',
       entityType: 'Request',
       entityId: id,
-      payload: { status: dto.status, assigneeId: dto.assigneeId, dueAt: dto.dueAt },
+      payload: {
+        status: dto.status,
+        priority: dto.priority,
+        assigneeId: dto.assigneeId,
+        dueAt: dto.dueAt,
+      },
     });
-    return updated;
+    return this.enrichRequestSla(updated);
   }
 
   async listPolls(userId?: string) {

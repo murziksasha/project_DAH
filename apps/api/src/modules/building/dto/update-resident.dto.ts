@@ -26,4 +26,9 @@ export class UpdateResidentDto {
   @IsOptional()
   @IsBoolean()
   isOwner?: boolean;
+
+  @ApiPropertyOptional({ description: 'Personal IBAN for bank import matching' })
+  @IsOptional()
+  @IsString()
+  iban?: string | null;
 }

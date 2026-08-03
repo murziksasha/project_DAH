@@ -21,6 +21,8 @@ const ADMIN_CREATABLE_ROLES: UserRole[] = [
   UserRole.chairman,
   UserRole.accountant,
   UserRole.board,
+  UserRole.dispatcher,
+  UserRole.crew,
   UserRole.auditor,
 ];
 

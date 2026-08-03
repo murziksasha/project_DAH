@@ -8,6 +8,8 @@ export type OrgLabels = {
   setupTitle: string;
   chairman: string;
   board: string;
+  dispatcher: string;
+  crew: string;
   accountant: string;
   auditor: string;
   resident: string;
@@ -22,6 +24,8 @@ const OSBB: OrgLabels = {
   setupTitle: 'Налаштування ОСББ',
   chairman: 'Голова правління',
   board: 'Член правління',
+  dispatcher: 'Диспетчер',
+  crew: 'Бригада',
   accountant: 'Бухгалтер',
   auditor: 'Ревізійна комісія',
   resident: 'Мешканець',
@@ -36,6 +40,8 @@ const UK: OrgLabels = {
   setupTitle: 'Налаштування УК',
   chairman: 'Керівник',
   board: 'Працівник УК',
+  dispatcher: 'Диспетчер',
+  crew: 'Бригада',
   accountant: 'Бухгалтер',
   auditor: 'Контроль',
   resident: 'Мешканець',
@@ -63,6 +69,10 @@ export function roleLabel(
       return L.chairman;
     case 'board':
       return L.board;
+    case 'dispatcher':
+      return L.dispatcher;
+    case 'crew':
+      return L.crew;
     case 'accountant':
       return L.accountant;
     case 'auditor':

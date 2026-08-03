@@ -52,5 +52,7 @@ cp .env.example .env
 
 Деталі: [SPEC/12-organization-types.md](./SPEC/12-organization-types.md).
 
-Поточна версія: **1.8.0** — [CHANGELOG.md](./CHANGELOG.md), [SPEC/](./SPEC/).
-Конструктор квитанцій / звітів: `/admin/document-templates`.
+Поточна версія: **1.10.0** — [CHANGELOG.md](./CHANGELOG.md), [SPEC/](./SPEC/).
+Конструктор квитанцій / звітів: `/admin/document-templates`.  
+Диспетчерська SLA: `/admin/dispatch`. Імпорт виписки: `/admin/payments` → «Імпорт».  
+Збори: `/admin/meetings` · Месенджер: `/admin/messenger` · `/resident/messenger`.
