@@ -4,8 +4,11 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ReactNode, useCallback, useEffect, useState } from 'react';
 import { BuildingSwitcher } from '@/components/BuildingSwitcher';
+import { HeaderSearch } from '@/components/HeaderSearch';
 import { HealthBanner } from '@/components/HealthBanner';
 import { useI18n } from '@/components/LocaleProvider';
+import { NotificationBell } from '@/components/NotificationBell';
+import { OnboardingBanner } from '@/components/OnboardingBanner';
 import { NavIcon } from '@/components/ui/NavIcon';
 import { apiFetch, getToken } from '@/lib/api';
 import { getRoleHome, getStoredUser, logout } from '@/lib/auth';
@@ -241,6 +244,8 @@ export default function AppShell({ children }: AppShellProps) {
         </div>
         <div className="app-header-actions">
           <BuildingSwitcher />
+          <HeaderSearch />
+          <NotificationBell />
           <button
             type="button"
             className="app-icon-btn"
@@ -296,7 +301,10 @@ export default function AppShell({ children }: AppShellProps) {
           />
         </aside>
 
-        <div className="app-content">{children}</div>
+        <div className="app-content">
+          <OnboardingBanner />
+          {children}
+        </div>
       </div>
     </div>
   );

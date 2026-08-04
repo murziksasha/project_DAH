@@ -1,10 +1,12 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
   Post,
+  Query,
   Req,
   Res,
   UseGuards,
@@ -55,9 +57,22 @@ export class AuthController {
     return this.auth.register(dto);
   }
 
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
   @Get('apartments')
-  listApartments() {
-    return this.auth.listApartmentsForRegistration();
+  listApartments(@Query('inviteCode') inviteCode?: string) {
+    return this.auth.listApartmentsForRegistration(inviteCode);
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Post('password/forgot')
+  forgotPassword(@Body() body: { email: string }) {
+    return this.auth.requestPasswordReset(body.email);
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Post('password/reset')
+  resetPassword(@Body() body: { token: string; newPassword: string }) {
+    return this.auth.resetPasswordWithToken(body.token, body.newPassword);
   }
 
   @Throttle({ default: { limit: 20, ttl: 60000 } })
@@ -159,6 +174,28 @@ export class AuthController {
 
   @ApiBearerAuth()
   @UseGuards(AuthGuard('jwt'))
+  @Get('sessions')
+  listSessions(@CurrentUser() user: AuthUser) {
+    return this.auth.listSessions(user.id, user.sid);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'))
+  @Delete('sessions/:id')
+  async revokeSession(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.auth.revokeSession(user.id, id, user.sid);
+    if (result.currentRevoked) {
+      clearAuthCookies(res);
+    }
+    return result;
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'))
   @Get('me')
   me(@CurrentUser() user: AuthUser) {
     return user;
@@ -218,6 +255,13 @@ export class AuthController {
   @Post('change-password')
   changePassword(@CurrentUser() user: AuthUser, @Body() dto: ChangePasswordDto) {
     return this.auth.changePassword(user.id, dto.currentPassword, dto.newPassword);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'))
+  @Post('onboarding/complete')
+  completeOnboarding(@CurrentUser() user: AuthUser) {
+    return this.auth.completeOnboarding(user.id);
   }
 
   @ApiBearerAuth()

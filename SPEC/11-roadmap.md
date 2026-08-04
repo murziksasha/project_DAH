@@ -75,6 +75,18 @@
 | Імпорт банку | Заготовка під **будь-який** банк (профілі + auto) |
 | УК vs messenger | **Диспетчер/SLA** > соц-месенджер |
 
+## v1.11 — security + UX for 200–300 users — **COMPLETE**
+
+| Тема | Статус |
+|------|--------|
+| Prod hardening (Swagger off, health split, nginx limits, headers) | ✅ |
+| Messenger building/tenant scope | ✅ |
+| Password reset, lockout, password policy, TOTP encrypt | ✅ |
+| Invite registration, magic-byte uploads, Request.buildingId | ✅ |
+| Finance 2FA + dual expense approval + backup download audit | ✅ |
+| Resident triad, notification center, global search, dispatch mobile | ✅ |
+| Worker daily backup + SLA alerts | ✅ |
+
 ## Beyond plan (future product, not blocking)
 
 | Тема | Примітка |

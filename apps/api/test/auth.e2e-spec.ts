@@ -28,13 +28,14 @@ describe('Auth (e2e)', () => {
     await disconnectTestDatabase();
   });
 
-  it('GET /api/health returns db up', () => {
+  it('GET /api/health returns minimal status (no component leak)', () => {
     return request(app.getHttpServer())
       .get('/api/health')
       .expect(200)
       .expect((res) => {
-        expect(res.body.db).toBe('up');
-        expect(['ok', 'degraded']).toContain(res.body.status);
+        expect(['ok', 'down']).toContain(res.body.status);
+        expect(res.body.service).toBe('dah-api');
+        expect(res.body.db).toBeUndefined();
       });
   });
 

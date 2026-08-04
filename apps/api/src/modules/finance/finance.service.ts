@@ -321,9 +321,14 @@ export class FinanceService {
     limit?: number;
     buildingId?: string;
     tenantId?: string | null;
+    /** pending | approved | all (default all non-voided) */
+    approvalStatus?: string;
   }) {
     const where: Prisma.ExpenseWhereInput = { isVoided: false };
     if (params?.fundId) where.fundId = params.fundId;
+    if (params?.approvalStatus === 'pending' || params?.approvalStatus === 'approved') {
+      where.approvalStatus = params.approvalStatus;
+    }
     if (params?.buildingId) {
       where.fund = {
         buildingId: params.buildingId,
@@ -350,9 +355,11 @@ export class FinanceService {
           fund: true,
           category: true,
           supplier: true,
-          createdBy: { select: { firstName: true, lastName: true } },
+          createdBy: { select: { id: true, firstName: true, lastName: true } },
+          approvedBy: { select: { id: true, firstName: true, lastName: true } },
         },
-        orderBy: { date: 'desc' },
+        // pending before approved (string desc: p > a)
+        orderBy: [{ approvalStatus: 'desc' }, { date: 'desc' }],
         skip,
         take: limit,
       }),
@@ -361,6 +368,7 @@ export class FinanceService {
     const items = await Promise.all(
       expenses.map(async (expense) => ({
         ...expense,
+        needsApproval: expense.approvalStatus === 'pending',
         documentUrl: expense.documentKey
           ? await this.storage.getDownloadUrl(expense.documentKey)
           : null,
@@ -396,9 +404,35 @@ export class FinanceService {
     };
   }
 
+  private async assertFinance2fa(userId: string) {
+    if (process.env.REQUIRE_FINANCE_2FA === 'false') return;
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true, totpEnabled: true },
+    });
+    if (!user) throw new BadRequestException('Користувача не знайдено');
+    const financeRoles = new Set(['chairman', 'accountant', 'board', 'super_admin']);
+    if (financeRoles.has(user.role) && !user.totpEnabled) {
+      throw new BadRequestException(
+        'Увімкніть 2FA у розділі «Безпека» перед фінансовими операціями',
+      );
+    }
+  }
+
   async createExpense(dto: CreateExpenseDto, userId: string) {
-    const fund = await this.prisma.fund.findUnique({ where: { id: dto.fundId } });
+    await this.assertFinance2fa(userId);
+    const fund = await this.prisma.fund.findUnique({
+      where: { id: dto.fundId },
+      include: { building: { select: { settings: true } } },
+    });
     if (!fund) throw new NotFoundException('Фонд не знайдено');
+
+    const settings = parseBuildingSettings(fund.building.settings);
+    const threshold = settings.expenseDualApprovalThreshold;
+    const needsApproval =
+      typeof threshold === 'number' &&
+      threshold > 0 &&
+      Number(dto.amount) >= threshold;
 
     const expense = await this.prisma.$transaction(async (tx) => {
       const created = await tx.expense.create({
@@ -411,6 +445,80 @@ export class FinanceService {
           description: dto.description,
           documentKey: dto.documentKey,
           createdById: userId,
+          approvalStatus: needsApproval ? 'pending' : 'approved',
+          approvedAt: needsApproval ? null : new Date(),
+          approvedById: needsApproval ? null : userId,
+        },
+        include: { fund: true, category: true, supplier: true },
+      });
+
+      if (!needsApproval) {
+        await this.journal.write(
+          {
+            type: JournalEntryType.expense,
+            refType: 'Expense',
+            refId: created.id,
+            description: dto.description ?? `Витрата ${dto.amount}`,
+            buildingId: fund.buildingId,
+            fundId: dto.fundId,
+            createdById: userId,
+            lines: [
+              { account: 'expense', debit: dto.amount, fundId: dto.fundId },
+              { account: 'cash', credit: dto.amount, fundId: dto.fundId },
+            ],
+          },
+          tx,
+        );
+      }
+
+      return created;
+    });
+
+    await this.audit.log({
+      userId,
+      action: needsApproval ? 'expense.pending_approval' : 'expense.created',
+      entityType: 'Expense',
+      entityId: expense.id,
+      payload: {
+        amount: dto.amount,
+        fundId: dto.fundId,
+        documentKey: dto.documentKey,
+        approvalStatus: expense.approvalStatus,
+      },
+    });
+
+    return {
+      ...expense,
+      needsApproval,
+      documentUrl: expense.documentKey
+        ? await this.storage.getDownloadUrl(expense.documentKey)
+        : null,
+    };
+  }
+
+  /** Second signature for dual-control expenses. */
+  async approveExpense(id: string, userId: string) {
+    await this.assertFinance2fa(userId);
+    const expense = await this.prisma.expense.findUnique({
+      where: { id },
+      include: { fund: true },
+    });
+    if (!expense) throw new NotFoundException('Витрату не знайдено');
+    if (expense.isVoided) throw new BadRequestException('Витрату анульовано');
+    if (expense.approvalStatus === 'approved') {
+      return expense;
+    }
+    if (expense.createdById === userId) {
+      throw new BadRequestException('Другий підпис має бути іншої особи');
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.expense.update({
+        where: { id },
+        data: {
+          approvalStatus: 'approved',
+          approvedAt: new Date(),
+          approvedById: userId,
         },
         include: { fund: true, category: true, supplier: true },
       });
@@ -419,45 +527,56 @@ export class FinanceService {
         {
           type: JournalEntryType.expense,
           refType: 'Expense',
-          refId: created.id,
-          description: dto.description ?? `Витрата ${dto.amount}`,
-          buildingId: fund.buildingId,
-          fundId: dto.fundId,
+          refId: id,
+          description: expense.description ?? `Витрата ${expense.amount}`,
+          buildingId: expense.fund.buildingId,
+          fundId: expense.fundId,
           createdById: userId,
           lines: [
-            { account: 'expense', debit: dto.amount, fundId: dto.fundId },
-            { account: 'cash', credit: dto.amount, fundId: dto.fundId },
+            { account: 'expense', debit: Number(expense.amount), fundId: expense.fundId },
+            { account: 'cash', credit: Number(expense.amount), fundId: expense.fundId },
           ],
         },
         tx,
       );
 
-      return created;
+      return row;
     });
 
     await this.audit.log({
       userId,
-      action: 'expense.created',
+      action: 'expense.approved',
       entityType: 'Expense',
-      entityId: expense.id,
-      payload: { amount: dto.amount, fundId: dto.fundId, documentKey: dto.documentKey },
+      entityId: id,
+      payload: { amount: Number(expense.amount) },
     });
 
-    return {
-      ...expense,
-      documentUrl: expense.documentKey
-        ? await this.storage.getDownloadUrl(expense.documentKey)
-        : null,
-    };
+    return updated;
   }
 
   async voidExpense(id: string, reason: string, userId: string) {
+    await this.assertFinance2fa(userId);
     const expense = await this.prisma.expense.findUnique({
       where: { id },
       include: { fund: true },
     });
     if (!expense) throw new NotFoundException('Витрату не знайдено');
     if (expense.isVoided) throw new BadRequestException('Витрату вже анульовано');
+    // Pending dual-control: just cancel without journal reverse
+    if (expense.approvalStatus === 'pending') {
+      const row = await this.prisma.expense.update({
+        where: { id },
+        data: { isVoided: true, voidReason: reason },
+      });
+      await this.audit.log({
+        userId,
+        action: 'expense.voided',
+        entityType: 'Expense',
+        entityId: id,
+        payload: { reason, wasPending: true },
+      });
+      return row;
+    }
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const row = await tx.expense.update({

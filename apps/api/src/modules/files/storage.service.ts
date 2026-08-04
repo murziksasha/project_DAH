@@ -9,12 +9,7 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 
-const ALLOWED_MIME = new Set([
-  'application/pdf',
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-]);
+import { assertAllowedUpload } from '../../common/utils/file-magic';
 
 @Injectable()
 export class StorageService implements OnModuleInit {
@@ -38,19 +33,13 @@ export class StorageService implements OnModuleInit {
     });
   }
 
-  assertAllowedMime(mime: string) {
-    if (!ALLOWED_MIME.has(mime)) {
-      throw new Error('Дозволені формати: PDF, JPEG, PNG, WebP');
-    }
-  }
-
   buildKey(folder: string, originalName: string) {
     const safe = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
     return `${folder}/${randomUUID()}/${safe}`;
   }
 
   async upload(folder: string, file: Express.Multer.File) {
-    this.assertAllowedMime(file.mimetype);
+    const { mime } = assertAllowedUpload(file.buffer, file.mimetype);
     const key = this.buildKey(folder, file.originalname);
 
     await this.client.send(
@@ -58,11 +47,11 @@ export class StorageService implements OnModuleInit {
         Bucket: this.bucket,
         Key: key,
         Body: file.buffer,
-        ContentType: file.mimetype,
+        ContentType: mime,
       }),
     );
 
-    return { key, bucket: this.bucket };
+    return { key, bucket: this.bucket, contentType: mime };
   }
 
   async getDownloadUrl(key: string, expiresIn = 3600) {

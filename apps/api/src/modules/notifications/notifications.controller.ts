@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
@@ -27,5 +27,26 @@ export class NotificationsController {
   @Delete('subscribe')
   unsubscribe(@Body() dto: Pick<SubscribeDto, 'endpoint'>, @CurrentUser() user: AuthUser) {
     return this.notifications.unsubscribe(user.id, dto.endpoint);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'))
+  @Get('inbox')
+  inbox(@CurrentUser() user: AuthUser, @Query('limit') limit?: string) {
+    return this.notifications.listInbox(user.id, limit ? Number(limit) : 30);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'))
+  @Patch('inbox/read')
+  markAllRead(@CurrentUser() user: AuthUser) {
+    return this.notifications.markRead(user.id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'))
+  @Patch('inbox/:id/read')
+  markOneRead(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.notifications.markRead(user.id, id);
   }
 }

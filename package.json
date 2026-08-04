@@ -1,6 +1,6 @@
 {
   "name": "dah-osmd",
-  "version": "1.10.1",
+  "version": "1.11.0",
   "private": true,
   "workspaces": [
     "apps/*",
@@ -25,7 +25,8 @@
     "test:e2e": "npm run test:e2e -w @dah/api",
     "test:e2e:web": "npm run test:e2e -w @dah/web",
     "test:all": "npm run test -w @dah/api && npm run test:e2e -w @dah/api",
-    "lint": "npm run lint -w @dah/api && npm run lint -w @dah/web"
+    "lint": "npm run lint -w @dah/api && npm run lint -w @dah/web",
+    "audit:deps": "npm audit --omit=dev --audit-level=high"
   },
   "engines": {
     "node": ">=20"

@@ -10,6 +10,9 @@ export type MailTemplateId =
   | 'request.status_changed'
   | 'reminder.due'
   | 'reminder.debt'
+  | 'auth.password_reset'
+  | 'request.sla_warning'
+  | 'request.sla_breached'
   | 'test';
 
 export interface TemplateContext {
@@ -92,6 +95,21 @@ export function renderTemplate(
       return wrap(
         `${building}: нагадування про борг`,
         `Шановний(а) ${name},\n\nНагадуємо про заборгованість${ctx.apartmentNumber ? ` кв. ${ctx.apartmentNumber}` : ''}: ${ctx.amount ?? '—'} ₴.${ctx.dueDate ? `\nТермін: ${ctx.dueDate}` : ''}\nБудь ласка, сплатіть внесок.\n${app}`,
+      );
+    case 'auth.password_reset':
+      return wrap(
+        `${building}: скидання пароля`,
+        `Шановний(а) ${name},\n\nЗапит на скидання пароля. Перейдіть за посиланням (дійсне 1 годину):\n${app || ctx.body || ''}\n\nЯкщо ви не надсилали запит — проігноруйте цей лист.`,
+      );
+    case 'request.sla_warning':
+      return wrap(
+        `${building}: SLA — наближається дедлайн`,
+        `Заявка «${ctx.title ?? ''}» наближається до дедлайну SLA.${ctx.dueDate ? `\nДедлайн: ${ctx.dueDate}` : ''}\n${app}`,
+      );
+    case 'request.sla_breached':
+      return wrap(
+        `${building}: SLA — прострочено`,
+        `Заявка «${ctx.title ?? ''}» прострочена за SLA.${ctx.dueDate ? `\nДедлайн був: ${ctx.dueDate}` : ''}\n${app}`,
       );
     case 'test':
       return wrap(`${building}: тестовий лист`, `Це тестове email-сповіщення Мій дім.\n${app}`);

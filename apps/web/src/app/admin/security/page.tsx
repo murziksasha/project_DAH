@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useI18n } from '@/components/LocaleProvider';
+import { SessionsPanel } from '@/components/SessionsPanel';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
 import { logout, logoutAll } from '@/lib/auth';
@@ -15,6 +16,7 @@ import {
 interface TwoFaStatus {
   totpEnabled: boolean;
   available: boolean;
+  required?: boolean;
   emailNotifyEnabled: boolean;
 }
 
@@ -280,17 +282,20 @@ export default function SecurityPage() {
         <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
           {t('securitySessionsDesc')}
         </p>
-        <button
-          type="button"
-          className="btn btn-sm btn-ghost"
-          disabled={loading}
-          onClick={() => {
-            setLoading(true);
-            void logoutAll().finally(() => setLoading(false));
-          }}
-        >
-          {t('securityLogoutAll')}
-        </button>
+        <SessionsPanel />
+        <div style={{ marginTop: '1rem' }}>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            disabled={loading}
+            onClick={() => {
+              setLoading(true);
+              void logoutAll().finally(() => setLoading(false));
+            }}
+          >
+            {t('securityLogoutAll')}
+          </button>
+        </div>
       </section>
 
       <section className="card" style={{ marginBottom: '1rem' }}>

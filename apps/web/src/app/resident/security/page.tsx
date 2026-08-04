@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useI18n } from '@/components/LocaleProvider';
+import { SessionsPanel } from '@/components/SessionsPanel';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
 import { logout } from '@/lib/auth';
@@ -183,6 +184,14 @@ export default function ResidentSecurityPage() {
             {t('residentSaveProfile')}
           </button>
         </form>
+      </section>
+
+      <section className="card" style={{ marginBottom: '1rem' }}>
+        <h2 style={{ fontSize: '1.05rem', marginBottom: '0.75rem' }}>{t('securitySessions')}</h2>
+        <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+          {t('securitySessionsDesc')}
+        </p>
+        <SessionsPanel />
       </section>
 
       <section className="card" style={{ marginBottom: '1rem' }}>

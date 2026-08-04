@@ -194,7 +194,7 @@ export default function MeetingsPage() {
     <div style={{ display: 'grid', gap: '1rem' }}>
       <PageHeader
         title="Збори + КЕП"
-        subtitle="Загальні збори: порядок денний, голосування, підпис (mock / КЕП / Дія)"
+        description="Загальні збори: порядок денний, голосування, підпис (mock / КЕП / Дія)"
       />
       {error && <p className="error">{error}</p>}
       {message && <p style={{ color: 'var(--success)' }}>{message}</p>}

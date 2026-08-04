@@ -154,7 +154,7 @@ button:disabled,
   filter: none;
 }
 
-input,
+input:not([type='checkbox']):not([type='radio']),
 select,
 textarea {
   width: 100%;
@@ -164,6 +164,20 @@ textarea {
   background: var(--surface);
   color: var(--text);
   font-size: 1rem;
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  width: auto;
+  height: auto;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  flex-shrink: 0;
+  accent-color: var(--primary);
+  cursor: pointer;
 }
 
 label {
@@ -1581,5 +1595,51 @@ label {
 
   .doc-builder-sticky-left .doc-builder-list {
     overflow: visible;
+  }
+}
+
+/* Dispatch: cards on small screens, table on desktop */
+@media (max-width: 768px) {
+  .dispatch-cards {
+    display: grid !important;
+  }
+  .dispatch-table {
+    display: none !important;
+  }
+}
+
+.resident-triad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.resident-triad-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  min-height: 88px;
+  text-align: left;
+  padding: 1rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+.resident-triad-btn span {
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+.resident-triad-btn:hover {
+  border-color: var(--primary);
+}
+@media (max-width: 560px) {
+  .resident-triad {
+    grid-template-columns: 1fr;
   }
 }

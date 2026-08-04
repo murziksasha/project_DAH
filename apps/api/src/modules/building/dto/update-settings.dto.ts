@@ -4,9 +4,12 @@ import {
   IsBoolean,
   IsIn,
   IsInt,
+  IsNumber,
   IsObject,
   IsOptional,
+  IsString,
   Max,
+  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -72,6 +75,18 @@ export class UpdateBuildingSettingsDto {
   @IsOptional()
   @IsBoolean()
   registrationEnabled?: boolean;
+
+  @ApiPropertyOptional({ description: 'Invite code required for self-registration' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  registrationInviteCode?: string;
+
+  @ApiPropertyOptional({ description: 'Dual-approve expenses at/above this UAH amount' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  expenseDualApprovalThreshold?: number | null;
 
   @ApiPropertyOptional()
   @IsOptional()

@@ -360,6 +360,33 @@ export default function ResidentPage() {
 
   return (
     <main>
+      <div className="resident-triad" aria-label="Швидкі дії">
+        <button
+          type="button"
+          className="resident-triad-btn"
+          onClick={() => setTab('account')}
+        >
+          Баланс / сплатити
+          <span>
+            {account?.summary
+              ? `${t('debt')}: ${formatMoney(account.summary.debt)}`
+              : 'Рахунок квартири'}
+          </span>
+        </button>
+        <button
+          type="button"
+          className="resident-triad-btn"
+          onClick={() => setTab('communications')}
+        >
+          Подати заявку
+          <span>Сантехніка, електрика, інші</span>
+        </button>
+        <a href="/resident/meters" className="resident-triad-btn" style={{ textDecoration: 'none' }}>
+          Лічильники
+          <span>Передати покази</span>
+        </a>
+      </div>
+
       <PageHeader
         title={t('residentCabinetTitle')}
         description={

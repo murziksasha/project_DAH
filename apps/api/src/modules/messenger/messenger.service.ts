@@ -49,14 +49,86 @@ export class MessengerService {
     }));
   }
 
+  /** Resolve building only if user may access it (apartment link or same-tenant staff). */
+  private async resolveAccessibleBuilding(user: AuthUser, buildingId?: string) {
+    if (buildingId) {
+      const building = await this.prisma.building.findUnique({ where: { id: buildingId } });
+      if (!building) throw new NotFoundException('Будинок не знайдено');
+      await this.assertBuildingAccess(user, building.id, building.tenantId);
+      return building;
+    }
+
+    // Prefer building from user's apartments
+    if (user.apartmentIds?.length) {
+      const link = await this.prisma.apartment.findFirst({
+        where: { id: { in: user.apartmentIds } },
+        include: { building: true },
+      });
+      if (link?.building) return link.building;
+    }
+
+    if (user.apartmentId) {
+      const apt = await this.prisma.apartment.findUnique({
+        where: { id: user.apartmentId },
+        include: { building: true },
+      });
+      if (apt?.building) return apt.building;
+    }
+
+    // Staff: first building in tenant
+    if (STAFF.includes(user.role as UserRole)) {
+      const where =
+        user.role === UserRole.super_admin
+          ? {}
+          : user.tenantId
+            ? { tenantId: user.tenantId }
+            : { id: '__none__' };
+      const building = await this.prisma.building.findFirst({
+        where,
+        orderBy: { createdAt: 'asc' },
+      });
+      if (building) return building;
+    }
+
+    throw new NotFoundException('Будинок не знайдено');
+  }
+
+  private async assertBuildingAccess(
+    user: AuthUser,
+    buildingId: string,
+    buildingTenantId: string,
+  ) {
+    if (user.role === UserRole.super_admin) return;
+
+    if (STAFF.includes(user.role as UserRole)) {
+      if (!user.tenantId || user.tenantId !== buildingTenantId) {
+        throw new ForbiddenException('Немає доступу до чату цього будинку');
+      }
+      return;
+    }
+
+    // Residents / crew: must have apartment in building
+    const aptIds = [
+      ...(user.apartmentIds ?? []),
+      ...(user.apartmentId ? [user.apartmentId] : []),
+    ];
+    if (!aptIds.length) {
+      throw new ForbiddenException('Немає доступу до чату цього будинку');
+    }
+    const ok = await this.prisma.apartment.findFirst({
+      where: { id: { in: aptIds }, buildingId },
+      select: { id: true },
+    });
+    if (!ok) {
+      throw new ForbiddenException('Немає доступу до чату цього будинку');
+    }
+  }
+
   /**
    * Ensure building-wide chat exists and user is a member.
    */
   async ensureBuildingThread(user: AuthUser, buildingId?: string) {
-    const building = buildingId
-      ? await this.prisma.building.findUnique({ where: { id: buildingId } })
-      : await this.prisma.building.findFirst();
-    if (!building) throw new NotFoundException('Будинок не знайдено');
+    const building = await this.resolveAccessibleBuilding(user, buildingId);
 
     let thread = await this.prisma.chatThread.findFirst({
       where: { buildingId: building.id, kind: ChatThreadKind.building },
@@ -81,10 +153,7 @@ export class MessengerService {
   }
 
   async ensureBoardResidentsThread(user: AuthUser, buildingId?: string) {
-    const building = buildingId
-      ? await this.prisma.building.findUnique({ where: { id: buildingId } })
-      : await this.prisma.building.findFirst();
-    if (!building) throw new NotFoundException('Будинок не знайдено');
+    const building = await this.resolveAccessibleBuilding(user, buildingId);
 
     let thread = await this.prisma.chatThread.findFirst({
       where: { buildingId: building.id, kind: ChatThreadKind.board_residents },
@@ -117,14 +186,22 @@ export class MessengerService {
       throw new NotFoundException('Користувача не знайдено');
     }
 
+    // Same tenant only (super_admin may DM anyone)
+    if (user.role !== UserRole.super_admin) {
+      if (!user.tenantId || !peer.tenantId || user.tenantId !== peer.tenantId) {
+        throw new ForbiddenException('Немає доступу до цього користувача');
+      }
+    }
+
     // Find existing direct thread between the two
     const mine = await this.prisma.chatThreadMember.findMany({
       where: { userId: user.id, thread: { kind: ChatThreadKind.direct } },
       include: { thread: { include: { members: true } } },
     });
-    const existing = mine.find((m) =>
-      m.thread.members.some((x) => x.userId === peerUserId) &&
-      m.thread.members.length === 2,
+    const existing = mine.find(
+      (m) =>
+        m.thread.members.some((x) => x.userId === peerUserId) &&
+        m.thread.members.length === 2,
     );
     if (existing) return existing.thread;
 
@@ -189,15 +266,23 @@ export class MessengerService {
     return msg;
   }
 
-  /** Staff can list residents for starting DMs */
+  /** Staff can list residents for starting DMs (same tenant). */
   async listPeers(user: AuthUser) {
     if (!STAFF.includes(user.role as UserRole) && user.role !== UserRole.resident) {
       return [];
     }
+    const tenantFilter =
+      user.role === UserRole.super_admin
+        ? {}
+        : user.tenantId
+          ? { tenantId: user.tenantId }
+          : { id: '__none__' };
+
     return this.prisma.user.findMany({
       where: {
         status: 'active',
         id: { not: user.id },
+        ...tenantFilter,
         role: {
           in: STAFF.includes(user.role as UserRole)
             ? [UserRole.resident, UserRole.board, UserRole.chairman, UserRole.dispatcher]

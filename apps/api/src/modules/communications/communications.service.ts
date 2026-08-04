@@ -123,15 +123,51 @@ export class CommunicationsService {
     };
   }
 
+  private async resolveAuthorBuildingId(
+    authorId: string,
+    preferredBuildingId?: string,
+  ): Promise<string | null> {
+    if (preferredBuildingId) {
+      const b = await this.prisma.building.findUnique({
+        where: { id: preferredBuildingId },
+        select: { id: true },
+      });
+      return b?.id ?? null;
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id: authorId },
+      select: {
+        apartmentId: true,
+        apartmentLinks: { select: { apartment: { select: { buildingId: true } } }, take: 1 },
+      },
+    });
+    if (user?.apartmentId) {
+      const apt = await this.prisma.apartment.findUnique({
+        where: { id: user.apartmentId },
+        select: { buildingId: true },
+      });
+      if (apt) return apt.buildingId;
+    }
+    return user?.apartmentLinks[0]?.apartment.buildingId ?? null;
+  }
+
   async listRequests(user: AuthUser) {
     const isAdmin = ADMIN_ROLES.includes(user.role as UserRole);
     const isCrew = user.role === UserRole.crew;
+    const where = isAdmin
+      ? user.tenantId
+        ? {
+            OR: [
+              { buildingId: null },
+              { author: { tenantId: user.tenantId } },
+            ],
+          }
+        : undefined
+      : isCrew
+        ? { assigneeId: user.id }
+        : { authorId: user.id };
     const rows = await this.prisma.request.findMany({
-      where: isAdmin
-        ? undefined
-        : isCrew
-          ? { assigneeId: user.id }
-          : { authorId: user.id },
+      where,
       orderBy: [{ priority: 'desc' }, { dueAt: 'asc' }, { createdAt: 'desc' }],
       include: {
         author: { select: { id: true, firstName: true, lastName: true, email: true } },
@@ -208,7 +244,13 @@ export class CommunicationsService {
 
   async createRequest(dto: CreateRequestDto, authorId: string) {
     const priority = dto.priority ?? RequestPriority.normal;
-    const building = await this.prisma.building.findFirst({ select: { settings: true } });
+    const buildingId = await this.resolveAuthorBuildingId(authorId, dto.buildingId);
+    const building = buildingId
+      ? await this.prisma.building.findUnique({
+          where: { id: buildingId },
+          select: { settings: true },
+        })
+      : await this.prisma.building.findFirst({ select: { settings: true } });
     const settings =
       building?.settings && typeof building.settings === 'object'
         ? (building.settings as { slaHoursByCategory?: Record<string, number> })
@@ -227,6 +269,7 @@ export class CommunicationsService {
         title: dto.title,
         description: dto.description,
         category: dto.category,
+        buildingId: buildingId ?? undefined,
         priority,
         authorId,
         dueAt,

@@ -1,5 +1,46 @@
 # Changelog
 
+## 1.11.1 — Sessions UI, header search, expense void dialog
+
+- `GET/DELETE /auth/sessions` — список пристроїв + відкликання (family revoke)
+- Access JWT містить `sid` для позначки «цей пристрій»
+- UI: `SessionsPanel` у admin/resident security
+- Header quick search для staff
+- Витрати: анулювання через ConfirmDialog + причина (без `window.prompt`)
+- Audit labels для password reset / session / expense dual-approve
+- e2e: sessions smoke
+
+## 1.11.0 — Security hardening + UX for 200–300 users
+
+### Security (P0–P1)
+- Swagger **off by default in production** (`SWAGGER_ENABLED` explicit opt-in)
+- API security headers (CSP, nosniff, frame options)
+- nginx body limits: 25m API, 512m backups; CSP header
+- Public `/api/health` minimal; full details at `/api/health/details` (staff)
+- Messenger: building membership + same-tenant DMs/peers
+- Password policy (length + letter + digit + common list)
+- Login lockout after 10 failed attempts (15 min)
+- Password reset via email (`POST /auth/password/forgot|reset`)
+- TOTP secrets encrypted at rest (`enc:v1:` + AES-GCM)
+- File uploads validated by **magic bytes** (not client MIME alone)
+- Registration **invite code** (`Building.settings.registrationInviteCode`)
+- Finance + backup download: **require 2FA** (`REQUIRE_FINANCE_2FA`, default on)
+- Expense dual-approval threshold + `POST /finance/expenses/:id/approve`
+- Request `buildingId` + SLA notify job; audit on backup download
+
+### UX
+- Resident home triad (balance / request / meters)
+- Notification bell + in-app inbox
+- Admin global search (apartments, users, open requests)
+- Password reset UI on login; onboarding / 2FA banners
+- Dispatch mobile cards; toast provider; confirm dialog component
+- Settings: invite code + dual-approval threshold
+
+### Ops
+- Worker: daily backup + SLA scan
+- `docs/SECURITY-CHECKLIST.md`
+- Migration `20260804120000_security_ux_hardening`
+
 ## 1.10.1 — Production КЕП / Дія.Підпис
 
 - Модуль **`/api/kep`**: SignSession, providers `mock` | `diia` | `cloud_kep` | `cades`

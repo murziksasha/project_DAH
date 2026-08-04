@@ -122,7 +122,7 @@ export default function DispatchPage() {
 
   return (
     <div style={{ display: 'grid', gap: '1rem' }}>
-      <PageHeader title={t('dispatchTitle')} subtitle={t('dispatchSubtitle')} />
+      <PageHeader title={t('dispatchTitle')} description={t('dispatchSubtitle')} />
 
       {error && (
         <div className="card" style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}>
@@ -181,7 +181,66 @@ export default function DispatchPage() {
           {t('dispatchEmpty')}
         </div>
       ) : (
-        <div className="table-scroll">
+        <>
+        {/* Mobile-friendly cards */}
+        <div className="dispatch-cards" style={{ display: 'none', gap: '0.75rem' }}>
+          {[...data.items]
+            .sort(
+              (a, b) =>
+                PRIORITY_ORDER.indexOf(a.priority as (typeof PRIORITY_ORDER)[number]) -
+                PRIORITY_ORDER.indexOf(b.priority as (typeof PRIORITY_ORDER)[number]),
+            )
+            .map((item) => (
+              <div key={item.id} className="card dispatch-card" style={{ display: 'grid', gap: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                  <strong>{item.title}</strong>
+                  <span style={{ color: slaColor(item.slaStatus), fontWeight: 700 }}>
+                    {slaLabel(item.slaStatus)}
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
+                  {priorityLabel(item.priority)} · {item.category} ·{' '}
+                  {item.dueAt ? formatDateUk(item.dueAt) : '—'}
+                </div>
+                <div style={{ fontSize: '0.85rem' }}>
+                  {item.author.lastName} {item.author.firstName}
+                  {item.assignee
+                    ? ` → ${item.assignee.lastName} ${item.assignee.firstName}`
+                    : ' · без виконавця'}
+                </div>
+                {item.status !== 'done' && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {(!item.assignee || item.assignee.id !== me?.id) && (
+                      <button
+                        type="button"
+                        className="btn"
+                        style={{ flex: 1, minHeight: 44 }}
+                        disabled={busyId === item.id}
+                        onClick={() =>
+                          patchRequest(item.id, {
+                            assigneeId: me?.id,
+                            status: 'in_progress',
+                          })
+                        }
+                      >
+                        {t('dispatchTake')}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      style={{ flex: 1, minHeight: 44 }}
+                      disabled={busyId === item.id}
+                      onClick={() => patchRequest(item.id, { status: 'done' })}
+                    >
+                      {t('dispatchDone')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+        </div>
+        <div className="table-scroll dispatch-table">
           <table className="data-table">
             <thead>
               <tr>
@@ -263,6 +322,7 @@ export default function DispatchPage() {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   );

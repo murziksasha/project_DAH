@@ -118,7 +118,14 @@ export function useCashFlowQuery(from: string, to: string, enabled = true) {
 }
 
 export function useExpensesPageQuery(
-  params: { from?: string; to?: string; fundId?: string; page?: number; limit?: number },
+  params: {
+    from?: string;
+    to?: string;
+    fundId?: string;
+    page?: number;
+    limit?: number;
+    approvalStatus?: string;
+  },
   enabled = true,
 ) {
   const buildingId = getSelectedBuildingId();
@@ -126,6 +133,7 @@ export function useExpensesPageQuery(
   if (params.from) qs.set('from', params.from);
   if (params.to) qs.set('to', params.to);
   if (params.fundId) qs.set('fundId', params.fundId);
+  if (params.approvalStatus) qs.set('approvalStatus', params.approvalStatus);
   qs.set('page', String(params.page ?? 1));
   qs.set('limit', String(params.limit ?? 50));
   const q = qs.toString();
@@ -139,8 +147,12 @@ export function useExpensesPageQuery(
           amount: string | number;
           date: string;
           description: string | null;
+          approvalStatus?: string;
+          needsApproval?: boolean;
           fund: { name: string };
           category: { name: string };
+          createdBy?: { id?: string; firstName: string; lastName: string } | null;
+          approvedBy?: { id?: string; firstName: string; lastName: string } | null;
         }>;
         total: number;
         page: number;

@@ -98,4 +98,150 @@ export class NotificationsService implements OnModuleInit {
 
     return { sent, failed };
   }
+
+  /** Persist in-app bell notification (+ optional push to that user). */
+  async notifyUser(
+    userId: string,
+    payload: PushPayload & { kind?: string },
+  ) {
+    await this.prisma.appNotification.create({
+      data: {
+        userId,
+        title: payload.title,
+        body: payload.body,
+        url: payload.url,
+        kind: payload.kind ?? 'info',
+      },
+    });
+
+    if (!this.enabled) return { push: false };
+    const subs = await this.prisma.pushSubscription.findMany({ where: { userId } });
+    const body = JSON.stringify({
+      title: payload.title,
+      body: payload.body,
+      url: payload.url ?? '/',
+    });
+    await Promise.all(
+      subs.map(async (sub) => {
+        try {
+          await webpush.sendNotification(
+            {
+              endpoint: sub.endpoint,
+              keys: { p256dh: sub.p256dh, auth: sub.auth },
+            },
+            body,
+          );
+        } catch {
+          /* ignore */
+        }
+      }),
+    );
+    return { push: true };
+  }
+
+  async notifyUsers(
+    userIds: string[],
+    payload: PushPayload & { kind?: string },
+  ) {
+    const unique = [...new Set(userIds)];
+    for (const id of unique) {
+      await this.notifyUser(id, payload);
+    }
+    return { count: unique.length };
+  }
+
+  async listInbox(userId: string, limit = 30) {
+    const items = await this.prisma.appNotification.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(limit, 100),
+    });
+    const unread = await this.prisma.appNotification.count({
+      where: { userId, readAt: null },
+    });
+    return { items, unread };
+  }
+
+  async markRead(userId: string, id?: string) {
+    if (id) {
+      await this.prisma.appNotification.updateMany({
+        where: { id, userId },
+        data: { readAt: new Date() },
+      });
+    } else {
+      await this.prisma.appNotification.updateMany({
+        where: { userId, readAt: null },
+        data: { readAt: new Date() },
+      });
+    }
+    return { ok: true };
+  }
+
+  /**
+   * Scan open requests for SLA warning/breach; notify staff once per stage.
+   */
+  async processSlaAlerts() {
+    const open = await this.prisma.request.findMany({
+      where: { status: { not: 'done' }, dueAt: { not: null } },
+      select: {
+        id: true,
+        title: true,
+        dueAt: true,
+        status: true,
+        slaWarnedAt: true,
+        slaBreachedAt: true,
+      },
+    });
+
+    const staff = await this.prisma.user.findMany({
+      where: {
+        status: 'active',
+        role: { in: ['chairman', 'board', 'dispatcher'] },
+      },
+      select: { id: true, email: true, emailNotifyEnabled: true },
+    });
+
+    let warned = 0;
+    let breached = 0;
+    const now = Date.now();
+    const warnMs = 4 * 60 * 60 * 1000;
+
+    for (const r of open) {
+      if (!r.dueAt) continue;
+      const msLeft = r.dueAt.getTime() - now;
+      if (msLeft < 0 && !r.slaBreachedAt) {
+        await this.prisma.request.update({
+          where: { id: r.id },
+          data: { slaBreachedAt: new Date(), slaWarnedAt: r.slaWarnedAt ?? new Date() },
+        });
+        await this.notifyUsers(
+          staff.map((s) => s.id),
+          {
+            title: 'SLA прострочено',
+            body: r.title,
+            url: '/admin/dispatch',
+            kind: 'sla_breached',
+          },
+        );
+        breached++;
+      } else if (msLeft >= 0 && msLeft <= warnMs && !r.slaWarnedAt) {
+        await this.prisma.request.update({
+          where: { id: r.id },
+          data: { slaWarnedAt: new Date() },
+        });
+        await this.notifyUsers(
+          staff.map((s) => s.id),
+          {
+            title: 'SLA — близько дедлайну',
+            body: r.title,
+            url: '/admin/dispatch',
+            kind: 'sla_warning',
+          },
+        );
+        warned++;
+      }
+    }
+
+    return { warned, breached, scanned: open.length };
+  }
 }

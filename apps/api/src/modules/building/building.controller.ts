@@ -80,6 +80,23 @@ export class BuildingController {
     UserRole.chairman,
     UserRole.accountant,
     UserRole.board,
+    UserRole.dispatcher,
+    UserRole.auditor,
+  )
+  @Get('search')
+  globalSearch(@Query('q') q: string | undefined, @CurrentUser() user: AuthUser) {
+    return this.building.globalSearch(
+      q ?? '',
+      user.role === 'super_admin' ? null : user.tenantId,
+    );
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(
+    UserRole.super_admin,
+    UserRole.chairman,
+    UserRole.accountant,
+    UserRole.board,
     UserRole.auditor,
   )
   @Get('ops-summary')

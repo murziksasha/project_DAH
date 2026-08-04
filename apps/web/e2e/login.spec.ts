@@ -8,6 +8,13 @@ test.describe('Login', () => {
     await expect(page.getByLabel('Пароль')).toBeVisible();
   });
 
+  test('shows forgot-password form', async ({ page }) => {
+    await page.goto('/login');
+    await page.getByRole('button', { name: 'Забули пароль?' }).click();
+    await expect(page.getByRole('button', { name: 'Надіслати' })).toBeVisible();
+    await expect(page.getByLabel('Email')).toBeVisible();
+  });
+
   test('resident login redirects to resident cabinet', async ({ page }) => {
     await page.goto('/login');
     await page.getByLabel('Email').fill('resident@osbb.local');

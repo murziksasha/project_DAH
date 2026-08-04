@@ -698,7 +698,12 @@ function FormsTab({
           </p>
           <div
             className="doc-preview-page"
-            dangerouslySetInnerHTML={{ __html: previewHtml }}
+            dangerouslySetInnerHTML={{
+              // Preview is built from admin-controlled template blocks only; strip scripts as defense-in-depth.
+              __html: previewHtml
+                .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
+                .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, ''),
+            }}
           />
         </div>
       </section>

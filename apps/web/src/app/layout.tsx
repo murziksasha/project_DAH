@@ -3,6 +3,7 @@ import { AuthCookieSync } from '@/components/AuthCookieSync';
 import { LocaleProvider } from '@/components/LocaleProvider';
 import { PwaPrompt } from '@/components/PwaPrompt';
 import { QueryProvider } from '@/components/QueryProvider';
+import { ToastProvider } from '@/components/ui/Toast';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -37,9 +38,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <QueryProvider>
           <LocaleProvider>
-            <AuthCookieSync />
-            {children}
-            <PwaPrompt />
+            <ToastProvider>
+              <AuthCookieSync />
+              {children}
+              <PwaPrompt />
+            </ToastProvider>
           </LocaleProvider>
         </QueryProvider>
       </body>

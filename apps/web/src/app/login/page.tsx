@@ -48,7 +48,7 @@ async function finishLogin(data: LoginResponse, incompleteMsg: string) {
   window.location.href = target;
 }
 
-type Mode = 'password' | 'sms' | '2fa';
+type Mode = 'password' | 'sms' | '2fa' | 'forgot' | 'reset';
 
 export default function LoginPage() {
   const { t, locale, setLocale } = useI18n();
@@ -67,8 +67,16 @@ export default function LoginPage() {
   const [smsAvailable, setSmsAvailable] = useState(false);
   const [identityAvailable, setIdentityAvailable] = useState(false);
   const [identityProvider, setIdentityProvider] = useState('mock');
+  const [resetToken, setResetToken] = useState('');
+  const [newPassword, setNewPassword] = useState('');
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const reset = params.get('reset');
+    if (reset) {
+      setResetToken(reset);
+      setMode('reset');
+    }
     if (isLocalHost()) {
       setEmail('chairman@osbb.local');
       setPassword('password123');
@@ -105,6 +113,44 @@ export default function LoginPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- identity callback once on mount
   }, []);
+
+  async function handleForgot(e: FormEvent) {
+    e.preventDefault();
+    setError('');
+    setMessage('');
+    setLoading(true);
+    try {
+      const res = await apiFetch<{ message?: string }>('/auth/password/forgot', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      });
+      setMessage(res.message ?? 'Якщо email зареєстровано, надіслано інструкції');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('loginError'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleReset(e: FormEvent) {
+    e.preventDefault();
+    setError('');
+    setMessage('');
+    setLoading(true);
+    try {
+      const res = await apiFetch<{ message?: string }>('/auth/password/reset', {
+        method: 'POST',
+        body: JSON.stringify({ token: resetToken, newPassword }),
+      });
+      setMessage(res.message ?? 'Пароль змінено');
+      setMode('password');
+      setPassword('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('loginError'));
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function handlePassword(e: FormEvent) {
     e.preventDefault();
@@ -268,8 +314,20 @@ export default function LoginPage() {
             />
           </div>
           {error && <p className="error">{error}</p>}
+          {message && <p style={{ color: 'var(--success)' }}>{message}</p>}
           <button type="submit" disabled={loading}>
             {loading ? t('loginLoading') : t('loginSubmit')}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              setMode('forgot');
+              setError('');
+              setMessage('');
+            }}
+          >
+            Забули пароль?
           </button>
           {identityAvailable && (
             <button
@@ -285,6 +343,66 @@ export default function LoginPage() {
                   : t('loginViaIdentity')}
             </button>
           )}
+        </form>
+      )}
+
+      {mode === 'forgot' && (
+        <form onSubmit={handleForgot} className="card" style={{ display: 'grid', gap: '1rem' }}>
+          <p style={{ color: 'var(--muted)', margin: 0, fontSize: '0.9rem' }}>
+            Вкажіть email — надішлемо посилання для нового пароля (якщо акаунт існує).
+          </p>
+          <div>
+            <label htmlFor="forgot-email">{t('loginEmail')}</label>
+            <input
+              id="forgot-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              autoComplete="username"
+            />
+          </div>
+          {error && <p className="error">{error}</p>}
+          {message && <p style={{ color: 'var(--success)' }}>{message}</p>}
+          <button type="submit" disabled={loading}>
+            {loading ? '…' : 'Надіслати'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              setMode('password');
+              setError('');
+              setMessage('');
+            }}
+          >
+            Назад до входу
+          </button>
+        </form>
+      )}
+
+      {mode === 'reset' && (
+        <form onSubmit={handleReset} className="card" style={{ display: 'grid', gap: '1rem' }}>
+          <p style={{ color: 'var(--muted)', margin: 0, fontSize: '0.9rem' }}>
+            Встановіть новий пароль (мін. 8 символів, літера + цифра).
+          </p>
+          <div>
+            <label htmlFor="new-password">Новий пароль</label>
+            <input
+              id="new-password"
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              required
+              minLength={8}
+              autoComplete="new-password"
+            />
+          </div>
+          {error && <p className="error">{error}</p>}
+          {message && <p style={{ color: 'var(--success)' }}>{message}</p>}
+          <button type="submit" disabled={loading}>
+            {loading ? '…' : 'Зберегти пароль'}
+          </button>
         </form>
       )}
 
