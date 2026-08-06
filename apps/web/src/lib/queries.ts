@@ -10,6 +10,11 @@ export const queryKeys = {
   debtors: (buildingId: string | null) => ['debtors', buildingId] as const,
   opsSummary: (buildingId: string | null) => ['ops-summary', buildingId] as const,
   cashFlow: (buildingId: string | null, qs: string) => ['cash-flow', buildingId, qs] as const,
+  dispatchQueue: (buildingId: string | null, filter: string) =>
+    ['dispatch-queue', buildingId, filter] as const,
+  communications: (buildingId: string | null) => ['communications', buildingId] as const,
+  messengerThreads: ['messenger-threads'] as const,
+  messengerPeers: ['messenger-peers'] as const,
 };
 
 function authToken() {
@@ -170,5 +175,147 @@ export function useBankAccountsQuery(enabled = true) {
       apiFetch<
         Array<{ id: string; bankName: string; iban: string; description?: string | null }>
       >('/finance/bank-accounts', { token: authToken() }),
+  });
+}
+
+export type DispatchQueueItem = {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  status: string;
+  priority: string;
+  dueAt: string | null;
+  createdAt: string;
+  slaStatus: 'ok' | 'warning' | 'breached' | 'none';
+  isOverdue: boolean;
+  author: { firstName: string; lastName: string; email?: string };
+  assignee: { id?: string; firstName: string; lastName: string } | null;
+};
+
+export type DispatchQueueResponse = {
+  items: DispatchQueueItem[];
+  summary: {
+    open: number;
+    overdue: number;
+    warning: number;
+    unassigned: number;
+    urgent: number;
+  };
+};
+
+export function useDispatchQueueQuery(
+  filter: 'all' | 'overdue' | 'unassigned' | 'mine' = 'all',
+  enabled = true,
+) {
+  const buildingId = getSelectedBuildingId();
+  return useQuery({
+    queryKey: queryKeys.dispatchQueue(buildingId, filter),
+    enabled,
+    queryFn: () => {
+      const qs = new URLSearchParams();
+      if (filter === 'overdue') qs.set('overdueOnly', '1');
+      if (filter === 'unassigned') qs.set('unassignedOnly', '1');
+      if (filter === 'mine') qs.set('mineOnly', '1');
+      const q = qs.toString();
+      return apiFetch<DispatchQueueResponse>(
+        `/communications/requests/queue${q ? `?${q}` : ''}`,
+        { token: authToken() },
+      );
+    },
+  });
+}
+
+export type CommunicationsBundle = {
+  announcements: Array<{
+    id: string;
+    title: string;
+    body: string;
+    isPinned?: boolean;
+    createdAt: string;
+    author?: { firstName: string; lastName: string };
+  }>;
+  requests: Array<{
+    id: string;
+    title: string;
+    description: string;
+    status: string;
+    category: string;
+    createdAt: string;
+    author?: { firstName: string; lastName: string };
+    assignee?: { firstName: string; lastName: string } | null;
+  }>;
+  polls: Array<{
+    id: string;
+    question: string;
+    isActive?: boolean;
+    status?: string;
+    options: Array<{
+      id: string;
+      text: string;
+      votes?: number;
+      _count?: { votes: number };
+      voteCount?: number;
+      weightSum?: number;
+    }>;
+    endsAt?: string | null;
+    _count?: { votes: number };
+    voteWeight?: string;
+    stats?: {
+      participationPercent: number;
+      quorumPercent: number | null;
+      quorumMet: boolean;
+    };
+  }>;
+};
+
+export function useCommunicationsQuery(enabled = true) {
+  const buildingId = getSelectedBuildingId();
+  return useQuery({
+    queryKey: queryKeys.communications(buildingId),
+    enabled,
+    queryFn: async (): Promise<CommunicationsBundle> => {
+      const token = authToken();
+      const [announcements, requests, polls] = await Promise.all([
+        apiFetch<CommunicationsBundle['announcements']>('/communications/announcements', {
+          token,
+        }),
+        apiFetch<CommunicationsBundle['requests']>('/communications/requests', { token }),
+        apiFetch<CommunicationsBundle['polls']>('/communications/polls', { token }),
+      ]);
+      return { announcements, requests, polls };
+    },
+  });
+}
+
+export function useMessengerThreadsQuery(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.messengerThreads,
+    enabled,
+    queryFn: () =>
+      apiFetch<
+        Array<{
+          id: string;
+          title: string | null;
+          kind: string;
+          lastMessage?: {
+            body: string;
+            createdAt: string;
+            author: { firstName: string; lastName: string };
+          } | null;
+          messageCount?: number;
+        }>
+      >('/messenger/threads', { token: authToken() }),
+  });
+}
+
+export function useMessengerPeersQuery(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.messengerPeers,
+    enabled,
+    queryFn: () =>
+      apiFetch<
+        Array<{ id: string; firstName: string; lastName: string; role: string }>
+      >('/messenger/peers', { token: authToken() }),
   });
 }

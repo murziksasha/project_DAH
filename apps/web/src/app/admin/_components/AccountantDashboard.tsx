@@ -253,7 +253,7 @@ export function AccountantDashboard() {
                 key={d.apartmentId}
                 style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}
               >
-                <Link href={`/admin/apartments/${d.apartmentId}`}>
+                <Link href={`/admin/apartments/detail/?id=${encodeURIComponent(d.apartmentId)}`}>
                   {t('aptPrefix')} {d.number}
                 </Link>
                 <strong style={{ color: 'var(--danger)' }}>{formatMoney(d.debt)}</strong>

@@ -1,40 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useI18n } from '@/components/LocaleProvider';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
 import { getStoredUser } from '@/lib/auth';
 import { formatDateUk } from '@/lib/money';
+import { useDispatchQueueQuery } from '@/lib/queries';
 
 type SlaStatus = 'ok' | 'warning' | 'breached' | 'none';
-
-interface QueueItem {
-  id: string;
-  title: string;
-  description: string;
-  category: string;
-  status: string;
-  priority: string;
-  dueAt: string | null;
-  createdAt: string;
-  slaStatus: SlaStatus;
-  isOverdue: boolean;
-  author: { firstName: string; lastName: string; email?: string };
-  assignee: { id?: string; firstName: string; lastName: string } | null;
-}
-
-interface QueueResponse {
-  items: QueueItem[];
-  summary: {
-    open: number;
-    overdue: number;
-    warning: number;
-    unassigned: number;
-    urgent: number;
-  };
-}
-
 type FilterMode = 'all' | 'overdue' | 'unassigned' | 'mine';
 
 const PRIORITY_ORDER = ['urgent', 'high', 'normal', 'low'] as const;
@@ -42,7 +17,7 @@ const PRIORITY_ORDER = ['urgent', 'high', 'normal', 'low'] as const;
 export default function DispatchPage() {
   const { t } = useI18n();
   const me = getStoredUser();
-  const [data, setData] = useState<QueueResponse | null>(null);
+  const queryClient = useQueryClient();
   const [filter, setFilter] = useState<FilterMode>('all');
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -55,27 +30,18 @@ export default function DispatchPage() {
     }
   }, []);
 
-  const load = useCallback(async () => {
-    const token = getToken();
-    if (!token) {
-      window.location.href = '/login';
-      return;
-    }
-    const qs = new URLSearchParams();
-    if (filter === 'overdue') qs.set('overdueOnly', '1');
-    if (filter === 'unassigned') qs.set('unassignedOnly', '1');
-    if (filter === 'mine') qs.set('mineOnly', '1');
-    const q = qs.toString();
-    const res = await apiFetch<QueueResponse>(
-      `/communications/requests/queue${q ? `?${q}` : ''}`,
-      { token },
-    );
-    setData(res);
-  }, [filter]);
+  useEffect(() => {
+    if (!getToken()) window.location.href = '/login/';
+  }, []);
+
+  const queueQuery = useDispatchQueueQuery(filter, Boolean(getToken()));
+  const data = queueQuery.data ?? null;
 
   useEffect(() => {
-    load().catch((err) => setError(err instanceof Error ? err.message : String(err)));
-  }, [load]);
+    if (queueQuery.error) {
+      setError(queueQuery.error instanceof Error ? queueQuery.error.message : String(queueQuery.error));
+    }
+  }, [queueQuery.error]);
 
   async function patchRequest(
     id: string,
@@ -91,7 +57,7 @@ export default function DispatchPage() {
         token,
         body: JSON.stringify(body),
       });
-      await load();
+      await queryClient.invalidateQueries({ queryKey: ['dispatch-queue'] });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

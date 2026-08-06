@@ -18,7 +18,9 @@ Use before exposing the instance to the internet (200–300 users, low concurren
 - [ ] Do **not** run `prisma/seed.ts` with demo passwords in production
 - [ ] Do **not** publish Postgres/Redis/MinIO ports to the public internet
 - [ ] Do **not** leave MinIO console (`:9001`) on a public interface
+- [ ] Do **not** rely on browser → MinIO `:9000` (use same-origin `/api/files/download` only)
 - [ ] Do **not** enable Swagger (`SWAGGER_ENABLED=true`) on a public host without VPN
+- [ ] Redis is optional; leave `REDIS_URL=none` unless you intentionally run profile `redis`
 
 ## App config
 
@@ -39,7 +41,7 @@ Use before exposing the instance to the internet (200–300 users, low concurren
 
 ## Backups
 
-- [ ] Worker running (daily + weekly jobs)
+- [ ] Worker running (slim module + inline cron: reminders / SLA / daily+weekly backups)
 - [ ] Restore drill once per quarter
 - [ ] Backup download requires 2FA for privileged roles
 

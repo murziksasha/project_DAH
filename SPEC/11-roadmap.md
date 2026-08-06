@@ -96,6 +96,16 @@
 | Resident triad, notification center, global search, dispatch mobile | ✅ |
 | Worker daily backup + SLA alerts | ✅ |
 
+## v1.14 — runtime slim + perf (A–E) — **COMPLETE**
+
+| Фаза | Зміст | Статус |
+|------|--------|--------|
+| **A** Slim `WorkerModule` (не full AppModule) | ✅ |
+| **B** Inline cron; Redis optional (`REDIS_URL=none`, profile `redis`) | ✅ |
+| **C** Same-origin file download HMAC + stream (no public :9000) | ✅ |
+| **D** Next `output: 'export'` + nginx:alpine web (no Node web) | ✅ |
+| **E** React Query hot paths + dynamic DocumentTemplateBuilder | ✅ |
+
 ## Beyond plan (future product, not blocking)
 
 | Тема | Примітка |

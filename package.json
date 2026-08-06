@@ -1,6 +1,6 @@
 {
   "name": "dah-osmd",
-  "version": "1.12.0",
+  "version": "1.14.0",
   "private": true,
   "workspaces": [
     "apps/*",
@@ -9,8 +9,9 @@
   "scripts": {
     "docker:up": "docker compose build api web && docker compose up -d",
     "docker:down": "npm run docker:infra:down",
-    "docker:infra": "docker compose up -d postgres redis minio minio-init",
-    "docker:infra:down": "docker compose stop postgres redis minio",
+    "docker:infra": "docker compose up -d postgres minio minio-init",
+    "docker:infra:redis": "docker compose --profile redis up -d redis",
+    "docker:infra:down": "docker compose stop postgres minio redis",
     "dev:prepare": "docker compose stop api web nginx worker && npm run docker:infra",
     "setup:local": "npm run docker:up && npm run db:generate -w @dah/api && npm run db:migrate:dev -w @dah/api && npm run db:seed -w @dah/api",
     "dev:api": "npm run dev -w @dah/api",

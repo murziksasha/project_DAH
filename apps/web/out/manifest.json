@@ -1,0 +1,27 @@
+{
+  "id": "/",
+  "name": "Мій дім — ОСББ та УК",
+  "short_name": "Мій дім",
+  "description": "Управління ОСББ і управляючими компаніями: фінанси, внески, прозорість",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#2563eb",
+  "orientation": "portrait-primary",
+  "lang": "uk",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

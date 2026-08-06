@@ -1,9 +1,11 @@
 'use client';
 
-import { type CSSProperties, FormEvent, useCallback, useEffect, useState } from 'react';
+import { type CSSProperties, FormEvent, useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
 import { getStoredUser } from '@/lib/auth';
+import { useMessengerPeersQuery, useMessengerThreadsQuery } from '@/lib/queries';
 
 interface Thread {
   id: string;
@@ -54,34 +56,31 @@ function activeListBtn(isActive: boolean): CSSProperties {
 
 export default function AdminMessengerPage() {
   const me = getStoredUser();
-  const [threads, setThreads] = useState<Thread[]>([]);
+  const queryClient = useQueryClient();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState('');
-  const [peers, setPeers] = useState<Peer[]>([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [openingPeerId, setOpeningPeerId] = useState<string | null>(null);
 
-  const loadThreads = useCallback(async () => {
-    const token = getToken();
-    if (!token) {
-      window.location.href = '/login';
-      return;
-    }
-    const data = await apiFetch<Thread[]>('/messenger/threads', { token });
-    setThreads(data);
+  useEffect(() => {
+    if (!getToken()) window.location.href = '/login/';
   }, []);
 
+  const threadsQuery = useMessengerThreadsQuery(Boolean(getToken()));
+  const peersQuery = useMessengerPeersQuery(Boolean(getToken()));
+  const threads = (threadsQuery.data ?? []) as Thread[];
+  const peers = (peersQuery.data ?? []) as Peer[];
+
   useEffect(() => {
-    loadThreads().catch((e: Error) => setError(e.message));
-    const token = getToken();
-    if (token) {
-      apiFetch<Peer[]>('/messenger/peers', { token })
-        .then(setPeers)
-        .catch((e: Error) => setError(e.message || 'Не вдалося завантажити контакти'));
-    }
-  }, [loadThreads]);
+    const err = threadsQuery.error || peersQuery.error;
+    if (err) setError(err instanceof Error ? err.message : String(err));
+  }, [threadsQuery.error, peersQuery.error]);
+
+  async function loadThreads() {
+    await queryClient.invalidateQueries({ queryKey: ['messenger-threads'] });
+  }
 
   async function openThread(id: string) {
     const token = getToken();

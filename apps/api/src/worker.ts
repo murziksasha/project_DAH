@@ -1,131 +1,135 @@
 import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
-import { Worker, Queue } from 'bullmq';
-import { AppModule } from './app.module';
+import { WorkerModule } from './worker.module';
 import { BackupsService } from './modules/backups/backups.service';
 import { NotificationsService } from './modules/notifications/notifications.service';
 import { RemindersService } from './modules/reminders/reminders.service';
 
 const logger = new Logger('Worker');
-const redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379';
 
-function redisConnection() {
-  const parsed = new URL(redisUrl);
-  return {
-    host: parsed.hostname,
-    port: Number(parsed.port) || 6379,
-    maxRetriesPerRequest: null as null,
-  };
+const SCAN_MS = 15 * 60 * 1000;
+const CLOCK_MS = 60 * 1000;
+
+/** UTC day key YYYY-MM-DD for once-per-day guards. */
+function utcDayKey(d = new Date()): string {
+  return d.toISOString().slice(0, 10);
 }
 
 async function bootstrap() {
-  const app = await NestFactory.createApplicationContext(AppModule, {
+  const app = await NestFactory.createApplicationContext(WorkerModule, {
     logger: ['error', 'warn', 'log'],
   });
   const reminders = app.get(RemindersService);
   const backups = app.get(BackupsService);
   const notifications = app.get(NotificationsService);
-  const connection = redisConnection();
 
-  const queue = new Queue('dah-jobs', { connection });
+  const timers: NodeJS.Timeout[] = [];
+  let lastDailyKey = '';
+  let lastWeeklyKey = '';
+  let scanRunning = false;
+  let slaRunning = false;
 
-  // Ensure recurring scan every 15 minutes
-  await queue.add(
-    'reminders.scan',
-    {},
-    {
-      repeat: { every: 15 * 60 * 1000 },
-      removeOnComplete: 100,
-      removeOnFail: 50,
-      jobId: 'reminders-scan-repeat',
-    },
+  async function runRemindersScan(reason: string) {
+    if (scanRunning) {
+      logger.warn(`reminders.scan skipped (already running, ${reason})`);
+      return;
+    }
+    scanRunning = true;
+    try {
+      const result = await reminders.processDue();
+      logger.log(
+        `reminders.scan (${reason}): custom=${result.customSent} debt=${result.debtSent} overdue=${result.markedOverdue}`,
+      );
+    } catch (err) {
+      logger.error(
+        `reminders.scan failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      scanRunning = false;
+    }
+  }
+
+  async function runSlaScan(reason: string) {
+    if (slaRunning) {
+      logger.warn(`sla.scan skipped (already running, ${reason})`);
+      return;
+    }
+    slaRunning = true;
+    try {
+      const result = await notifications.processSlaAlerts();
+      logger.log(
+        `sla.scan (${reason}): warned=${result.warned} breached=${result.breached} scanned=${result.scanned}`,
+      );
+    } catch (err) {
+      logger.error(`sla.scan failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      slaRunning = false;
+    }
+  }
+
+  async function runWeeklyBackup(reason: string) {
+    try {
+      const result = await backups.ensureWeeklyBackup({ source: 'schedule' });
+      logger.log(
+        result.skipped
+          ? `backups.weekly (${reason}): skipped (${result.weekKey} exists)`
+          : `backups.weekly (${reason}): created ${result.relativePath}`,
+      );
+    } catch (err) {
+      logger.error(
+        `backups.weekly failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  async function runDailyBackup(reason: string) {
+    try {
+      const result = await backups.createManualBackup({ source: 'schedule' });
+      logger.log(`backups.daily (${reason}): created ${result.relativePath ?? 'ok'}`);
+    } catch (err) {
+      logger.error(
+        `backups.daily failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  // Boot: scan immediately; weekly once (skips if slot exists). Daily is schedule-only.
+  await runRemindersScan('boot');
+  await runSlaScan('boot');
+  await runWeeklyBackup('boot');
+
+  timers.push(
+    setInterval(() => {
+      void runRemindersScan('interval');
+      void runSlaScan('interval');
+    }, SCAN_MS),
   );
 
-  // SLA warning / breach notifications every 15 minutes
-  await queue.add(
-    'sla.scan',
-    {},
-    {
-      repeat: { every: 15 * 60 * 1000 },
-      removeOnComplete: 100,
-      removeOnFail: 50,
-      jobId: 'sla-scan-repeat',
-    },
-  );
+  // UTC clock: daily ~02:00, weekly ensure ~03:00 (same cadence as previous BullMQ cron).
+  timers.push(
+    setInterval(() => {
+      const now = new Date();
+      const day = utcDayKey(now);
+      const hour = now.getUTCHours();
+      const min = now.getUTCMinutes();
 
-  // Daily ~03:00 UTC: ensure one weekly DB copy (skips if week already exists)
-  await queue.add(
-    'backups.weekly',
-    {},
-    {
-      repeat: { pattern: '0 3 * * *' },
-      removeOnComplete: 50,
-      removeOnFail: 20,
-      jobId: 'backups-weekly-repeat',
-    },
-  );
-
-  // Daily ~02:00 UTC: manual-style daily dump (always creates a new manual slot)
-  await queue.add(
-    'backups.daily',
-    {},
-    {
-      repeat: { pattern: '0 2 * * *' },
-      removeOnComplete: 50,
-      removeOnFail: 20,
-      jobId: 'backups-daily-repeat',
-    },
-  );
-
-  // Run once on start
-  await queue.add('reminders.scan', { boot: true }, { removeOnComplete: true });
-  await queue.add('sla.scan', { boot: true }, { removeOnComplete: true });
-  await queue.add('backups.weekly', { boot: true }, { removeOnComplete: true });
-
-  const worker = new Worker(
-    'dah-jobs',
-    async (job) => {
-      if (job.name === 'reminders.scan') {
-        const result = await reminders.processDue();
-        logger.log(`reminders.scan: custom=${result.customSent} debt=${result.debtSent}`);
-        return result;
+      if (hour === 2 && min === 0 && lastDailyKey !== day) {
+        lastDailyKey = day;
+        void runDailyBackup('cron');
       }
-      if (job.name === 'sla.scan') {
-        const result = await notifications.processSlaAlerts();
-        logger.log(
-          `sla.scan: warned=${result.warned} breached=${result.breached} scanned=${result.scanned}`,
-        );
-        return result;
+      if (hour === 3 && min === 0 && lastWeeklyKey !== day) {
+        lastWeeklyKey = day;
+        void runWeeklyBackup('cron');
       }
-      if (job.name === 'backups.weekly') {
-        const result = await backups.ensureWeeklyBackup({ source: 'schedule' });
-        logger.log(
-          result.skipped
-            ? `backups.weekly: skipped (${result.weekKey} exists)`
-            : `backups.weekly: created ${result.relativePath}`,
-        );
-        return result;
-      }
-      if (job.name === 'backups.daily') {
-        const result = await backups.createManualBackup({ source: 'schedule' });
-        logger.log(`backups.daily: created ${result.relativePath ?? 'ok'}`);
-        return result;
-      }
-      logger.warn(`Unknown job ${job.name}`);
-      return null;
-    },
-    { connection },
+    }, CLOCK_MS),
   );
 
-  worker.on('failed', (job, err) => {
-    logger.error(`Job ${job?.name} failed: ${err.message}`);
-  });
-
-  logger.log('Мій дім worker started (reminders + SLA + daily/weekly backups)');
+  logger.log(
+    'Мій дім worker started (slim module, inline cron: reminders + SLA + daily/weekly backups; no Redis/BullMQ)',
+  );
 
   const shutdown = async () => {
-    await worker.close();
-    await queue.close();
+    for (const t of timers) clearInterval(t);
     await app.close();
     process.exit(0);
   };

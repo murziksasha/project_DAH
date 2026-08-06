@@ -1,8 +1,10 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useI18n } from '@/components/LocaleProvider';
 import { apiFetch, getToken } from '@/lib/api';
+import { useCommunicationsQuery } from '@/lib/queries';
 
 interface Announcement {
   id: string;
@@ -62,10 +64,8 @@ export default function CommunicationsPage() {
     { value: 'cleaning', label: t('commsCatCleaning') },
     { value: 'other', label: t('commsCatOther') },
   ];
+  const queryClient = useQueryClient();
   const [section, setSection] = useState<Section>('announcements');
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [requests, setRequests] = useState<RequestItem[]>([]);
-  const [polls, setPolls] = useState<Poll[]>([]);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
@@ -80,25 +80,24 @@ export default function CommunicationsPage() {
   );
   const [pollQuorum, setPollQuorum] = useState('');
 
-  async function load() {
-    const token = getToken();
-    if (!token) {
-      window.location.href = '/login';
-      return;
-    }
-    const [a, r, p] = await Promise.all([
-      apiFetch<Announcement[]>('/communications/announcements', { token }),
-      apiFetch<RequestItem[]>('/communications/requests', { token }),
-      apiFetch<Poll[]>('/communications/polls', { token }),
-    ]);
-    setAnnouncements(a);
-    setRequests(r);
-    setPolls(p);
-  }
+  useEffect(() => {
+    if (!getToken()) window.location.href = '/login/';
+  }, []);
+
+  const commsQuery = useCommunicationsQuery(Boolean(getToken()));
+  const announcements = (commsQuery.data?.announcements ?? []) as Announcement[];
+  const requests = (commsQuery.data?.requests ?? []) as RequestItem[];
+  const polls = (commsQuery.data?.polls ?? []) as Poll[];
 
   useEffect(() => {
-    load().catch((err) => setError(err.message));
-  }, []);
+    if (commsQuery.error) {
+      setError(commsQuery.error instanceof Error ? commsQuery.error.message : String(commsQuery.error));
+    }
+  }, [commsQuery.error]);
+
+  async function load() {
+    await queryClient.invalidateQueries({ queryKey: ['communications'] });
+  }
 
   async function handleAnnouncement(e: FormEvent) {
     e.preventDefault();

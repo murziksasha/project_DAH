@@ -283,7 +283,7 @@ export function BoardDashboard() {
                   borderBottom: '1px solid var(--border)',
                 }}
               >
-                <Link href={`/admin/apartments/${d.apartmentId}`}>
+                <Link href={`/admin/apartments/detail/?id=${encodeURIComponent(d.apartmentId)}`}>
                   {t('aptPrefix')} {d.number}
                   {d.isOverdue && (
                     <span className="badge badge-danger" style={{ marginLeft: '0.5rem' }}>

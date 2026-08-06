@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useState } from 'react';
 import { useI18n } from '@/components/LocaleProvider';
 import { Badge } from '@/components/ui/Badge';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -40,10 +40,11 @@ interface Account {
   }>;
 }
 
-export default function ApartmentAccountPage() {
+/** Static-export safe apartment account (query ?id= instead of dynamic [id] segment). */
+function ApartmentAccountInner() {
   const { t } = useI18n();
-  const params = useParams();
-  const id = String(params.id ?? '');
+  const search = useSearchParams();
+  const id = String(search.get('id') ?? '');
   const [account, setAccount] = useState<Account | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -58,19 +59,24 @@ export default function ApartmentAccountPage() {
   useEffect(() => {
     const token = getToken();
     if (!token) {
-      window.location.href = '/login';
+      window.location.href = '/login/';
       return;
     }
-    if (!id) return;
+    if (!id) {
+      setError(t('noData'));
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     apiFetch<Account>(`/accruals/apartments/${id}/account`, { token })
       .then(setAccount)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, t]);
 
   return (
     <main>
-      <Link href="/admin/reports" style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
+      <Link href="/admin/reports/" style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
         ← {t('reports')}
       </Link>
       <PageHeader
@@ -227,5 +233,13 @@ export default function ApartmentAccountPage() {
         </>
       )}
     </main>
+  );
+}
+
+export default function ApartmentAccountPage() {
+  return (
+    <Suspense fallback={<main><SkeletonCards count={3} /></main>}>
+      <ApartmentAccountInner />
+    </Suspense>
   );
 }

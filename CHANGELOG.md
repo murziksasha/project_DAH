@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.14.0 — Runtime slim + performance (phases A–E)
+
+### A — Slim worker
+- `WorkerModule` loads only Prisma, Mail, Audit, Reminders, Backups, Notifications
+- No full `AppModule` (auth/finance/kep/messenger/throttler not booted in worker)
+
+### B — Jobs without Redis
+- Inline cron (`setInterval`): 15‑min reminders+SLA, daily/weekly backups
+- BullMQ removed; `REDIS_URL=none` by default; compose `redis` under `--profile redis`
+- Health: `redis: skipped` when URL empty/none/disabled
+
+### C — Same-origin files
+- `GET /api/files/download?key&exp&sig` streams from MinIO (HMAC token)
+- Upload / finance / documents / communications URLs no longer point at `:9000`
+- Unit tests: `file-download-token.spec.ts`
+
+### D — Static web
+- Next.js `output: 'export'` + `trailingSlash`; Docker web = **nginx:alpine** (no Node)
+- Apartment account: `/admin/apartments/detail/?id=` (static-export safe)
+- Soft auth via `AppShell` (middleware removed)
+
+### E — Client perf
+- React Query: dispatch queue, communications bundle, messenger threads/peers
+- `dynamic()` code-split for `DocumentTemplateBuilder`
+
+### Docs
+- SPEC/02, SPEC/09, SPEC/11, DEPLOY, SECURITY-CHECKLIST, `.env.example`
+
 ## 1.13.5 — Seed meters/multi-apt, security polish, e2e helpers
 
 ### Demo seed

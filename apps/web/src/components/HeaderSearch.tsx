@@ -117,7 +117,7 @@ export function HeaderSearch() {
           {hits!.apartments.slice(0, 5).map((a) => (
             <Link
               key={a.id}
-              href={`/admin/apartments/${a.id}`}
+              href={`/admin/apartments/detail/?id=${encodeURIComponent(a.id)}`}
               onClick={() => setOpen(false)}
               style={{
                 display: 'block',

@@ -106,7 +106,7 @@ export default function AdminSearchPage() {
               <ul style={{ listStyle: 'none', display: 'grid', gap: 6, margin: 0, padding: 0 }}>
                 {data.apartments.map((a) => (
                   <li key={a.id}>
-                    <Link href={`/admin/apartments/${a.id}`}>
+                    <Link href={`/admin/apartments/detail/?id=${encodeURIComponent(a.id)}`}>
                       {t('aptPrefix')} {a.number} · під&apos;їзд {a.entrance}
                       {a.building ? ` · ${a.building.name}` : ''}
                     </Link>
@@ -134,7 +134,7 @@ export default function AdminSearchPage() {
                     {u.apartmentId && (
                       <>
                         {' '}
-                        <Link href={`/admin/apartments/${u.apartmentId}`}>рахунок</Link>
+                        <Link href={`/admin/apartments/detail/?id=${encodeURIComponent(u.apartmentId!)}`}>рахунок</Link>
                       </>
                     )}
                   </li>
