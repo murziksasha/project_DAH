@@ -218,6 +218,17 @@ export function getShellTitle(role: string, orgType?: string | null): string {
 }
 
 export function getQuickActions(role: string): NavItem[] {
+  if (role === 'dispatcher') {
+    return [
+      { href: '/admin/dispatch', label: 'Черга заявок', icon: 'bell' },
+      { href: '/admin/dispatch?filter=overdue', label: 'Прострочені', icon: 'bell' },
+      { href: '/admin/communications', label: 'Оголошення', icon: 'megaphone' },
+      { href: '/admin/messenger', label: 'Месенджер', icon: 'megaphone' },
+    ];
+  }
+  if (role === 'crew') {
+    return [{ href: '/admin/dispatch?filter=mine', label: 'Мої заявки', icon: 'bell' }];
+  }
   if (!canWriteFinance(role)) {
     if (hasPermission(role, Permission.READ_FINANCE)) {
       return [{ href: '/admin/reports', label: 'Звіти / боржники', icon: 'chart' }];

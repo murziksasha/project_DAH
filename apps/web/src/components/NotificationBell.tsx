@@ -2,8 +2,10 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { apiFetch, getToken } from '@/lib/api';
 import { formatDateUk } from '@/lib/money';
+import { resolveNotificationHref } from '@/lib/notification-links';
 
 interface InboxItem {
   id: string;
@@ -16,6 +18,7 @@ interface InboxItem {
 }
 
 export function NotificationBell() {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<InboxItem[]>([]);
   const [unread, setUnread] = useState(0);
@@ -47,7 +50,25 @@ export function NotificationBell() {
     try {
       await apiFetch('/notifications/inbox/read', { method: 'PATCH', token });
       setUnread(0);
-      setItems((prev) => prev.map((i) => ({ ...i, readAt: i.readAt ?? new Date().toISOString() })));
+      setItems((prev) =>
+        prev.map((i) => ({ ...i, readAt: i.readAt ?? new Date().toISOString() })),
+      );
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function markOne(id: string) {
+    const token = getToken();
+    if (!token) return;
+    try {
+      await apiFetch(`/notifications/inbox/${id}/read`, { method: 'PATCH', token });
+      setItems((prev) =>
+        prev.map((i) =>
+          i.id === id ? { ...i, readAt: i.readAt ?? new Date().toISOString() } : i,
+        ),
+      );
+      setUnread((u) => Math.max(0, u - 1));
     } catch {
       /* ignore */
     }
@@ -58,8 +79,8 @@ export function NotificationBell() {
       <button
         type="button"
         className="btn btn-ghost btn-sm"
-        aria-label="Сповіщення"
-        title="Сповіщення"
+        aria-label={t('notifications')}
+        title={t('notifications')}
         onClick={() => {
           setOpen((v) => !v);
           if (!open) void load();
@@ -90,7 +111,7 @@ export function NotificationBell() {
       </button>
       {open && (
         <div
-          className="card"
+          className="card notification-panel"
           style={{
             position: 'absolute',
             right: 0,
@@ -110,46 +131,47 @@ export function NotificationBell() {
               marginBottom: 8,
             }}
           >
-            <strong style={{ fontSize: '0.9rem' }}>Сповіщення</strong>
+            <strong style={{ fontSize: '0.9rem' }}>{t('notifications')}</strong>
             {unread > 0 && (
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => void markAll()}>
-                Прочитати всі
+                {t('notificationsMarkAll')}
               </button>
             )}
           </div>
           {items.length === 0 ? (
-            <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: 0 }}>Немає сповіщень</p>
+            <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: 0 }}>
+              {t('notificationsEmpty')}
+            </p>
           ) : (
             <ul style={{ listStyle: 'none', display: 'grid', gap: 8, margin: 0, padding: 0 }}>
-              {items.map((n) => (
-                <li
-                  key={n.id}
-                  style={{
-                    padding: '0.5rem',
-                    borderRadius: 8,
-                    background: n.readAt ? 'transparent' : 'var(--surface-2)',
-                  }}
-                >
-                  {n.url ? (
+              {items.map((n) => {
+                const href = resolveNotificationHref(n);
+                return (
+                  <li
+                    key={n.id}
+                    style={{
+                      padding: '0.5rem',
+                      borderRadius: 8,
+                      background: n.readAt ? 'transparent' : 'var(--surface-2)',
+                    }}
+                  >
                     <Link
-                      href={n.url}
-                      onClick={() => setOpen(false)}
-                      style={{ color: 'inherit', textDecoration: 'none' }}
+                      href={href}
+                      onClick={() => {
+                        setOpen(false);
+                        if (!n.readAt) void markOne(n.id);
+                      }}
+                      style={{ color: 'inherit', textDecoration: 'none', display: 'block' }}
                     >
                       <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{n.title}</div>
                       <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>{n.body}</div>
                     </Link>
-                  ) : (
-                    <>
-                      <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{n.title}</div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>{n.body}</div>
-                    </>
-                  )}
-                  <div style={{ fontSize: '0.7rem', color: 'var(--muted)', marginTop: 2 }}>
-                    {formatDateUk(n.createdAt)}
-                  </div>
-                </li>
-              ))}
+                    <div style={{ fontSize: '0.7rem', color: 'var(--muted)', marginTop: 2 }}>
+                      {formatDateUk(n.createdAt)}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

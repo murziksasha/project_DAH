@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { AuthCookieSync } from '@/components/AuthCookieSync';
 import { LocaleProvider } from '@/components/LocaleProvider';
+import { NetworkStatusBanner } from '@/components/NetworkStatusBanner';
 import { PwaPrompt } from '@/components/PwaPrompt';
 import { QueryProvider } from '@/components/QueryProvider';
 import { ToastProvider } from '@/components/ui/Toast';
@@ -40,6 +41,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <LocaleProvider>
             <ToastProvider>
               <AuthCookieSync />
+              <NetworkStatusBanner />
               {children}
               <PwaPrompt />
             </ToastProvider>

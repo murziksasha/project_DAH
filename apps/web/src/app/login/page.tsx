@@ -2,10 +2,20 @@
 
 import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
+import { PendingApprovalCard } from '@/components/PendingApprovalCard';
 import { useI18n } from '@/components/LocaleProvider';
 import { apiFetch, LoginResponse, persistAccessToken } from '@/lib/api';
+import { getRoleHome } from '@/lib/auth';
+import { isPendingApprovalMessage } from '@/lib/notification-links';
 
-const ADMIN_ROLES = ['chairman', 'accountant', 'board', 'auditor'];
+const ADMIN_ROLES = [
+  'chairman',
+  'accountant',
+  'board',
+  'auditor',
+  'dispatcher',
+  'crew',
+];
 
 function isLocalHost(): boolean {
   if (typeof window === 'undefined') return process.env.NODE_ENV === 'development';
@@ -29,14 +39,12 @@ async function finishLogin(data: LoginResponse, incompleteMsg: string) {
 
   const next = safeNextPath(new URLSearchParams(window.location.search).get('next'));
 
-  let target = '/resident';
+  let target = getRoleHome(data.user.role);
   if (data.user.role === 'super_admin') {
     const status = await apiFetch<{ isInitialized: boolean }>('/setup/status', {
       token: data.accessToken,
     });
     target = status.isInitialized ? '/admin/organization' : '/admin/setup';
-  } else if (ADMIN_ROLES.includes(data.user.role)) {
-    target = '/admin';
   }
 
   if (next) {
@@ -48,7 +56,7 @@ async function finishLogin(data: LoginResponse, incompleteMsg: string) {
   window.location.href = target;
 }
 
-type Mode = 'password' | 'sms' | '2fa' | 'forgot' | 'reset';
+type Mode = 'password' | 'sms' | '2fa' | 'forgot' | 'reset' | 'pending';
 
 export default function LoginPage() {
   const { t, locale, setLocale } = useI18n();
@@ -69,6 +77,7 @@ export default function LoginPage() {
   const [identityProvider, setIdentityProvider] = useState('mock');
   const [resetToken, setResetToken] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [pendingEmail, setPendingEmail] = useState('');
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -77,7 +86,17 @@ export default function LoginPage() {
       setResetToken(reset);
       setMode('reset');
     }
-    if (isLocalHost()) {
+    if (params.get('pending') === '1') {
+      setMode('pending');
+      try {
+        const stored = sessionStorage.getItem('dah_pending_email') ?? '';
+        setPendingEmail(stored || params.get('email') || '');
+        if (stored) setEmail(stored);
+      } catch {
+        setPendingEmail(params.get('email') || '');
+      }
+    }
+    if (isLocalHost() && params.get('pending') !== '1') {
       setEmail('chairman@osbb.local');
       setPassword('password123');
       setShowDemoHints(true);
@@ -93,7 +112,6 @@ export default function LoginPage() {
       .catch(() => setIdentityAvailable(false));
 
     // Identity callback: /login?identity=callback&state=...&email=...
-    const params = new URLSearchParams(window.location.search);
     if (params.get('identity') === 'callback' && params.get('state')) {
       setLoading(true);
       apiFetch<LoginResponse>('/identity/callback', {
@@ -168,7 +186,19 @@ export default function LoginPage() {
       }
       await finishLogin(data, t('loginIncomplete'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('loginError'));
+      const msg = err instanceof Error ? err.message : t('loginError');
+      if (isPendingApprovalMessage(msg)) {
+        setPendingEmail(email);
+        try {
+          sessionStorage.setItem('dah_pending_email', email);
+        } catch {
+          /* ignore */
+        }
+        setMode('pending');
+        setError('');
+        return;
+      }
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -263,7 +293,18 @@ export default function LoginPage() {
       <h1 style={{ marginBottom: '0.5rem' }}>{t('loginTitle')}</h1>
       <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>{t('loginSubtitle')}</p>
 
-      {mode !== '2fa' && smsAvailable && (
+      {mode === 'pending' && (
+        <PendingApprovalCard
+          email={pendingEmail || email}
+          variant="login"
+          onBackToLogin={() => {
+            setMode('password');
+            setError('');
+          }}
+        />
+      )}
+
+      {mode !== '2fa' && mode !== 'pending' && smsAvailable && (
         <div style={{ display: 'flex', gap: 8, marginBottom: '1rem' }}>
           <button
             type="button"

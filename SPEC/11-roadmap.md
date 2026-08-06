@@ -75,6 +75,15 @@
 | Імпорт банку | Заготовка під **будь-який** банк (профілі + auto) |
 | УК vs messenger | **Диспетчер/SLA** > соц-месенджер |
 
+## v1.12 — confirm dialogs + role dashboards + network banner — **COMPLETE**
+
+| Тема | Статус |
+|------|--------|
+| ConfirmDialog payments void + documents delete | ✅ |
+| Role home: dispatcher / accountant / crew / board | ✅ |
+| Login getRoleHome + dispatch ?filter= | ✅ |
+| NetworkStatusBanner offline / API / recovered | ✅ |
+
 ## v1.11 — security + UX for 200–300 users — **COMPLETE**
 
 | Тема | Статус |

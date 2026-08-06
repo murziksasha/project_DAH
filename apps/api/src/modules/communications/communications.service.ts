@@ -14,6 +14,7 @@ import {
 } from '../../common/utils/request-sla';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { StorageService } from '../files/storage.service';
 import { MailService } from '../mail/mail.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
@@ -35,6 +36,11 @@ const REQUEST_ASSIGNEE_ROLES: UserRole[] = [
   UserRole.crew,
 ];
 
+function parsePhotoKeys(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((k): k is string => typeof k === 'string' && k.length > 0);
+}
+
 @Injectable()
 export class CommunicationsService {
   constructor(
@@ -42,15 +48,89 @@ export class CommunicationsService {
     private notifications: NotificationsService,
     private audit: AuditService,
     private mail: MailService,
+    private storage: StorageService,
   ) {}
 
-  listAnnouncements() {
-    return this.prisma.announcement.findMany({
-      orderBy: [{ isPinned: 'desc' }, { createdAt: 'desc' }],
-      include: {
-        author: { select: { id: true, firstName: true, lastName: true } },
-      },
+  async listAnnouncements(userId: string) {
+    const [rows, reads] = await Promise.all([
+      this.prisma.announcement.findMany({
+        orderBy: [{ isPinned: 'desc' }, { createdAt: 'desc' }],
+        include: {
+          author: { select: { id: true, firstName: true, lastName: true } },
+        },
+      }),
+      this.prisma.announcementRead.findMany({
+        where: { userId },
+        select: { announcementId: true },
+      }),
+    ]);
+    const readSet = new Set(reads.map((r) => r.announcementId));
+    return rows.map((a) => ({
+      ...a,
+      isRead: readSet.has(a.id),
+    }));
+  }
+
+  async unreadAnnouncementCount(userId: string) {
+    const total = await this.prisma.announcement.count();
+    if (total === 0) return { unread: 0 };
+    const read = await this.prisma.announcementRead.count({ where: { userId } });
+    // Unread = announcements without a read row (approx if some deleted reads cascade)
+    const unread = await this.prisma.announcement.count({
+      where: { reads: { none: { userId } } },
     });
+    return { unread, total, read };
+  }
+
+  async markAnnouncementRead(userId: string, announcementId: string) {
+    const exists = await this.prisma.announcement.findUnique({
+      where: { id: announcementId },
+      select: { id: true },
+    });
+    if (!exists) throw new NotFoundException('Оголошення не знайдено');
+    await this.prisma.announcementRead.upsert({
+      where: {
+        userId_announcementId: { userId, announcementId },
+      },
+      create: { userId, announcementId },
+      update: { readAt: new Date() },
+    });
+    return { ok: true, announcementId };
+  }
+
+  async markAllAnnouncementsRead(userId: string) {
+    const ids = await this.prisma.announcement.findMany({ select: { id: true } });
+    if (!ids.length) return { marked: 0 };
+    await this.prisma.$transaction(
+      ids.map((a) =>
+        this.prisma.announcementRead.upsert({
+          where: {
+            userId_announcementId: { userId, announcementId: a.id },
+          },
+          create: { userId, announcementId: a.id },
+          update: { readAt: new Date() },
+        }),
+      ),
+    );
+    return { marked: ids.length };
+  }
+
+  private async withPhotoUrls<T extends { photoKeys: unknown }>(row: T) {
+    const keys = parsePhotoKeys(row.photoKeys);
+    const photoUrls = await Promise.all(
+      keys.map(async (key) => {
+        try {
+          return await this.storage.getDownloadUrl(key);
+        } catch {
+          return null;
+        }
+      }),
+    );
+    return {
+      ...row,
+      photoKeys: keys,
+      photoUrls: photoUrls.filter((u): u is string => Boolean(u)),
+    };
   }
 
   async createAnnouncement(dto: CreateAnnouncementDto, authorId: string) {
@@ -74,25 +154,35 @@ export class CommunicationsService {
       payload: { title: dto.title, isPinned: dto.isPinned ?? false },
     });
 
-    this.notifications
-      .sendToAll({
-        title: 'Нове оголошення',
-        body: dto.title,
-        url: '/resident?tab=communications',
-      })
-      .catch(() => undefined);
-
     void this.prisma.user
       .findMany({
-        where: { status: 'active', emailNotifyEnabled: true, role: 'resident' },
-        select: { email: true, firstName: true, lastName: true, emailNotifyEnabled: true },
+        where: { status: 'active', role: 'resident' },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          emailNotifyEnabled: true,
+        },
       })
-      .then((users) =>
-        this.mail.notifyUsers(users, 'announcement.created', {
+      .then(async (users) => {
+        const ids = users.map((u) => u.id);
+        if (ids.length) {
+          await this.notifications.notifyUsers(ids, {
+            title: 'Нове оголошення',
+            body: dto.title,
+            url: '/resident?tab=news',
+            kind: 'announcement',
+          });
+        }
+        const mailTargets = users.filter((u) => u.emailNotifyEnabled !== false);
+        await this.mail.notifyUsers(mailTargets, 'announcement.created', {
           title: dto.title,
           body: dto.body,
-        }),
-      )
+          actionPath: '/resident?tab=news',
+          actionLabel: 'Читати в кабінеті',
+        });
+      })
       .catch(() => undefined);
 
     return announcement;
@@ -174,7 +264,8 @@ export class CommunicationsService {
         assignee: { select: { id: true, firstName: true, lastName: true } },
       },
     });
-    return rows.map((r) => this.enrichRequestSla(r));
+    const withSla = rows.map((r) => this.enrichRequestSla(r));
+    return Promise.all(withSla.map((r) => this.withPhotoUrls(r)));
   }
 
   /**
@@ -297,9 +388,11 @@ export class CommunicationsService {
       lastName: request.author.lastName,
       title: dto.title,
       body: dto.description,
+      actionPath: '/admin/dispatch',
+      actionLabel: 'Відкрити чергу заявок',
     });
 
-    return this.enrichRequestSla(request);
+    return this.withPhotoUrls(this.enrichRequestSla(request));
   }
 
   async updateRequest(id: string, dto: UpdateRequestDto, userId: string, actorRole?: string) {
@@ -350,18 +443,32 @@ export class CommunicationsService {
       },
     });
 
-    if (dto.status && dto.status !== request.status && updated.author.emailNotifyEnabled !== false) {
+    if (dto.status && dto.status !== request.status) {
       const statusLabel: Record<string, string> = {
         new: 'Нова',
         in_progress: 'В роботі',
         done: 'Виконано',
       };
-      void this.mail.sendTemplate(updated.author.email, 'request.status_changed', {
-        firstName: updated.author.firstName,
-        lastName: updated.author.lastName,
-        title: updated.title,
-        status: statusLabel[dto.status] ?? dto.status,
-      });
+      const statusText = statusLabel[dto.status] ?? dto.status;
+      void this.notifications
+        .notifyUser(updated.author.id, {
+          title: 'Статус заявки оновлено',
+          body: `${updated.title}: ${statusText}`,
+          url: `/resident?tab=requests&requestId=${updated.id}`,
+          kind: 'request_status',
+        })
+        .catch(() => undefined);
+      if (updated.author.emailNotifyEnabled !== false) {
+        void this.mail.sendTemplate(updated.author.email, 'request.status_changed', {
+          firstName: updated.author.firstName,
+          lastName: updated.author.lastName,
+          title: updated.title,
+          status: statusText,
+          requestId: updated.id,
+          actionPath: `/resident?tab=requests&requestId=${updated.id}`,
+          actionLabel: 'Відкрити мою заявку',
+        });
+      }
     }
 
     await this.audit.log({
@@ -376,7 +483,7 @@ export class CommunicationsService {
         dueAt: dto.dueAt,
       },
     });
-    return this.enrichRequestSla(updated);
+    return this.withPhotoUrls(this.enrichRequestSla(updated));
   }
 
   async listPolls(userId?: string) {

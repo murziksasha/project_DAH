@@ -42,8 +42,23 @@ export class CommunicationsController {
   constructor(private communications: CommunicationsService) {}
 
   @Get('announcements')
-  listAnnouncements() {
-    return this.communications.listAnnouncements();
+  listAnnouncements(@CurrentUser() user: AuthUser) {
+    return this.communications.listAnnouncements(user.id);
+  }
+
+  @Get('announcements/unread-count')
+  unreadAnnouncementCount(@CurrentUser() user: AuthUser) {
+    return this.communications.unreadAnnouncementCount(user.id);
+  }
+
+  @Patch('announcements/read-all')
+  markAllAnnouncementsRead(@CurrentUser() user: AuthUser) {
+    return this.communications.markAllAnnouncementsRead(user.id);
+  }
+
+  @Patch('announcements/:id/read')
+  markAnnouncementRead(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.communications.markAnnouncementRead(user.id, id);
   }
 
   @UseGuards(RolesGuard)

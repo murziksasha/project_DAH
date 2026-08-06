@@ -13,6 +13,11 @@ export interface BuildingSettingsJson {
   defaultAccrualDueDays?: number;
   /** Days before due date to email debt reminders (worker). */
   reminderDaysBeforeDue?: number;
+  /**
+   * Day of month by which residents should submit meter readings (1–28).
+   * Default 5. Used for home deadline banner.
+   */
+  metersReadingDeadlineDay?: number;
   locale?: 'uk' | 'ru';
   /** Ролі, відкладені на етапі майстра налаштування */
   deferredSetupRoles?: DeferredSetupRole[];

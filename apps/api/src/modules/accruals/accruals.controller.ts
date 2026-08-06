@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Header,
   Param,
@@ -69,7 +70,22 @@ export class AccrualsController {
   }
 
   @Get('my-account')
-  myAccount(@CurrentUser() user: AuthUser) {
+  myAccount(
+    @CurrentUser() user: AuthUser,
+    @Query('apartmentId') apartmentId?: string,
+  ) {
+    const allowed = user.apartmentIds?.length
+      ? user.apartmentIds
+      : user.apartmentId
+        ? [user.apartmentId]
+        : [];
+    const requested = apartmentId?.trim() || null;
+    if (requested) {
+      if (allowed.length && !allowed.includes(requested)) {
+        throw new ForbiddenException('Немає доступу до цієї квартири');
+      }
+      return this.accruals.getMyAccount(requested);
+    }
     return this.accruals.getMyAccount(user.apartmentId);
   }
 

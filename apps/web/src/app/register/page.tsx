@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { PendingApprovalCard } from '@/components/PendingApprovalCard';
 import { useI18n } from '@/components/LocaleProvider';
 import { apiFetch } from '@/lib/api';
 
@@ -98,6 +99,11 @@ export default function RegisterPage() {
         }),
       });
       setSuccess(data.message || t('registerSuccess'));
+      try {
+        sessionStorage.setItem('dah_pending_email', email);
+      } catch {
+        /* ignore */
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : t('registerFail');
       setError(msg);
@@ -131,14 +137,7 @@ export default function RegisterPage() {
           </Link>
         </div>
       ) : success ? (
-        <div className="card" style={{ display: 'grid', gap: '1rem' }}>
-          <p style={{ color: 'var(--success)', fontWeight: 600 }}>{t('registerSuccessTitle')}</p>
-          <p style={{ color: 'var(--muted)', fontSize: '0.95rem' }}>{success}</p>
-          <p style={{ fontSize: '0.9rem' }}>{t('registerSuccessHint')}</p>
-          <Link href="/login" className="btn" style={{ textAlign: 'center' }}>
-            {t('registerGoLogin')}
-          </Link>
-        </div>
+        <PendingApprovalCard email={email} variant="register" />
       ) : (
         <form onSubmit={handleSubmit} className="card" style={{ display: 'grid', gap: '1rem' }}>
           {(requiresInvite || inviteCode) && (

@@ -47,6 +47,14 @@ export default function DispatchPage() {
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const f = new URLSearchParams(window.location.search).get('filter');
+    if (f === 'overdue' || f === 'unassigned' || f === 'mine' || f === 'all') {
+      setFilter(f);
+    }
+  }, []);
+
   const load = useCallback(async () => {
     const token = getToken();
     if (!token) {

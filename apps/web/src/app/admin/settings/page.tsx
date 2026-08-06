@@ -18,6 +18,7 @@ interface Settings {
   showBankDetailsToResidents: boolean;
   defaultAccrualDueDays: number;
   reminderDaysBeforeDue?: number;
+  metersReadingDeadlineDay?: number;
   locale: 'uk' | 'ru';
   slaHoursByCategory?: Record<string, number>;
 }
@@ -451,6 +452,30 @@ export default function SettingsPage() {
             }
             onBlur={() => patch({ reminderDaysBeforeDue: settings.reminderDaysBeforeDue ?? 3 })}
           />
+        </div>
+        <div style={{ marginBottom: '1rem' }}>
+          <label htmlFor="metersDeadline">Дедлайн показів лічильників (день місяця, 1–28)</label>
+          <input
+            id="metersDeadline"
+            type="number"
+            min={1}
+            max={28}
+            value={settings.metersReadingDeadlineDay ?? 5}
+            onChange={(e) =>
+              setSettings({
+                ...settings,
+                metersReadingDeadlineDay: Number(e.target.value),
+              })
+            }
+            onBlur={() =>
+              patch({
+                metersReadingDeadlineDay: settings.metersReadingDeadlineDay ?? 5,
+              })
+            }
+          />
+          <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginTop: 4 }}>
+            Мешканці бачать банер на домівці до цього дня, якщо покази ще не передано.
+          </p>
         </div>
         <div>
           <label htmlFor="locale">{t('settingsLocale')}</label>

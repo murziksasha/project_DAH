@@ -9,10 +9,20 @@ export function OnboardingBanner() {
   const [show, setShow] = useState(false);
   const [require2fa, setRequire2fa] = useState(false);
   const user = getStoredUser();
+  const isResident = user?.role === 'resident';
 
   useEffect(() => {
     const token = getToken();
     if (!token || !user) return;
+    // Residents use ResidentTour instead of this banner
+    if (user.role === 'resident') {
+      apiFetch<{ required?: boolean }>('/auth/2fa/status', { token })
+        .then((s) => {
+          if (s.required) setRequire2fa(true);
+        })
+        .catch(() => undefined);
+      return;
+    }
     apiFetch<{
       onboardingDone?: boolean;
       required?: boolean;
@@ -23,8 +33,9 @@ export function OnboardingBanner() {
         if (!s.onboardingDone) setShow(true);
       })
       .catch(() => undefined);
-  }, [user?.id]);
+  }, [user?.id, user?.role]);
 
+  if (isResident && !require2fa) return null;
   if (!show && !require2fa) return null;
 
   async function dismiss() {

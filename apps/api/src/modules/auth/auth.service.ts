@@ -129,12 +129,16 @@ export class AuthService {
       firstName: user.firstName,
       lastName: user.lastName,
       apartmentNumber: apartment.number,
+      actionPath: '/login?pending=1',
+      actionLabel: 'Сторінка входу',
     });
     void this.mail.notifyAdmins('registration.new_request', {
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
       apartmentNumber: apartment.number,
+      actionPath: '/admin/residents',
+      actionLabel: 'Відкрити заявки на реєстрацію',
     });
 
     return { user, message: 'Очікуйте підтвердження від правління' };
@@ -408,8 +412,8 @@ export class AuthService {
     void this.mail.sendTemplate(user.email, 'auth.password_reset', {
       firstName: user.firstName,
       lastName: user.lastName,
-      appUrl: resetUrl,
-      body: `Посилання дійсне 1 годину: ${resetUrl}`,
+      actionUrl: resetUrl,
+      actionLabel: 'Скинути пароль',
     });
 
     await this.audit.log({
@@ -502,10 +506,60 @@ export class AuthService {
             isActive: true,
           },
         },
+        apartmentLinks: {
+          orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+          select: {
+            isPrimary: true,
+            apartment: {
+              select: {
+                id: true,
+                number: true,
+                entrance: true,
+                building: { select: { id: true, name: true, address: true } },
+              },
+            },
+          },
+        },
       },
     });
     if (!user) throw new NotFoundException('Користувача не знайдено');
-    return user;
+    const apartments = user.apartmentLinks.map((l) => ({
+      id: l.apartment.id,
+      number: l.apartment.number,
+      entrance: l.apartment.entrance,
+      isPrimary: l.isPrimary,
+      buildingId: l.apartment.building.id,
+      buildingName: l.apartment.building.name,
+      buildingAddress: l.apartment.building.address,
+    }));
+    // Include legacy single apartmentId if not in links
+    if (
+      user.apartmentId &&
+      !apartments.some((a) => a.id === user.apartmentId)
+    ) {
+      const apt = await this.prisma.apartment.findUnique({
+        where: { id: user.apartmentId },
+        select: {
+          id: true,
+          number: true,
+          entrance: true,
+          building: { select: { id: true, name: true, address: true } },
+        },
+      });
+      if (apt) {
+        apartments.unshift({
+          id: apt.id,
+          number: apt.number,
+          entrance: apt.entrance,
+          isPrimary: true,
+          buildingId: apt.building.id,
+          buildingName: apt.building.name,
+          buildingAddress: apt.building.address,
+        });
+      }
+    }
+    const { apartmentLinks: _links, ...rest } = user;
+    return { ...rest, apartments };
   }
 
   async updateProfile(
@@ -628,6 +682,8 @@ export class AuthService {
     void this.mail.sendTemplate(updated.email, 'registration.approved', {
       firstName: updated.firstName,
       lastName: updated.lastName,
+      actionPath: '/login',
+      actionLabel: 'Увійти в кабінет',
     });
 
     return updated;

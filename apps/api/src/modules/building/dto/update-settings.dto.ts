@@ -107,6 +107,15 @@ export class UpdateBuildingSettingsDto {
   @Max(30)
   reminderDaysBeforeDue?: number;
 
+  @ApiPropertyOptional({
+    description: 'Day of month (1–28) deadline for resident meter readings',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(28)
+  metersReadingDeadlineDay?: number;
+
   @ApiPropertyOptional({ enum: ['uk', 'ru'] })
   @IsOptional()
   @IsIn(['uk', 'ru'])

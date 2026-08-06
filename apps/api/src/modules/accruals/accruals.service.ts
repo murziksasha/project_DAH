@@ -293,6 +293,8 @@ export class AccrualsService {
       amount: amountByApt.get(apartmentId),
       dueDate: dueLabel,
       apartmentNumber: numberById.get(apartmentId),
+      actionPath: '/resident?tab=account',
+      actionLabel: 'Переглянути рахунок / сплатити',
     }));
 
     return this.getAccrual(accrual.id);

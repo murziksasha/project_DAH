@@ -1,6 +1,8 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken, uploadFile } from '@/lib/api';
@@ -16,6 +18,7 @@ interface Document {
 }
 
 export default function DocumentsPage() {
+  const { t } = useI18n();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -25,6 +28,8 @@ export default function DocumentsPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<Document | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const token = getToken();
@@ -100,16 +105,20 @@ export default function DocumentsPage() {
     }
   }
 
-  async function remove(id: string) {
-    if (!window.confirm('Видалити документ?')) return;
+  async function remove(doc: Document) {
     const token = getToken();
     if (!token) return;
+    setDeletingId(doc.id);
+    setError('');
     try {
-      await apiFetch(`/documents/${id}`, { method: 'DELETE', token });
-      setMessage('Документ видалено');
+      await apiFetch(`/documents/${doc.id}`, { method: 'DELETE', token });
+      setMessage(t('documentsDeleted'));
+      setConfirmDelete(null);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -187,8 +196,13 @@ export default function DocumentsPage() {
                   <button type="button" className="btn btn-sm btn-ghost" onClick={() => togglePublic(d)}>
                     {d.isPublic ? 'Зробити внутрішнім' : 'Опублікувати'}
                   </button>
-                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => remove(d.id)}>
-                    Видалити
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ghost"
+                    disabled={deletingId === d.id}
+                    onClick={() => setConfirmDelete(d)}
+                  >
+                    {t('delete')}
                   </button>
                 </div>
               </li>
@@ -196,6 +210,29 @@ export default function DocumentsPage() {
           </ul>
         )}
       </section>
+
+      <ConfirmDialog
+        open={Boolean(confirmDelete)}
+        title={t('documentsDeleteTitle')}
+        message={
+          confirmDelete
+            ? t('documentsDeleteBody', {
+                title: confirmDelete.title,
+                visibility: confirmDelete.isPublic
+                  ? t('documentsPublic')
+                  : t('documentsInternal'),
+              })
+            : t('documentsDeleteTitle')
+        }
+        confirmLabel={t('delete')}
+        cancelLabel={t('cancel')}
+        danger
+        busy={Boolean(deletingId)}
+        onConfirm={() => {
+          if (confirmDelete) void remove(confirmDelete);
+        }}
+        onCancel={() => setConfirmDelete(null)}
+      />
     </main>
   );
 }

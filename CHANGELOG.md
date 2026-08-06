@@ -1,5 +1,84 @@
 # Changelog
 
+## 1.13.5 — Seed meters/multi-apt, security polish, e2e helpers
+
+### Demo seed
+- 3 лічильники (хол./гар. вода, ел.) + покази за попередній період
+- Resident linked to **2 apartments** (switcher ready for e2e)
+
+### Resident security
+- Skeleton, back link, comfort toggle section, better labels/hints for email & push
+
+### QA
+- `e2e/helpers.ts` — loginAsResident / dismissTour / expandDesktopNav
+- Expanded resident + offline-apt e2e (real multi-apt + offline submit)
+
+## 1.13.4 — E2E offline/apt, mail CTA tests, drawer comfort
+
+### QA
+- Playwright: offline meter queue banner + flush; multi-apt soft switch (no reload); drawer comfort toggle
+- Jest: `mail.templates.spec.ts` — resolveActionUrl + HTML CTA deep-links
+
+### Resident
+- **Comfort mode** у desktop drawer (footer A⁺ / A), не лише header
+
+## 1.13.3 — Nav badges, home queue signal, global meter flush
+
+### Resident
+- **Bottom nav badges**: unread news (Ще), open requests, offline meter queue
+- **Action Home**: картка «Надіслати офлайн-покази»
+- **MeterQueueFlusher** у AppShell (flush з будь-якого екрану при online)
+- **NetworkStatusBanner**: resident offline copy + hint після recovery
+
+## 1.13.2 — Offline meters queue, soft apt switch, email deep-links
+
+### Resident
+- **Offline queue** показів: localStorage + auto-flush on `online` + manual «Надіслати зараз»
+- **Multi-apartment** без full reload (`dah-apartment-change` event → re-fetch account/meters)
+- **Email deep-links**: `actionPath` / CTA-кнопка в HTML (рахунок, новини, заявки, dispatch, login)
+
+## 1.13.1 — Multi-apt, comfort mode, messenger/meetings polish
+
+### Resident
+- **Multi-apartment switcher** (`/auth/profile` apartments + `?apartmentId=` on my-account)
+- **Comfort mode** (A⁺ larger type) for residents in header
+- **Messenger / meetings** polish: EmptyState, skeletons, i18n, mobile layout, previews
+- **One-tap PDF** за поточний місяць на спрощеному рахунку
+- **Modal a11y**: focus trap, aria-labelledby, restore focus
+
+## 1.13.0 — Resident flow UX (action home → A–E polish)
+
+### Кабінет мешканця (базовий flow)
+- **Action Home**, **bottom nav**, **Pay sheet**, news/requests split
+- **Спрощений рахунок**, deep-link сповіщень, **pending-реєстрація**
+
+### A–E (100%)
+- **A** Read-state оголошень (`AnnouncementRead`), badges, mark-all на вкладці Новини
+- **B** Заявки: dueAt/updatedAt/SLA, assignee, фото (upload folder `requests` для resident)
+- **C** Лічильники batch + `metersReadingDeadlineDay` + банер на домівці
+- **D** `ResidentTour` (3 кроки), empty apartment state
+- **E** Lazy-load: account/meters first → signals → transparency on demand
+- Migration `20260804140000_announcement_reads_meters_deadline`
+- SPEC `08-resident-portal.md`
+
+## 1.12.0 — Confirm dialogs, role dashboards, network banner
+
+### ConfirmDialog
+- Payments void: modal + required reason (no `window.prompt`)
+- Documents delete: modal with title/visibility (no `window.confirm`)
+
+### Role dashboards (`/admin`)
+- **Dispatcher** — SLA KPI, urgent list, take-in-progress
+- **Accountant** — cash-flow, pending dual-approve, debtors, quick finance actions
+- **Crew** — my open jobs
+- **Board/chairman/auditor** — existing board dashboard (extracted)
+- Login redirect uses `getRoleHome`; dispatcher/crew home → `/admin`
+- Dispatch supports `?filter=overdue|unassigned|mine`
+
+### Offline / PWA network
+- `NetworkStatusBanner`: browser offline vs API down vs recovered flash
+- Shown site-wide via root layout (login included)
+
 ## 1.11.1 — Sessions UI, header search, expense void dialog
 
 - `GET/DELETE /auth/sessions` — список пристроїв + відкликання (family revoke)

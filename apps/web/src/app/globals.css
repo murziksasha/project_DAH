@@ -417,6 +417,33 @@ label {
   border-bottom: 1px solid var(--border);
 }
 
+.app-drawer-footer {
+  margin-top: auto;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.app-drawer-comfort-glyph {
+  font-weight: 800;
+  font-size: 0.95rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+}
+
+/* Drawer is flex column so footer sticks to bottom on desktop expanded */
+.app-drawer {
+  display: flex;
+  flex-direction: column;
+}
+
+.app-drawer .app-drawer-nav {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .app-drawer .nav-group:last-child {
   border-bottom: none;
 }
@@ -1608,6 +1635,19 @@ label {
   }
 }
 
+.network-banner--offline {
+  background: var(--health-bg);
+  color: var(--health-text);
+}
+.network-banner--api {
+  background: #fee2e2;
+  color: #991b1b;
+}
+[data-theme='dark'] .network-banner--api {
+  background: #450a0a;
+  color: #fecaca;
+}
+
 .resident-triad {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1641,5 +1681,791 @@ label {
 @media (max-width: 560px) {
   .resident-triad {
     grid-template-columns: 1fr;
+  }
+}
+
+/* —— Resident action home —— */
+.resident-apt-badge {
+  display: inline-block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 0.35rem;
+}
+
+.resident-action-list {
+  list-style: none;
+  display: grid;
+  gap: 0.65rem;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+
+.resident-action-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  width: 100%;
+  min-height: 56px;
+  text-align: left;
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.resident-action-card:hover {
+  border-color: var(--primary);
+  box-shadow: var(--shadow);
+}
+
+.resident-action-card.is-primary {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+}
+
+.resident-action-title {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.resident-action-sub {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.resident-shortcut-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+}
+
+@media (min-width: 560px) {
+  .resident-shortcut-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.resident-shortcut {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0.65rem 0.5rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-2, var(--surface));
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.resident-shortcut:hover {
+  border-color: var(--primary);
+}
+
+.resident-pay-inline {
+  margin-bottom: 0.75rem;
+}
+
+.pay-sheet {
+  display: grid;
+  gap: 1rem;
+}
+
+.pay-sheet-label {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.pay-sheet-amount {
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.pay-sheet-custom {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.pay-sheet-custom input {
+  flex: 1;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.pay-sheet-currency {
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.pay-sheet-primary {
+  width: 100%;
+  min-height: 48px;
+}
+
+.pay-sheet-bank-title {
+  font-size: 1rem;
+  margin: 0 0 0.75rem;
+}
+
+.pay-sheet-copy-all {
+  width: 100%;
+  margin-top: 0.75rem;
+  min-height: 44px;
+}
+
+.resident-request-list {
+  list-style: none;
+  display: grid;
+  gap: 0.85rem;
+  margin: 0;
+  padding: 0;
+}
+
+.resident-request-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.5rem 0.35rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  border-radius: 8px;
+  transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+
+.resident-request-item.is-highlight {
+  background: color-mix(in srgb, var(--primary) 14%, var(--surface));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 35%, transparent);
+}
+
+.resident-account-pay-btn {
+  width: 100%;
+  margin-top: 0.75rem;
+  min-height: 48px;
+}
+
+.resident-stat-grid-compact {
+  grid-template-columns: 1fr 1fr;
+}
+
+.resident-details-toggle {
+  margin-bottom: 0.25rem;
+}
+
+.pending-approval-card {
+  display: grid;
+  gap: 0.75rem;
+  text-align: left;
+}
+
+.pending-approval-icon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.pending-approval-title {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.pending-approval-lead {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.pending-approval-email {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.pending-approval-steps {
+  margin: 0.25rem 0 0;
+  padding-left: 1.25rem;
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.pending-approval-actions {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+/* —— Resident tour —— */
+.resident-tour-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: rgba(0, 0, 0, 0.45);
+  display: grid;
+  place-items: end center;
+  padding: 1rem;
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+@media (min-width: 640px) {
+  .resident-tour-overlay {
+    place-items: center;
+  }
+}
+
+.resident-tour-card {
+  width: min(420px, 100%);
+  display: grid;
+  gap: 0.65rem;
+  box-shadow: var(--shadow);
+}
+
+.resident-tour-progress {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.resident-tour-dot {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.resident-tour-dot.is-on {
+  background: var(--primary);
+}
+
+.resident-tour-step-label {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.resident-tour-title {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.resident-tour-body {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.resident-tour-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+/* —— Badges / unread —— */
+.resident-shortcut {
+  position: relative;
+}
+
+.resident-shortcut-badge,
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.3rem;
+  margin-left: 0.25rem;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.resident-shortcut-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  margin: 0;
+}
+
+.resident-ann-item {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.75rem;
+  cursor: pointer;
+}
+
+.resident-ann-item.is-unread {
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  margin: 0 -0.5rem;
+  padding: 0.5rem;
+  border-radius: 8px;
+}
+
+.resident-unread-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary);
+  margin-right: 0.35rem;
+  vertical-align: middle;
+}
+
+/* —— Request photos + SLA —— */
+.resident-req-photos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.resident-req-photo-thumb {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  display: block;
+}
+
+.resident-req-photo-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.resident-req-photo-thumb .btn {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-height: 28px;
+  padding: 0 0.35rem;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+}
+
+.resident-request-sla {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--primary);
+  margin-top: 0.25rem;
+}
+
+.resident-request-sla.is-overdue {
+  color: var(--danger);
+}
+
+/* —— Meters batch / deadline —— */
+.meters-offline-banner,
+.meters-queue-banner {
+  margin-bottom: 1rem;
+  border-color: color-mix(in srgb, var(--warning, #d97706) 45%, var(--border));
+  background: color-mix(in srgb, var(--warning, #d97706) 10%, var(--surface));
+}
+
+.resident-meter-card.is-queued {
+  border-left-color: var(--warning, #d97706);
+}
+
+.meters-deadline-banner {
+  border-color: color-mix(in srgb, var(--warning, #d97706) 40%, var(--border));
+  background: color-mix(in srgb, var(--warning, #d97706) 12%, var(--surface));
+}
+
+.meters-deadline-banner.is-overdue {
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+}
+
+.resident-meters-batch-list {
+  list-style: none;
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+}
+
+.resident-meters-batch-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.resident-meters-batch-input {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.resident-meters-batch-input input {
+  flex: 1;
+  min-height: 48px;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+/* —— Comfort mode (larger type for residents) —— */
+html[data-comfort='large'] {
+  font-size: 112.5%; /* 18px if root 16 */
+}
+html[data-comfort='large'] .btn,
+html[data-comfort='large'] .tab-btn,
+html[data-comfort='large'] input,
+html[data-comfort='large'] select,
+html[data-comfort='large'] textarea {
+  min-height: 48px;
+  font-size: 1.05rem;
+}
+html[data-comfort='large'] .resident-hero-amount {
+  font-size: 2.6rem;
+}
+html[data-comfort='large'] .resident-bottom-nav-item {
+  font-size: 0.72rem;
+}
+
+.resident-apt-switcher select {
+  max-width: 140px;
+  font-size: 0.8rem;
+  min-height: 36px;
+}
+
+.resident-account-cta-row {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+/* —— Modal a11y shell —— */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: grid;
+  place-items: center;
+  z-index: 50;
+  padding: 1rem;
+}
+.modal-panel {
+  width: min(480px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  outline: none;
+}
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+  align-items: flex-start;
+}
+.modal-title {
+  font-size: 1.1rem;
+  margin: 0;
+}
+.modal-footer {
+  margin-top: 16px;
+}
+
+/* —— Messenger —— */
+.resident-messenger-toolbar {
+  margin-bottom: 0.75rem;
+}
+.resident-messenger-layout {
+  display: grid;
+  gap: 1rem;
+}
+@media (min-width: 720px) {
+  .resident-messenger-layout {
+    grid-template-columns: minmax(200px, 280px) 1fr;
+    align-items: start;
+  }
+}
+.resident-thread-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+.resident-thread-item {
+  width: 100%;
+  text-align: left;
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.75rem;
+  min-height: 52px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.resident-thread-item.active {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+}
+.resident-thread-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.resident-thread-preview {
+  font-size: 0.8rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.resident-message-list {
+  min-height: 220px;
+  max-height: 50vh;
+  overflow: auto;
+  display: grid;
+  gap: 0.5rem;
+  align-content: start;
+  margin-bottom: 0.75rem;
+}
+.resident-message-bubble {
+  justify-self: start;
+  background: var(--surface-2, var(--border));
+  padding: 0.5rem 0.75rem;
+  border-radius: 12px;
+  max-width: 90%;
+  display: grid;
+  gap: 0.15rem;
+}
+.resident-message-bubble.is-mine {
+  justify-self: end;
+  background: color-mix(in srgb, var(--primary) 18%, var(--surface));
+}
+.resident-message-form {
+  display: flex;
+  gap: 0.5rem;
+}
+.resident-message-form input {
+  flex: 1;
+}
+
+/* —— Meetings —— */
+.resident-meeting-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.resident-meeting-item {
+  width: 100%;
+  text-align: left;
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  min-height: 56px;
+}
+.resident-meeting-item.active {
+  border-color: var(--primary);
+}
+.resident-meeting-title {
+  font-weight: 700;
+}
+.resident-meeting-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.resident-meeting-detail {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1rem;
+}
+.resident-meeting-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+}
+.resident-meeting-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.resident-agenda-item {
+  display: grid;
+  gap: 0.35rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+.resident-agenda-votes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.resident-request-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.resident-request-timeline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+}
+
+.resident-request-timeline span {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: var(--surface-2, var(--border));
+  color: var(--muted);
+}
+
+.resident-request-timeline span.is-on {
+  background: color-mix(in srgb, var(--primary) 18%, var(--surface));
+  color: var(--text);
+  font-weight: 600;
+}
+
+.resident-meters-period-badge {
+  font-weight: 700;
+  font-size: 0.95rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--primary) 25%, var(--border));
+}
+
+.resident-meters-prev {
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius);
+  background: var(--surface-2, var(--surface));
+  border: 1px solid var(--border);
+}
+
+.resident-meters-advanced {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.resident-meters-advanced summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
+.resident-meter-card {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.65rem;
+}
+
+.resident-meter-card.needs-reading {
+  border-left: 3px solid var(--warning, #d97706);
+  padding-left: 0.65rem;
+}
+
+.resident-meter-card.is-done {
+  border-left: 3px solid var(--success, #16a34a);
+  padding-left: 0.65rem;
+}
+
+/* —— Resident bottom nav (mobile) —— */
+.resident-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 1023px) {
+  .app-shell.is-resident .resident-bottom-nav {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 90;
+    min-height: 56px;
+    padding: 0.25rem 0.15rem;
+    padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.06);
+  }
+
+  .app-shell.is-resident .app-content.has-resident-nav {
+    padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
+  }
+
+  .resident-bottom-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.15rem;
+    min-height: 48px;
+    padding: 0.25rem 0.1rem;
+    border-radius: 8px;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.65rem;
+    font-weight: 600;
+    line-height: 1.15;
+    text-align: center;
+  }
+
+  .resident-bottom-nav-item.active {
+    color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 10%, transparent);
+  }
+
+  .resident-bottom-nav-icon-wrap {
+    position: relative;
+    display: inline-flex;
+    line-height: 0;
+  }
+
+  .resident-bottom-nav-icon {
+    width: 22px;
+    height: 22px;
+  }
+
+  .resident-bottom-nav-badge {
+    position: absolute;
+    top: -6px;
+    right: -10px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: var(--danger);
+    color: #fff;
+    font-size: 0.62rem;
+    font-weight: 700;
+    display: grid;
+    place-items: center;
+    line-height: 1;
   }
 }

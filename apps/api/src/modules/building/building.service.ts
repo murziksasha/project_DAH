@@ -183,6 +183,7 @@ export class BuildingService {
       defaultAccrualDueDays:
         json.defaultAccrualDueDays ?? DEFAULT_BUILDING_SETTINGS.defaultAccrualDueDays,
       reminderDaysBeforeDue: json.reminderDaysBeforeDue ?? 3,
+      metersReadingDeadlineDay: json.metersReadingDeadlineDay ?? 5,
       locale: json.locale ?? DEFAULT_BUILDING_SETTINGS.locale,
       slaHoursByCategory: json.slaHoursByCategory ?? {},
       features: json.features ?? {},
@@ -205,6 +206,9 @@ export class BuildingService {
         : {}),
       ...(dto.reminderDaysBeforeDue !== undefined
         ? { reminderDaysBeforeDue: dto.reminderDaysBeforeDue }
+        : {}),
+      ...(dto.metersReadingDeadlineDay !== undefined
+        ? { metersReadingDeadlineDay: dto.metersReadingDeadlineDay }
         : {}),
       ...(dto.locale !== undefined ? { locale: dto.locale } : {}),
       ...(dto.slaHoursByCategory !== undefined
@@ -262,6 +266,7 @@ export class BuildingService {
       defaultAccrualDueDays:
         json.defaultAccrualDueDays ?? DEFAULT_BUILDING_SETTINGS.defaultAccrualDueDays,
       reminderDaysBeforeDue: json.reminderDaysBeforeDue ?? 3,
+      metersReadingDeadlineDay: json.metersReadingDeadlineDay ?? 5,
       locale: json.locale ?? DEFAULT_BUILDING_SETTINGS.locale,
       slaHoursByCategory: json.slaHoursByCategory ?? {},
     };
