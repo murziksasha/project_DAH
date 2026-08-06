@@ -392,7 +392,7 @@ export default function ReportsPage() {
                       {d.isOverdue ? 'Прострочено' : 'До сплати'}
                     </td>
                     <td>
-                      <Link href={`/admin/apartments/${d.apartmentId}`} className="btn btn-sm btn-ghost">
+                      <Link href={`/admin/apartments/detail/?id=${encodeURIComponent(d.apartmentId)}`} className="btn btn-sm btn-ghost">
                         Рахунок
                       </Link>
                     </td>

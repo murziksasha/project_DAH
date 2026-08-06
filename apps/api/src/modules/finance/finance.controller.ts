@@ -162,6 +162,7 @@ export class FinanceController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('buildingId') buildingId?: string,
+    @Query('approvalStatus') approvalStatus?: string,
     @TenantId() tenantId?: string | null,
   ) {
     return this.finance.listExpenses({
@@ -170,6 +171,7 @@ export class FinanceController {
       to,
       buildingId,
       tenantId,
+      approvalStatus,
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
     });
@@ -185,6 +187,13 @@ export class FinanceController {
   @Post('expenses')
   createExpense(@Body() dto: CreateExpenseDto, @CurrentUser() user: AuthUser) {
     return this.finance.createExpense(dto, user.id);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.chairman, UserRole.board, UserRole.accountant)
+  @Post('expenses/:id/approve')
+  approveExpense(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.finance.approveExpense(id, user.id);
   }
 
   @UseGuards(RolesGuard)

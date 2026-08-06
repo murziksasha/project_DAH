@@ -2,10 +2,20 @@
 
 import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
+import { PendingApprovalCard } from '@/components/PendingApprovalCard';
 import { useI18n } from '@/components/LocaleProvider';
 import { apiFetch, LoginResponse, persistAccessToken } from '@/lib/api';
+import { getRoleHome } from '@/lib/auth';
+import { isPendingApprovalMessage } from '@/lib/notification-links';
 
-const ADMIN_ROLES = ['chairman', 'accountant', 'board', 'auditor'];
+const ADMIN_ROLES = [
+  'chairman',
+  'accountant',
+  'board',
+  'auditor',
+  'dispatcher',
+  'crew',
+];
 
 function isLocalHost(): boolean {
   if (typeof window === 'undefined') return process.env.NODE_ENV === 'development';
@@ -29,14 +39,12 @@ async function finishLogin(data: LoginResponse, incompleteMsg: string) {
 
   const next = safeNextPath(new URLSearchParams(window.location.search).get('next'));
 
-  let target = '/resident';
+  let target = getRoleHome(data.user.role);
   if (data.user.role === 'super_admin') {
     const status = await apiFetch<{ isInitialized: boolean }>('/setup/status', {
       token: data.accessToken,
     });
     target = status.isInitialized ? '/admin/organization' : '/admin/setup';
-  } else if (ADMIN_ROLES.includes(data.user.role)) {
-    target = '/admin';
   }
 
   if (next) {
@@ -48,7 +56,7 @@ async function finishLogin(data: LoginResponse, incompleteMsg: string) {
   window.location.href = target;
 }
 
-type Mode = 'password' | 'sms' | '2fa';
+type Mode = 'password' | 'sms' | '2fa' | 'forgot' | 'reset' | 'pending';
 
 export default function LoginPage() {
   const { t, locale, setLocale } = useI18n();
@@ -67,9 +75,28 @@ export default function LoginPage() {
   const [smsAvailable, setSmsAvailable] = useState(false);
   const [identityAvailable, setIdentityAvailable] = useState(false);
   const [identityProvider, setIdentityProvider] = useState('mock');
+  const [resetToken, setResetToken] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [pendingEmail, setPendingEmail] = useState('');
 
   useEffect(() => {
-    if (isLocalHost()) {
+    const params = new URLSearchParams(window.location.search);
+    const reset = params.get('reset');
+    if (reset) {
+      setResetToken(reset);
+      setMode('reset');
+    }
+    if (params.get('pending') === '1') {
+      setMode('pending');
+      try {
+        const stored = sessionStorage.getItem('dah_pending_email') ?? '';
+        setPendingEmail(stored || params.get('email') || '');
+        if (stored) setEmail(stored);
+      } catch {
+        setPendingEmail(params.get('email') || '');
+      }
+    }
+    if (isLocalHost() && params.get('pending') !== '1') {
       setEmail('chairman@osbb.local');
       setPassword('password123');
       setShowDemoHints(true);
@@ -85,7 +112,6 @@ export default function LoginPage() {
       .catch(() => setIdentityAvailable(false));
 
     // Identity callback: /login?identity=callback&state=...&email=...
-    const params = new URLSearchParams(window.location.search);
     if (params.get('identity') === 'callback' && params.get('state')) {
       setLoading(true);
       apiFetch<LoginResponse>('/identity/callback', {
@@ -106,6 +132,44 @@ export default function LoginPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- identity callback once on mount
   }, []);
 
+  async function handleForgot(e: FormEvent) {
+    e.preventDefault();
+    setError('');
+    setMessage('');
+    setLoading(true);
+    try {
+      const res = await apiFetch<{ message?: string }>('/auth/password/forgot', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      });
+      setMessage(res.message ?? 'Якщо email зареєстровано, надіслано інструкції');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('loginError'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleReset(e: FormEvent) {
+    e.preventDefault();
+    setError('');
+    setMessage('');
+    setLoading(true);
+    try {
+      const res = await apiFetch<{ message?: string }>('/auth/password/reset', {
+        method: 'POST',
+        body: JSON.stringify({ token: resetToken, newPassword }),
+      });
+      setMessage(res.message ?? 'Пароль змінено');
+      setMode('password');
+      setPassword('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('loginError'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handlePassword(e: FormEvent) {
     e.preventDefault();
     setError('');
@@ -122,7 +186,19 @@ export default function LoginPage() {
       }
       await finishLogin(data, t('loginIncomplete'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('loginError'));
+      const msg = err instanceof Error ? err.message : t('loginError');
+      if (isPendingApprovalMessage(msg)) {
+        setPendingEmail(email);
+        try {
+          sessionStorage.setItem('dah_pending_email', email);
+        } catch {
+          /* ignore */
+        }
+        setMode('pending');
+        setError('');
+        return;
+      }
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -217,7 +293,18 @@ export default function LoginPage() {
       <h1 style={{ marginBottom: '0.5rem' }}>{t('loginTitle')}</h1>
       <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>{t('loginSubtitle')}</p>
 
-      {mode !== '2fa' && smsAvailable && (
+      {mode === 'pending' && (
+        <PendingApprovalCard
+          email={pendingEmail || email}
+          variant="login"
+          onBackToLogin={() => {
+            setMode('password');
+            setError('');
+          }}
+        />
+      )}
+
+      {mode !== '2fa' && mode !== 'pending' && smsAvailable && (
         <div style={{ display: 'flex', gap: 8, marginBottom: '1rem' }}>
           <button
             type="button"
@@ -268,8 +355,20 @@ export default function LoginPage() {
             />
           </div>
           {error && <p className="error">{error}</p>}
+          {message && <p style={{ color: 'var(--success)' }}>{message}</p>}
           <button type="submit" disabled={loading}>
             {loading ? t('loginLoading') : t('loginSubmit')}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              setMode('forgot');
+              setError('');
+              setMessage('');
+            }}
+          >
+            Забули пароль?
           </button>
           {identityAvailable && (
             <button
@@ -285,6 +384,66 @@ export default function LoginPage() {
                   : t('loginViaIdentity')}
             </button>
           )}
+        </form>
+      )}
+
+      {mode === 'forgot' && (
+        <form onSubmit={handleForgot} className="card" style={{ display: 'grid', gap: '1rem' }}>
+          <p style={{ color: 'var(--muted)', margin: 0, fontSize: '0.9rem' }}>
+            Вкажіть email — надішлемо посилання для нового пароля (якщо акаунт існує).
+          </p>
+          <div>
+            <label htmlFor="forgot-email">{t('loginEmail')}</label>
+            <input
+              id="forgot-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              autoComplete="username"
+            />
+          </div>
+          {error && <p className="error">{error}</p>}
+          {message && <p style={{ color: 'var(--success)' }}>{message}</p>}
+          <button type="submit" disabled={loading}>
+            {loading ? '…' : 'Надіслати'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              setMode('password');
+              setError('');
+              setMessage('');
+            }}
+          >
+            Назад до входу
+          </button>
+        </form>
+      )}
+
+      {mode === 'reset' && (
+        <form onSubmit={handleReset} className="card" style={{ display: 'grid', gap: '1rem' }}>
+          <p style={{ color: 'var(--muted)', margin: 0, fontSize: '0.9rem' }}>
+            Встановіть новий пароль (мін. 8 символів, літера + цифра).
+          </p>
+          <div>
+            <label htmlFor="new-password">Новий пароль</label>
+            <input
+              id="new-password"
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              required
+              minLength={8}
+              autoComplete="new-password"
+            />
+          </div>
+          {error && <p className="error">{error}</p>}
+          {message && <p style={{ color: 'var(--success)' }}>{message}</p>}
+          <button type="submit" disabled={loading}>
+            {loading ? '…' : 'Зберегти пароль'}
+          </button>
         </form>
       )}
 

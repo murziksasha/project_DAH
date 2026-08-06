@@ -26,6 +26,7 @@ export class HealthService {
     ]);
 
     const criticalDown = db === 'down';
+    // redis is optional (inline worker cron); only "down" when configured but unreachable
     const degraded = redis === 'down' || storage === 'down';
 
     return {
@@ -50,7 +51,11 @@ export class HealthService {
   }
 
   private async checkRedis(): Promise<ComponentStatus> {
-    const url = this.config.get<string>('REDIS_URL', 'redis://localhost:6379');
+    // Optional: worker uses inline cron by default (no BullMQ). Empty / none / disabled → skip.
+    const url = (this.config.get<string>('REDIS_URL') ?? '').trim();
+    if (!url || url === 'none' || url === 'disabled' || url === 'skip') {
+      return 'skipped';
+    }
     const client = new Redis(url, {
       maxRetriesPerRequest: 1,
       connectTimeout: 1500,

@@ -30,4 +30,9 @@ export class CreateRequestDto {
   @IsArray()
   @IsString({ each: true })
   photoKeys?: string[];
+
+  @ApiPropertyOptional({ description: 'Building id (multi-building)' })
+  @IsOptional()
+  @IsString()
+  buildingId?: string;
 }

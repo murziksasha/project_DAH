@@ -4,10 +4,20 @@ export type DeferredSetupRole = 'accountant' | 'auditor';
 
 export interface BuildingSettingsJson {
   registrationEnabled?: boolean;
+  /**
+   * If set, self-registration requires this invite code (not listed publicly).
+   * Protects apartment enumeration + open sign-up.
+   */
+  registrationInviteCode?: string;
   showBankDetailsToResidents?: boolean;
   defaultAccrualDueDays?: number;
   /** Days before due date to email debt reminders (worker). */
   reminderDaysBeforeDue?: number;
+  /**
+   * Day of month by which residents should submit meter readings (1–28).
+   * Default 5. Used for home deadline banner.
+   */
+  metersReadingDeadlineDay?: number;
   locale?: 'uk' | 'ru';
   /** Ролі, відкладені на етапі майстра налаштування */
   deferredSetupRoles?: DeferredSetupRole[];
@@ -16,6 +26,13 @@ export interface BuildingSettingsJson {
    * Keys: sanitary | electric | cleaning | elevator | heating | other | default
    */
   slaHoursByCategory?: Record<string, number>;
+  /**
+   * Expenses at or above this amount (UAH) require second approval (dual control).
+   * null/undefined = disabled.
+   */
+  expenseDualApprovalThreshold?: number | null;
+  /** Require TOTP for chairman/accountant/board before finance actions (default true in prod). */
+  requireFinance2fa?: boolean;
   features?: {
     polls?: boolean;
     requests?: boolean;

@@ -75,6 +75,37 @@
 | Імпорт банку | Заготовка під **будь-який** банк (профілі + auto) |
 | УК vs messenger | **Диспетчер/SLA** > соц-месенджер |
 
+## v1.12 — confirm dialogs + role dashboards + network banner — **COMPLETE**
+
+| Тема | Статус |
+|------|--------|
+| ConfirmDialog payments void + documents delete | ✅ |
+| Role home: dispatcher / accountant / crew / board | ✅ |
+| Login getRoleHome + dispatch ?filter= | ✅ |
+| NetworkStatusBanner offline / API / recovered | ✅ |
+
+## v1.11 — security + UX for 200–300 users — **COMPLETE**
+
+| Тема | Статус |
+|------|--------|
+| Prod hardening (Swagger off, health split, nginx limits, headers) | ✅ |
+| Messenger building/tenant scope | ✅ |
+| Password reset, lockout, password policy, TOTP encrypt | ✅ |
+| Invite registration, magic-byte uploads, Request.buildingId | ✅ |
+| Finance 2FA + dual expense approval + backup download audit | ✅ |
+| Resident triad, notification center, global search, dispatch mobile | ✅ |
+| Worker daily backup + SLA alerts | ✅ |
+
+## v1.14 — runtime slim + perf (A–E) — **COMPLETE**
+
+| Фаза | Зміст | Статус |
+|------|--------|--------|
+| **A** Slim `WorkerModule` (не full AppModule) | ✅ |
+| **B** Inline cron; Redis optional (`REDIS_URL=none`, profile `redis`) | ✅ |
+| **C** Same-origin file download HMAC + stream (no public :9000) | ✅ |
+| **D** Next `output: 'export'` + nginx:alpine web (no Node web) | ✅ |
+| **E** React Query hot paths + dynamic DocumentTemplateBuilder | ✅ |
+
 ## Beyond plan (future product, not blocking)
 
 | Тема | Примітка |

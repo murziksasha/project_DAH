@@ -1,16 +1,44 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '@/components/LocaleProvider';
+import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { SkeletonCards } from '@/components/ui/Skeleton';
 import { StatCard } from '@/components/ui/StatCard';
-import { apiFetch, downloadReceipt, getToken } from '@/lib/api';
+import { apiFetch, downloadReceipt, getToken, uploadFile } from '@/lib/api';
+import {
+  myAccountPath,
+  onApartmentChange,
+  resolveResidentApartmentId,
+} from '@/lib/apartment-context';
 import { formatDateUk, formatMoney } from '@/lib/money';
+import {
+  formatPeriodLabel,
+  getMetersDeadlineInfo,
+} from '@/lib/meters-deadline';
+import {
+  countQueuedMeterReadings,
+  METER_QUEUE_EVENT,
+} from '@/lib/meter-offline-queue';
 import { AccountTab, type ResidentAccount } from './_components/AccountTab';
+import { PaySheet } from './_components/PaySheet';
+import {
+  ResidentActions,
+  type ResidentAction,
+} from './_components/ResidentActions';
 
-type Tab = 'account' | 'building' | 'documents' | 'debtors' | 'communications';
+type Tab =
+  | 'home'
+  | 'account'
+  | 'news'
+  | 'requests'
+  | 'building'
+  | 'documents'
+  | 'debtors'
+  | 'more';
 
 type Account = ResidentAccount;
 
@@ -51,6 +79,7 @@ interface Announcement {
   body: string;
   isPinned: boolean;
   createdAt: string;
+  isRead?: boolean;
   author: { firstName: string; lastName: string };
 }
 
@@ -60,7 +89,15 @@ interface RequestItem {
   description: string;
   category: string;
   status: string;
+  priority?: string;
+  dueAt?: string | null;
+  updatedAt?: string;
   createdAt: string;
+  slaStatus?: string | null;
+  isOverdue?: boolean;
+  photoKeys?: string[];
+  photoUrls?: string[];
+  assignee?: { firstName: string; lastName: string } | null;
 }
 
 interface PollOption {
@@ -89,6 +126,45 @@ interface Poll {
   };
 }
 
+interface MeterHint {
+  id: string;
+  name: string;
+  isActive?: boolean;
+  readings: Array<{ period: string }>;
+}
+
+function normalizeTab(raw: string | null): Tab {
+  if (!raw || raw === 'home') return 'home';
+  if (raw === 'communications') return 'requests';
+  if (
+    raw === 'account' ||
+    raw === 'news' ||
+    raw === 'requests' ||
+    raw === 'building' ||
+    raw === 'documents' ||
+    raw === 'debtors' ||
+    raw === 'more'
+  ) {
+    return raw;
+  }
+  return 'home';
+}
+
+function currentPeriod(): string {
+  return new Date().toISOString().slice(0, 7);
+}
+
+function statusTone(status: string): 'muted' | 'success' | 'danger' | 'primary' | 'warning' {
+  if (status === 'done') return 'success';
+  if (status === 'in_progress') return 'primary';
+  if (status === 'new') return 'warning';
+  return 'muted';
+}
+
+function isNoApartmentError(msg: string): boolean {
+  return /квартиру не прив|не прив.?язано|apartment/i.test(msg);
+}
+
 export default function ResidentPage() {
   const { t } = useI18n();
   const REQUEST_STATUS: Record<string, string> = {
@@ -98,33 +174,98 @@ export default function ResidentPage() {
   };
   const TABS: { id: Tab; label: string }[] = [
     { id: 'account', label: t('residentTabAccount') },
-    { id: 'communications', label: t('residentTabNews') },
+    { id: 'news', label: t('residentTabNews') },
+    { id: 'requests', label: t('residentTabRequests') },
     { id: 'building', label: t('residentTabTransparency') },
     { id: 'documents', label: t('residentTabDocs') },
     { id: 'debtors', label: t('residentTabDebtors') },
   ];
-  const [tab, setTab] = useState<Tab>('account');
+
+  const [tab, setTab] = useState<Tab>('home');
   const [account, setAccount] = useState<Account | null>(null);
   const [transparency, setTransparency] = useState<Transparency | null>(null);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [requests, setRequests] = useState<RequestItem[]>([]);
   const [polls, setPolls] = useState<Poll[]>([]);
+  const [metersNeedReading, setMetersNeedReading] = useState(false);
+  const [metersPendingCount, setMetersPendingCount] = useState(0);
+  const [deadlineDay, setDeadlineDay] = useState(5);
+  const [apartmentId, setApartmentId] = useState<string | null>(null);
+  const [noApartment, setNoApartment] = useState(false);
   const [userName, setUserName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [signalsLoading, setSignalsLoading] = useState(true);
+  const [transparencyLoading, setTransparencyLoading] = useState(false);
   const [reqTitle, setReqTitle] = useState('');
   const [reqDesc, setReqDesc] = useState('');
   const [reqCategory, setReqCategory] = useState('other');
+  const [reqPhotos, setReqPhotos] = useState<Array<{ key: string; url: string }>>([]);
+  const [photoBusy, setPhotoBusy] = useState(false);
   const [commsMessage, setCommsMessage] = useState('');
   const [copied, setCopied] = useState('');
   const [onlinePayEnabled, setOnlinePayEnabled] = useState(false);
   const [payBusy, setPayBusy] = useState(false);
+  const [payOpen, setPayOpen] = useState(false);
   const [tabSearch, setTabSearch] = useState('');
+  const [focusNewRequest, setFocusNewRequest] = useState(false);
+  const [highlightRequestId, setHighlightRequestId] = useState<string | null>(null);
+  const [accountStartExpanded, setAccountStartExpanded] = useState(false);
+  const [meterQueueCount, setMeterQueueCount] = useState(0);
+  const transparencyLoaded = useRef(false);
+  const newsMarked = useRef(false);
 
+  const setTabAndUrl = useCallback((next: Tab, opts?: { newRequest?: boolean }) => {
+    setTab(next);
+    setTabSearch('');
+    if (opts?.newRequest) setFocusNewRequest(true);
+    const url = new URL(window.location.href);
+    if (next === 'home') {
+      url.searchParams.delete('tab');
+      url.searchParams.delete('new');
+      url.searchParams.delete('requestId');
+    } else {
+      url.searchParams.set('tab', next);
+      if (opts?.newRequest) url.searchParams.set('new', '1');
+      else url.searchParams.delete('new');
+      if (next !== 'requests') url.searchParams.delete('requestId');
+    }
+    window.history.replaceState({}, '', url.toString());
+  }, []);
+
+  const loadTransparency = useCallback(async (token: string) => {
+    if (transparencyLoaded.current) return;
+    setTransparencyLoading(true);
+    try {
+      const tr = await apiFetch<Transparency>('/transparency/dashboard', { token });
+      setTransparency(tr);
+      transparencyLoaded.current = true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('error'));
+    } finally {
+      setTransparencyLoading(false);
+    }
+  }, [t]);
+
+  // Initial: critical home data, then signals (lazy phases)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const urlTab = params.get('tab') as Tab | null;
-    if (urlTab && TABS.some((t) => t.id === urlTab)) setTab(urlTab);
+    let next = normalizeTab(params.get('tab'));
+    const reqId = params.get('requestId');
+    if (reqId) {
+      setHighlightRequestId(reqId);
+      next = 'requests';
+    }
+    if (params.get('new') === '1' || params.get('new') === 'true') {
+      setFocusNewRequest(true);
+      if (next === 'home' && !reqId) next = 'requests';
+    }
+    if (params.get('pay') === '1' || params.get('paid') === '1') next = 'account';
+    if (params.get('year') || params.get('month')) {
+      setAccountStartExpanded(true);
+      if (next === 'home') next = 'account';
+    }
+    setTab(next);
 
     const token = getToken();
     const userRaw = localStorage.getItem('dah_user');
@@ -133,31 +274,180 @@ export default function ResidentPage() {
       return;
     }
     if (userRaw) {
-      const user = JSON.parse(userRaw);
-      setUserName(`${user.firstName} ${user.lastName}`);
+      try {
+        const user = JSON.parse(userRaw) as {
+          firstName?: string;
+          lastName?: string;
+          apartmentId?: string | null;
+        };
+        setUserName(`${user.firstName ?? ''} ${user.lastName ?? ''}`.trim());
+      } catch {
+        /* ignore */
+      }
     }
 
+    const aptId = resolveResidentApartmentId();
+    setApartmentId(aptId || null);
+    if (!aptId) setNoApartment(true);
+
+    const period = currentPeriod();
+    const needTransparency =
+      next === 'building' || next === 'documents' || next === 'debtors';
+
+    // Phase 1 — account + pay + meters (first paint)
     Promise.all([
-      apiFetch<Account>('/accruals/my-account', { token }),
-      apiFetch<Transparency>('/transparency/dashboard', { token }),
-      apiFetch<Announcement[]>('/communications/announcements', { token }),
-      apiFetch<RequestItem[]>('/communications/requests', { token }),
-      apiFetch<Poll[]>('/communications/polls', { token }),
+      apiFetch<Account>(myAccountPath(), { token }).catch((err: Error) => {
+        if (isNoApartmentError(err.message)) {
+          setNoApartment(true);
+          return null;
+        }
+        throw err;
+      }),
       apiFetch<{ enabled: boolean }>('/payments/online/status', { skipAuth: true }).catch(() => ({
         enabled: false,
       })),
+      aptId
+        ? apiFetch<MeterHint[]>(`/meters/apartment/${aptId}`, { token }).catch(() => [])
+        : Promise.resolve([] as MeterHint[]),
+      apiFetch<{ metersReadingDeadlineDay?: number }>('/building/settings', { token }).catch(
+        () => ({ metersReadingDeadlineDay: 5 }),
+      ),
     ])
-      .then(([a, t, ann, req, pol, pay]) => {
-        setAccount(a);
-        setTransparency(t);
+      .then(([a, pay, meters, settings]) => {
+        if (a) {
+          setAccount(a);
+          setNoApartment(false);
+        }
+        setOnlinePayEnabled(Boolean(pay?.enabled));
+        setDeadlineDay(settings.metersReadingDeadlineDay ?? 5);
+        const active = (meters ?? []).filter((m) => m.isActive !== false);
+        const pending = active.filter((m) => !m.readings?.some((r) => r.period === period));
+        setMetersNeedReading(pending.length > 0 && active.length > 0);
+        setMetersPendingCount(pending.length);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setLoading(false));
+
+    // Phase 2 — signals for action home (announcements, requests, polls)
+    Promise.all([
+      apiFetch<Announcement[]>('/communications/announcements', { token }),
+      apiFetch<RequestItem[]>('/communications/requests', { token }),
+      apiFetch<Poll[]>('/communications/polls', { token }),
+    ])
+      .then(([ann, req, pol]) => {
         setAnnouncements(ann);
         setRequests(req);
         setPolls(pol);
-        setOnlinePayEnabled(Boolean(pay?.enabled));
       })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+      .catch(() => undefined)
+      .finally(() => setSignalsLoading(false));
+
+    // Phase 3 — transparency only if needed
+    if (needTransparency) {
+      void loadTransparency(token);
+    }
+  }, [loadTransparency]);
+
+  // Lazy transparency: finance tabs, pay sheet bank details, debtors
+  useEffect(() => {
+    if (
+      tab !== 'building' &&
+      tab !== 'documents' &&
+      tab !== 'debtors' &&
+      tab !== 'account' &&
+      !payOpen
+    ) {
+      return;
+    }
+    const token = getToken();
+    if (!token) return;
+    void loadTransparency(token);
+  }, [tab, payOpen, loadTransparency]);
+
+  useEffect(() => {
+    const syncQueue = () => {
+      setMeterQueueCount(countQueuedMeterReadings(resolveResidentApartmentId() || undefined));
+    };
+    syncQueue();
+    window.addEventListener(METER_QUEUE_EVENT, syncQueue);
+    return () => window.removeEventListener(METER_QUEUE_EVENT, syncQueue);
   }, []);
+
+  // Multi-apartment: soft reload account + meters without full page refresh
+  useEffect(() => {
+    return onApartmentChange((aptId) => {
+      setMeterQueueCount(countQueuedMeterReadings(aptId));
+      const token = getToken();
+      if (!token) return;
+      setApartmentId(aptId);
+      setNoApartment(!aptId);
+      setLoading(true);
+      setError('');
+      const period = currentPeriod();
+      Promise.all([
+        apiFetch<Account>(myAccountPath(aptId), { token }).catch((err: Error) => {
+          if (isNoApartmentError(err.message)) {
+            setNoApartment(true);
+            return null;
+          }
+          throw err;
+        }),
+        aptId
+          ? apiFetch<MeterHint[]>(`/meters/apartment/${aptId}`, { token }).catch(() => [])
+          : Promise.resolve([] as MeterHint[]),
+      ])
+        .then(([a, meters]) => {
+          if (a) {
+            setAccount(a);
+            setNoApartment(false);
+          } else {
+            setAccount(null);
+          }
+          const active = (meters ?? []).filter((m) => m.isActive !== false);
+          const pending = active.filter((m) => !m.readings?.some((r) => r.period === period));
+          setMetersNeedReading(pending.length > 0 && active.length > 0);
+          setMetersPendingCount(pending.length);
+        })
+        .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+        .finally(() => setLoading(false));
+    });
+  }, []);
+
+  // Mark all news read when opening news tab
+  useEffect(() => {
+    if (tab !== 'news' || newsMarked.current) return;
+    const token = getToken();
+    if (!token) return;
+    const unread = announcements.some((a) => !a.isRead);
+    if (!unread && announcements.length === 0) return;
+    if (!unread) {
+      newsMarked.current = true;
+      return;
+    }
+    newsMarked.current = true;
+    apiFetch('/communications/announcements/read-all', { method: 'PATCH', token })
+      .then(() => {
+        setAnnouncements((prev) => prev.map((a) => ({ ...a, isRead: true })));
+      })
+      .catch(() => {
+        newsMarked.current = false;
+      });
+  }, [tab, announcements]);
+
+  useEffect(() => {
+    if (!focusNewRequest || tab !== 'requests') return;
+    document.getElementById('req-title')?.focus();
+    document.getElementById('new-request')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setFocusNewRequest(false);
+  }, [focusNewRequest, tab, loading]);
+
+  useEffect(() => {
+    if (!highlightRequestId || tab !== 'requests' || signalsLoading) return;
+    const el = document.getElementById(`request-${highlightRequestId}`);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const tmr = window.setTimeout(() => setHighlightRequestId(null), 4000);
+    return () => window.clearTimeout(tmr);
+  }, [highlightRequestId, tab, signalsLoading, requests]);
 
   const paymentPurpose = useMemo(() => {
     if (!account) return 'Оплата внесків, Мій дім';
@@ -166,11 +456,38 @@ export default function ResidentPage() {
 
   const openLineForReceipt = useMemo(() => {
     if (!account?.lines?.length) return null;
-    return (
-      account.lines.find((l) => l.balance > 0) ??
-      account.lines[0]
-    );
+    return account.lines.find((l) => l.balance > 0) ?? account.lines[0];
   }, [account]);
+
+  const unreadNews = useMemo(
+    () => announcements.filter((a) => !a.isRead).length,
+    [announcements],
+  );
+
+  const deadlineInfo = useMemo(
+    () => getMetersDeadlineInfo(deadlineDay),
+    [deadlineDay],
+  );
+
+  async function handlePhotoPick(files: FileList | null) {
+    if (!files?.length) return;
+    const token = getToken();
+    if (!token) return;
+    setPhotoBusy(true);
+    setError('');
+    try {
+      const uploaded: Array<{ key: string; url: string }> = [];
+      for (const file of Array.from(files).slice(0, 3 - reqPhotos.length)) {
+        const res = await uploadFile('/files/upload', file, token, 'requests');
+        uploaded.push({ key: res.key, url: res.url });
+      }
+      setReqPhotos((p) => [...p, ...uploaded].slice(0, 3));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('error'));
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
 
   async function handleRequest(e: FormEvent) {
     e.preventDefault();
@@ -181,11 +498,17 @@ export default function ResidentPage() {
       await apiFetch('/communications/requests', {
         method: 'POST',
         token,
-        body: JSON.stringify({ title: reqTitle, description: reqDesc, category: reqCategory }),
+        body: JSON.stringify({
+          title: reqTitle,
+          description: reqDesc,
+          category: reqCategory,
+          photoKeys: reqPhotos.map((p) => p.key),
+        }),
       });
       setCommsMessage(t('residentRequestSent'));
       setReqTitle('');
       setReqDesc('');
+      setReqPhotos([]);
       const updated = await apiFetch<RequestItem[]>('/communications/requests', { token });
       setRequests(updated);
     } catch (err) {
@@ -226,7 +549,20 @@ export default function ResidentPage() {
       setCopied(label);
       setTimeout(() => setCopied(''), 2000);
     } catch {
-      setError('Не вдалося скопіювати');
+      setError(t('residentCopyFail'));
+    }
+  }
+
+  async function markOneAnnouncement(id: string) {
+    const token = getToken();
+    if (!token) return;
+    try {
+      await apiFetch(`/communications/announcements/${id}/read`, { method: 'PATCH', token });
+      setAnnouncements((prev) =>
+        prev.map((a) => (a.id === id ? { ...a, isRead: true } : a)),
+      );
+    } catch {
+      /* ignore */
     }
   }
 
@@ -257,24 +593,16 @@ export default function ResidentPage() {
     return list.filter((c) => c.name.toLowerCase().includes(q));
   }, [transparency?.expenseSummary.byCategory, q]);
 
-  async function handleOnlinePay() {
+  async function handleOnlinePay(amount: number) {
     const token = getToken();
     if (!token || !account) return;
-    const amount = account.summary.debt;
     if (amount <= 0) {
-      setError('Немає боргу для оплати');
+      setError(t('residentPayNoDebt'));
       return;
     }
-    // apartment id from user storage
-    const raw = localStorage.getItem('dah_user');
-    let apartmentId = '';
-    try {
-      apartmentId = raw ? (JSON.parse(raw) as { apartmentId?: string }).apartmentId ?? '' : '';
-    } catch {
-      apartmentId = '';
-    }
-    if (!apartmentId) {
-      setError('Квартиру не привʼязано');
+    const apt = resolveResidentApartmentId();
+    if (!apt) {
+      setError(t('residentMetersNoApt'));
       return;
     }
     setPayBusy(true);
@@ -283,10 +611,8 @@ export default function ResidentPage() {
       const status = await apiFetch<{
         enabled: boolean;
         sandbox: boolean;
-        productionReady?: boolean;
       }>('/payments/online/status', { skipAuth: true });
 
-      // Production / real provider: open checkout form first
       if (!status.sandbox) {
         const intent = await apiFetch<{
           checkoutUrl: string;
@@ -297,7 +623,7 @@ export default function ResidentPage() {
         }>('/payments/online/intent', {
           method: 'POST',
           token,
-          body: JSON.stringify({ apartmentId, amount }),
+          body: JSON.stringify({ apartmentId: apt, amount }),
         });
         if (intent.formAction && intent.form) {
           const f = document.createElement('form');
@@ -319,10 +645,10 @@ export default function ResidentPage() {
         if (intent.checkoutUrl) {
           window.open(intent.checkoutUrl, '_blank', 'noopener,noreferrer');
         }
+        setPayOpen(false);
         return;
       }
 
-      // Sandbox / generic: immediate complete for local demos
       const paid = await apiFetch<{
         ok: boolean;
         paymentId?: string;
@@ -331,35 +657,145 @@ export default function ResidentPage() {
       }>('/payments/online/sandbox-complete', {
         method: 'POST',
         token,
-        body: JSON.stringify({ apartmentId, amount }),
+        body: JSON.stringify({ apartmentId: apt, amount }),
       });
       setCommsMessage(
         paid.ok
           ? `Оплату зараховано${paid.sandbox ? ' (sandbox)' : ''}: ${paid.paymentId?.slice(-8) ?? paid.orderId}`
-          : 'Платіж не створено',
+          : t('residentPayFail'),
       );
-      const refreshed = await apiFetch<Account>('/accruals/my-account', { token });
+      const refreshed = await apiFetch<Account>(myAccountPath(), { token });
       setAccount(refreshed);
+      setPayOpen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка онлайн-оплати');
+      setError(err instanceof Error ? err.message : t('residentPayError'));
     } finally {
       setPayBusy(false);
     }
   }
 
   const visibleTabs = TABS.filter(
-    (t) => t.id !== 'debtors' || transparency?.debtors !== null,
+    (tb) => tb.id !== 'debtors' || transparency?.debtors !== null,
   );
 
   const debt = account?.summary.debt ?? 0;
   const advance = account?.summary.advance ?? 0;
-  const heroTone = debt > 0 ? 'var(--danger)' : 'var(--success)';
-  const heroLabel =
-    debt > 0 ? t('residentToPay') : advance > 0 ? t('residentOverpay') : t('residentNoDebt');
-  const heroAmount = debt > 0 ? debt : advance > 0 ? advance : 0;
+
+  const openPolls = useMemo(
+    () => polls.filter((p) => p.isActive && !p.userVote),
+    [polls],
+  );
+  const pinnedAnn = useMemo(
+    () => announcements.filter((a) => a.isPinned && !a.isRead).slice(0, 2),
+    [announcements],
+  );
+  const openRequests = useMemo(
+    () => requests.filter((r) => r.status === 'new' || r.status === 'in_progress'),
+    [requests],
+  );
+
+  const homeActions: ResidentAction[] = useMemo(() => {
+    const list: ResidentAction[] = [];
+    if (meterQueueCount > 0) {
+      list.push({
+        id: 'meter-queue',
+        kind: 'meters',
+        title: t('residentActionMeterQueue', { count: meterQueueCount }),
+        subtitle: t('residentActionMeterQueueSub'),
+        primary: true,
+        href: '/resident/meters',
+      });
+    }
+    if (debt > 0) {
+      list.push({
+        id: 'pay',
+        kind: 'pay',
+        title: t('residentActionPay', { amount: formatMoney(debt) }),
+        subtitle: t('residentActionPaySub'),
+        primary: meterQueueCount === 0,
+        onClick: () => setPayOpen(true),
+      });
+    }
+    if (metersNeedReading) {
+      list.push({
+        id: 'meters',
+        kind: 'meters',
+        title: t('residentActionMeters'),
+        subtitle: t('residentActionMetersSub', { period: currentPeriod() }),
+        href: '/resident/meters',
+      });
+    }
+    for (const p of openPolls.slice(0, 2)) {
+      list.push({
+        id: `poll-${p.id}`,
+        kind: 'poll',
+        title: t('residentActionPoll'),
+        subtitle: p.question,
+        onClick: () => setTabAndUrl('news'),
+      });
+    }
+    for (const r of openRequests.slice(0, 2)) {
+      list.push({
+        id: `req-${r.id}`,
+        kind: 'request',
+        title: r.title,
+        subtitle: REQUEST_STATUS[r.status] ?? r.status,
+        onClick: () => setTabAndUrl('requests'),
+      });
+    }
+    for (const a of pinnedAnn) {
+      list.push({
+        id: `ann-${a.id}`,
+        kind: 'announcement',
+        title: a.title,
+        subtitle: t('residentActionPinned'),
+        onClick: () => setTabAndUrl('news'),
+      });
+    }
+    if (unreadNews > 0 && !pinnedAnn.length) {
+      list.push({
+        id: 'unread-news',
+        kind: 'announcement',
+        title: t('residentUnreadNews', { count: unreadNews }),
+        subtitle: t('residentTabNews'),
+        onClick: () => setTabAndUrl('news'),
+      });
+    }
+    return list;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    debt,
+    metersNeedReading,
+    meterQueueCount,
+    openPolls,
+    openRequests,
+    pinnedAnn,
+    unreadNews,
+    t,
+    setTabAndUrl,
+  ]);
+
+  const apartmentLabel = account
+    ? t('residentApt', { number: account.apartment.number }) +
+      (account.apartment.buildingName ? ` · ${account.apartment.buildingName}` : '')
+    : undefined;
+
+  const showDesktopTabs = tab !== 'home' && tab !== 'more';
+
+  if (!loading && noApartment && !account) {
+    return (
+      <main className="resident-page">
+        <PageHeader title={t('residentCabinetTitle')} description={userName || undefined} />
+        <EmptyState
+          title={t('residentNoApartmentTitle')}
+          description={t('residentNoApartmentDesc')}
+        />
+      </main>
+    );
+  }
 
   return (
-    <main>
+    <main className="resident-page">
       <PageHeader
         title={t('residentCabinetTitle')}
         description={
@@ -374,91 +810,189 @@ export default function ResidentPage() {
         }
       />
 
-      {error && <p className="error" style={{ marginBottom: '0.75rem' }}>{error}</p>}
+      {error && (
+        <p className="error" style={{ marginBottom: '0.75rem' }}>
+          {error}
+        </p>
+      )}
+      {commsMessage && tab !== 'news' && tab !== 'requests' && (
+        <p className="success-banner">{commsMessage}</p>
+      )}
 
       {loading && <SkeletonCards count={2} />}
 
-      {!loading && account && (
-        <section className="resident-hero">
-          <div className="resident-hero-label">{heroLabel}</div>
-          <div className="resident-hero-amount" style={{ color: heroTone }}>
-            {formatMoney(heroAmount)}
-          </div>
-          <div className="resident-hero-actions">
-            {openLineForReceipt && (
-              <button
-                type="button"
-                className="btn btn-sm"
-                onClick={() => handleReceipt(openLineForReceipt.id)}
-              >
-                {t('residentPdfReceipt')}
-              </button>
+      {/* C: Meters deadline banner on home */}
+      {!loading &&
+        tab === 'home' &&
+        metersNeedReading &&
+        (deadlineInfo.inWindow || deadlineInfo.overdue) && (
+          <Link
+            href="/resident/meters"
+            className={`card meters-deadline-banner${deadlineInfo.overdue ? ' is-overdue' : ''}`}
+            style={{ display: 'block', marginBottom: '1rem', textDecoration: 'none', color: 'inherit' }}
+          >
+            <strong>
+              {deadlineInfo.overdue
+                ? t('residentMetersDeadlineOverdue', {
+                    day: deadlineInfo.deadlineDay,
+                    period: formatPeriodLabel(deadlineInfo.period),
+                  })
+                : t('residentMetersDeadlineBanner', {
+                    day: deadlineInfo.deadlineDay,
+                    days: Math.max(0, deadlineInfo.daysLeft),
+                    period: formatPeriodLabel(deadlineInfo.period),
+                  })}
+            </strong>
+            {metersPendingCount > 0 && (
+              <p className="resident-muted resident-sm" style={{ margin: '0.35rem 0 0' }}>
+                {t('residentMetersPendingCount', { count: metersPendingCount })}
+              </p>
             )}
-            {onlinePayEnabled && debt > 0 && (
-              <button
-                type="button"
-                className="btn btn-sm"
-                disabled={payBusy}
-                onClick={() => void handleOnlinePay()}
-              >
-                {payBusy ? t('residentPaying') : t('residentPayOnline')}
-              </button>
-            )}
-            {transparency?.bankAccounts && transparency.bankAccounts.length > 0 && (
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost"
-                onClick={() => {
-                  setTab('account');
-                  document.getElementById('bank-details')?.scrollIntoView({ behavior: 'smooth' });
-                }}
-              >
-                {t('residentBankDetails')}
-              </button>
-            )}
+          </Link>
+        )}
+
+      {!loading && tab === 'home' && account && (
+        <ResidentActions
+          debt={debt}
+          advance={advance}
+          actions={homeActions}
+          onPay={() => setPayOpen(true)}
+          apartmentLabel={apartmentLabel}
+        />
+      )}
+
+      {!loading && tab === 'home' && signalsLoading && (
+        <p className="resident-muted" style={{ marginBottom: '0.75rem' }}>
+          {t('residentLoadingSignals')}
+        </p>
+      )}
+
+      {!loading && tab === 'home' && (
+        <section className="resident-shortcuts card" aria-label={t('residentShortcuts')}>
+          <h2 className="resident-section-title">{t('residentShortcuts')}</h2>
+          <div className="resident-shortcut-grid">
+            <button type="button" className="resident-shortcut" onClick={() => setTabAndUrl('account')}>
+              {t('residentTabAccount')}
+            </button>
+            <button type="button" className="resident-shortcut" onClick={() => setTabAndUrl('news')}>
+              {t('residentTabNews')}
+              {unreadNews > 0 && (
+                <span className="resident-shortcut-badge">{unreadNews > 9 ? '9+' : unreadNews}</span>
+              )}
+            </button>
+            <button
+              type="button"
+              className="resident-shortcut"
+              onClick={() => setTabAndUrl('requests', { newRequest: true })}
+            >
+              {t('residentTabRequests')}
+            </button>
+            <Link href="/resident/meters" className="resident-shortcut">
+              {t('meters')}
+              {metersPendingCount > 0 && (
+                <span className="resident-shortcut-badge">{metersPendingCount}</span>
+              )}
+            </Link>
+            <button type="button" className="resident-shortcut" onClick={() => setTabAndUrl('building')}>
+              {t('residentTabTransparency')}
+            </button>
+            <button type="button" className="resident-shortcut" onClick={() => setTabAndUrl('documents')}>
+              {t('residentTabDocs')}
+            </button>
+            <Link href="/resident/meetings" className="resident-shortcut">
+              {t('residentMeetingsLink')}
+            </Link>
+            <Link href="/resident/messenger" className="resident-shortcut">
+              {t('residentMessengerLink')}
+            </Link>
           </div>
         </section>
       )}
 
-      <nav className="nav-scroll resident-tabs" aria-label="Розділи кабінету">
-        {visibleTabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className={`tab-btn${tab === t.id ? ' active' : ''}`}
-            onClick={() => {
-              setTab(t.id);
-              setTabSearch('');
-            }}
-          >
-            {t.label}
-          </button>
-        ))}
-      </nav>
-
-      {tab !== 'account' && (
-        <div className="resident-tab-search card">
-          <label htmlFor="tab-search" className="sr-only">
-            Пошук
-          </label>
-          <input
-            id="tab-search"
-            type="search"
-            placeholder={
-              tab === 'communications'
-                ? t('residentSearchAnn')
-                : tab === 'documents'
-                  ? t('residentSearchDocs')
-                  : tab === 'debtors'
-                    ? t('residentSearchApt')
-                    : t('residentSearchCat')
-            }
-            value={tabSearch}
-            onChange={(e) => setTabSearch(e.target.value)}
-            autoComplete="off"
-          />
-        </div>
+      {!loading && tab === 'more' && (
+        <section className="resident-shortcuts card">
+          <h2 className="resident-section-title">{t('residentNavMore')}</h2>
+          <div className="resident-shortcut-grid">
+            <button type="button" className="resident-shortcut" onClick={() => setTabAndUrl('news')}>
+              {t('residentTabNews')}
+              {unreadNews > 0 && (
+                <span className="resident-shortcut-badge">{unreadNews > 9 ? '9+' : unreadNews}</span>
+              )}
+            </button>
+            <button type="button" className="resident-shortcut" onClick={() => setTabAndUrl('building')}>
+              {t('residentTabTransparency')}
+            </button>
+            <button type="button" className="resident-shortcut" onClick={() => setTabAndUrl('documents')}>
+              {t('residentTabDocs')}
+            </button>
+            {(transparency?.debtors !== null || !transparencyLoaded.current) && (
+              <button type="button" className="resident-shortcut" onClick={() => setTabAndUrl('debtors')}>
+                {t('residentTabDebtors')}
+              </button>
+            )}
+            <Link href="/resident/meetings" className="resident-shortcut">
+              {t('residentMeetingsLink')}
+            </Link>
+            <Link href="/resident/messenger" className="resident-shortcut">
+              {t('residentMessengerLink')}
+            </Link>
+            <Link href="/resident/security" className="resident-shortcut">
+              {t('securityShort')}
+            </Link>
+            <Link href="/resident/instructions" className="resident-shortcut">
+              {t('instructions')}
+            </Link>
+          </div>
+        </section>
       )}
+
+      {showDesktopTabs && (
+        <nav className="nav-scroll resident-tabs" aria-label={t('residentSections')}>
+          <button type="button" className="tab-btn" onClick={() => setTabAndUrl('home')}>
+            {t('home')}
+          </button>
+          {visibleTabs.map((tb) => (
+            <button
+              key={tb.id}
+              type="button"
+              className={`tab-btn${tab === tb.id ? ' active' : ''}`}
+              onClick={() => setTabAndUrl(tb.id)}
+            >
+              {tb.label}
+              {tb.id === 'news' && unreadNews > 0 && (
+                <span className="tab-badge">{unreadNews > 9 ? '9+' : unreadNews}</span>
+              )}
+            </button>
+          ))}
+        </nav>
+      )}
+
+      {tab !== 'home' &&
+        tab !== 'more' &&
+        tab !== 'account' &&
+        tab !== 'requests' && (
+          <div className="resident-tab-search card">
+            <label htmlFor="tab-search" className="sr-only">
+              {t('residentSearch')}
+            </label>
+            <input
+              id="tab-search"
+              type="search"
+              placeholder={
+                tab === 'news'
+                  ? t('residentSearchAnn')
+                  : tab === 'documents'
+                    ? t('residentSearchDocs')
+                    : tab === 'debtors'
+                      ? t('residentSearchApt')
+                      : t('residentSearchCat')
+              }
+              value={tabSearch}
+              onChange={(e) => setTabSearch(e.target.value)}
+              autoComplete="off"
+            />
+          </div>
+        )}
 
       {tab === 'account' && !loading && account && (
         <AccountTab
@@ -467,16 +1001,38 @@ export default function ResidentPage() {
           buildingEdrpou={transparency?.building?.edrpou}
           paymentPurpose={paymentPurpose}
           onReceipt={(id) => void handleReceipt(id)}
+          onPay={() => setPayOpen(true)}
           copied={copied}
           onCopy={(label, text) => void copyText(label, text)}
+          startExpanded={accountStartExpanded}
         />
       )}
 
-      {tab === 'building' && !loading && transparency && (
+      {tab === 'account' && !loading && !account && !noApartment && (
+        <SkeletonCards count={1} />
+      )}
+
+      {/* Load bank accounts for pay sheet if not yet */}
+      {tab === 'account' && account && !transparency && !transparencyLoaded.current && (
+        <span className="sr-only">{t('loading')}</span>
+      )}
+
+      {(tab === 'building' || tab === 'documents' || tab === 'debtors') &&
+        transparencyLoading && <SkeletonCards count={2} />}
+
+      {tab === 'building' && !transparencyLoading && transparency && (
         <section>
           <div className="grid-2" style={{ marginBottom: '1rem' }}>
-            <StatCard label={t('residentOrgExpenses')} value={formatMoney(transparency.expenseSummary.total)} tone="danger" />
-            <StatCard label={t('dashIncome')} value={formatMoney(transparency.cashFlow.totalIncome)} tone="success" />
+            <StatCard
+              label={t('residentOrgExpenses')}
+              value={formatMoney(transparency.expenseSummary.total)}
+              tone="danger"
+            />
+            <StatCard
+              label={t('dashIncome')}
+              value={formatMoney(transparency.cashFlow.totalIncome)}
+              tone="success"
+            />
           </div>
           <div className="card" style={{ marginBottom: '1rem' }}>
             <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>{t('residentByCategory')}</h2>
@@ -507,128 +1063,336 @@ export default function ResidentPage() {
         </section>
       )}
 
-      {tab === 'communications' && !loading && (
+      {tab === 'news' && (
         <section>
+          {signalsLoading && <SkeletonCards count={2} />}
           {commsMessage && <p className="success-banner">{commsMessage}</p>}
+          {!signalsLoading && (
+            <>
+              <div className="card" style={{ marginBottom: '1rem' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '1rem',
+                  }}
+                >
+                  <h2 style={{ fontSize: '1.1rem', margin: 0 }}>{t('commsAnnouncements')}</h2>
+                  {unreadNews > 0 && (
+                    <Badge tone="primary">{t('residentUnreadBadge', { count: unreadNews })}</Badge>
+                  )}
+                </div>
+                {filteredAnnouncements.length === 0 ? (
+                  <p style={{ color: 'var(--muted)' }}>
+                    {announcements.length === 0
+                      ? t('residentNoAnnouncements')
+                      : t('residentNothingFound')}
+                  </p>
+                ) : (
+                  <ul style={{ listStyle: 'none', display: 'grid', gap: '0.75rem' }}>
+                    {filteredAnnouncements.map((a) => (
+                      <li
+                        key={a.id}
+                        className={`resident-ann-item${!a.isRead ? ' is-unread' : ''}`}
+                        onClick={() => {
+                          if (!a.isRead) void markOneAnnouncement(a.id);
+                        }}
+                      >
+                        <div style={{ fontWeight: 600 }}>
+                          {a.isPinned && '📌 '}
+                          {!a.isRead && (
+                            <span className="resident-unread-dot" aria-label="new" />
+                          )}
+                          {a.title}
+                        </div>
+                        <p style={{ color: 'var(--muted)', fontSize: '0.9rem', margin: '0.25rem 0' }}>
+                          {a.body}
+                        </p>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
+                          {formatDateUk(a.createdAt)}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
 
-          <div className="card" style={{ marginBottom: '1rem' }}>
-            <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>{t('commsAnnouncements')}</h2>
-            {filteredAnnouncements.length === 0 ? (
-              <p style={{ color: 'var(--muted)' }}>
-                {announcements.length === 0 ? t('residentNoAnnouncements') : t('residentNothingFound')}
-              </p>
-            ) : (
-              <ul style={{ listStyle: 'none', display: 'grid', gap: '0.75rem' }}>
-                {filteredAnnouncements.map((a) => (
-                  <li key={a.id} style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem' }}>
-                    <div style={{ fontWeight: 600 }}>{a.isPinned && '📌 '}{a.title}</div>
-                    <p style={{ color: 'var(--muted)', fontSize: '0.9rem', margin: '0.25rem 0' }}>{a.body}</p>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
-                      {formatDateUk(a.createdAt)}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          <div className="card" style={{ marginBottom: '1rem' }}>
-            <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>{t('commsPolls')}</h2>
-            {polls.filter((p) => p.isActive).length === 0 ? (
-              <p style={{ color: 'var(--muted)' }}>{t('residentNoActivePolls')}</p>
-            ) : (
-              <ul style={{ listStyle: 'none', display: 'grid', gap: '1rem' }}>
-                {polls.filter((p) => p.isActive).map((p) => (
-                  <li key={p.id}>
-                    <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>{p.question}</div>
-                    <ul style={{ listStyle: 'none', display: 'grid', gap: '0.35rem' }}>
-                      {p.options.map((o) => (
-                        <li key={o.id}>
-                          <button
-                            type="button"
-                            onClick={() => handleVote(p.id, o.id)}
-                            disabled={!!p.userVote}
-                            style={{
-                              width: '100%',
-                              textAlign: 'left',
-                              background: p.userVote === o.id ? 'var(--primary)' : 'var(--surface-2)',
-                              color: p.userVote === o.id ? '#fff' : 'var(--text)',
-                              fontSize: '0.9rem',
-                              padding: '0.5rem 0.75rem',
-                            }}
-                          >
-                            {o.text}
-                            {(o.voteCount ?? o._count?.votes ?? 0) > 0 && p._count.votes > 0 && (
-                              <span style={{ float: 'right', opacity: 0.7 }}>
-                                {o.weightSum != null
-                                  ? `${o.weightSum}`
-                                  : `${Math.round(((o.voteCount ?? o._count?.votes ?? 0) / p._count.votes) * 100)}%`}
-                              </span>
-                            )}
-                          </button>
+              <div className="card" style={{ marginBottom: '1rem' }}>
+                <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>{t('commsPolls')}</h2>
+                {polls.filter((p) => p.isActive).length === 0 ? (
+                  <p style={{ color: 'var(--muted)' }}>{t('residentNoActivePolls')}</p>
+                ) : (
+                  <ul style={{ listStyle: 'none', display: 'grid', gap: '1rem' }}>
+                    {polls
+                      .filter((p) => p.isActive)
+                      .map((p) => (
+                        <li key={p.id}>
+                          <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>{p.question}</div>
+                          <ul style={{ listStyle: 'none', display: 'grid', gap: '0.35rem' }}>
+                            {p.options.map((o) => (
+                              <li key={o.id}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleVote(p.id, o.id)}
+                                  disabled={!!p.userVote}
+                                  style={{
+                                    width: '100%',
+                                    textAlign: 'left',
+                                    background:
+                                      p.userVote === o.id ? 'var(--primary)' : 'var(--surface-2)',
+                                    color: p.userVote === o.id ? '#fff' : 'var(--text)',
+                                    fontSize: '0.9rem',
+                                    padding: '0.5rem 0.75rem',
+                                  }}
+                                >
+                                  {o.text}
+                                  {(o.voteCount ?? o._count?.votes ?? 0) > 0 &&
+                                    p._count.votes > 0 && (
+                                      <span style={{ float: 'right', opacity: 0.7 }}>
+                                        {o.weightSum != null
+                                          ? `${o.weightSum}`
+                                          : `${Math.round(
+                                              ((o.voteCount ?? o._count?.votes ?? 0) /
+                                                p._count.votes) *
+                                                100,
+                                            )}%`}
+                                      </span>
+                                    )}
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                          {p.stats && (
+                            <p
+                              style={{
+                                fontSize: '0.8rem',
+                                color: 'var(--muted)',
+                                marginTop: '0.35rem',
+                              }}
+                            >
+                              Явка {p.stats.participationPercent}%
+                              {p.stats.quorumPercent != null
+                                ? ` · кворум ${p.stats.quorumPercent}% (${p.stats.quorumMet ? 'є' : 'немає'})`
+                                : ''}
+                            </p>
+                          )}
+                          {p.userVote && (
+                            <p
+                              style={{
+                                fontSize: '0.8rem',
+                                color: 'var(--muted)',
+                                marginTop: '0.25rem',
+                              }}
+                            >
+                              {t('residentThanksVote')}
+                            </p>
+                          )}
                         </li>
                       ))}
-                    </ul>
-                    {p.stats && (
-                      <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '0.35rem' }}>
-                        Явка {p.stats.participationPercent}%
-                        {p.stats.quorumPercent != null
-                          ? ` · кворум ${p.stats.quorumPercent}% (${p.stats.quorumMet ? 'є' : 'немає'})`
-                          : ''}
-                      </p>
-                    )}
-                    {p.userVote && (
-                      <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '0.25rem' }}>
-                        {t('residentThanksVote')}
-                      </p>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          <form onSubmit={handleRequest} className="card" style={{ display: 'grid', gap: '1rem', marginBottom: '1rem' }}>
-            <h2 style={{ fontSize: '1.1rem' }}>{t('residentNewRequest')}</h2>
-            <div>
-              <label htmlFor="req-title">{t('residentReqSubject')}</label>
-              <input id="req-title" value={reqTitle} onChange={(e) => setReqTitle(e.target.value)} required />
-            </div>
-            <div>
-              <label htmlFor="req-desc">{t('residentReqDesc')}</label>
-              <textarea id="req-desc" rows={3} value={reqDesc} onChange={(e) => setReqDesc(e.target.value)} required />
-            </div>
-            <div>
-              <label htmlFor="req-cat">{t('residentReqCategory')}</label>
-              <select id="req-cat" value={reqCategory} onChange={(e) => setReqCategory(e.target.value)}>
-                <option value="sanitary">{t('commsCatSanitary')}</option>
-                <option value="electric">{t('commsCatElectric')}</option>
-                <option value="cleaning">{t('commsCatCleaning')}</option>
-                <option value="other">{t('commsCatOther')}</option>
-              </select>
-            </div>
-            <button type="submit">{t('send')}</button>
-          </form>
-
-          {requests.length > 0 && (
-            <div className="card">
-              <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>{t('residentMyRequests')}</h2>
-              <ul style={{ listStyle: 'none', display: 'grid', gap: '0.75rem' }}>
-                {requests.map((r) => (
-                  <li key={r.id} style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem' }}>
-                    <div style={{ fontWeight: 600 }}>{r.title}</div>
-                    <div style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
-                      {REQUEST_STATUS[r.status] ?? r.status} · {formatDateUk(r.createdAt)}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
+                  </ul>
+                )}
+              </div>
+            </>
           )}
         </section>
       )}
 
-      {tab === 'documents' && !loading && transparency && (
+      {tab === 'requests' && (
+        <section>
+          {signalsLoading && <SkeletonCards count={1} />}
+          {commsMessage && <p className="success-banner">{commsMessage}</p>}
+          {!signalsLoading && (
+            <>
+              <form
+                id="new-request"
+                onSubmit={handleRequest}
+                className="card"
+                style={{ display: 'grid', gap: '1rem', marginBottom: '1rem' }}
+              >
+                <h2 style={{ fontSize: '1.1rem' }}>{t('residentNewRequest')}</h2>
+                <div>
+                  <label htmlFor="req-title">{t('residentReqSubject')}</label>
+                  <input
+                    id="req-title"
+                    value={reqTitle}
+                    onChange={(e) => setReqTitle(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="req-desc">{t('residentReqDesc')}</label>
+                  <textarea
+                    id="req-desc"
+                    rows={3}
+                    value={reqDesc}
+                    onChange={(e) => setReqDesc(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="req-cat">{t('residentReqCategory')}</label>
+                  <select
+                    id="req-cat"
+                    value={reqCategory}
+                    onChange={(e) => setReqCategory(e.target.value)}
+                  >
+                    <option value="sanitary">{t('commsCatSanitary')}</option>
+                    <option value="electric">{t('commsCatElectric')}</option>
+                    <option value="cleaning">{t('commsCatCleaning')}</option>
+                    <option value="other">{t('commsCatOther')}</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="req-photo">{t('residentReqPhoto')}</label>
+                  <input
+                    id="req-photo"
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    multiple
+                    disabled={photoBusy || reqPhotos.length >= 3}
+                    onChange={(e) => {
+                      void handlePhotoPick(e.target.files);
+                      e.target.value = '';
+                    }}
+                  />
+                  <p className="resident-muted resident-sm" style={{ marginTop: 4 }}>
+                    {t('residentReqPhotoHint')}
+                  </p>
+                  {reqPhotos.length > 0 && (
+                    <div className="resident-req-photos">
+                      {reqPhotos.map((p) => (
+                        <div key={p.key} className="resident-req-photo-thumb">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={p.url} alt="" />
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() =>
+                              setReqPhotos((list) => list.filter((x) => x.key !== p.key))
+                            }
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <button type="submit" disabled={photoBusy}>
+                  {t('send')}
+                </button>
+              </form>
+
+              <div className="card">
+                <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>
+                  {t('residentMyRequests')}
+                </h2>
+                {requests.length === 0 ? (
+                  <EmptyState
+                    title={t('residentNoRequests')}
+                    description={t('residentNoRequestsDesc')}
+                  />
+                ) : (
+                  <ul className="resident-request-list">
+                    {requests.map((r) => (
+                      <li
+                        key={r.id}
+                        id={`request-${r.id}`}
+                        className={`resident-request-item${
+                          highlightRequestId === r.id ? ' is-highlight' : ''
+                        }`}
+                      >
+                        <div className="resident-request-main">
+                          <div style={{ fontWeight: 600 }}>{r.title}</div>
+                          <div className="resident-muted resident-sm">
+                            {t('residentRequestCreated')}: {formatDateUk(r.createdAt)}
+                            {r.updatedAt && r.updatedAt !== r.createdAt && (
+                              <>
+                                {' · '}
+                                {t('residentRequestUpdated')}: {formatDateUk(r.updatedAt)}
+                              </>
+                            )}
+                          </div>
+                          {r.description && (
+                            <div className="resident-muted resident-sm" style={{ marginTop: 2 }}>
+                              {r.description.slice(0, 120)}
+                            </div>
+                          )}
+                          {r.dueAt && r.status !== 'done' && (
+                            <div
+                              className={`resident-request-sla${r.isOverdue ? ' is-overdue' : ''}`}
+                            >
+                              {r.isOverdue
+                                ? t('residentRequestSlaOverdue', {
+                                    date: formatDateUk(r.dueAt),
+                                  })
+                                : t('residentRequestSlaDue', {
+                                    date: formatDateUk(r.dueAt),
+                                  })}
+                            </div>
+                          )}
+                          {r.assignee && (
+                            <div className="resident-muted resident-sm">
+                              {t('residentRequestAssignee')}: {r.assignee.firstName}{' '}
+                              {r.assignee.lastName}
+                            </div>
+                          )}
+                          <div className="resident-request-timeline" aria-hidden>
+                            <span
+                              className={
+                                r.status === 'new' ||
+                                r.status === 'in_progress' ||
+                                r.status === 'done'
+                                  ? 'is-on'
+                                  : ''
+                              }
+                            >
+                              {t('commsStatusNew')}
+                            </span>
+                            <span
+                              className={
+                                r.status === 'in_progress' || r.status === 'done' ? 'is-on' : ''
+                              }
+                            >
+                              {t('commsStatusProgress')}
+                            </span>
+                            <span className={r.status === 'done' ? 'is-on' : ''}>
+                              {t('commsStatusDone')}
+                            </span>
+                          </div>
+                          {r.photoUrls && r.photoUrls.length > 0 && (
+                            <div className="resident-req-photos" style={{ marginTop: 8 }}>
+                              {r.photoUrls.map((url) => (
+                                <a
+                                  key={url}
+                                  href={url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="resident-req-photo-thumb"
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img src={url} alt="" />
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <Badge tone={statusTone(r.status)}>
+                          {REQUEST_STATUS[r.status] ?? r.status}
+                        </Badge>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </>
+          )}
+        </section>
+      )}
+
+      {tab === 'documents' && !transparencyLoading && transparency && (
         <section className="card">
           <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>{t('residentOrgDocs')}</h2>
           {filteredDocs.length === 0 ? (
@@ -642,12 +1406,22 @@ export default function ResidentPage() {
           ) : (
             <ul style={{ listStyle: 'none', display: 'grid', gap: '0.75rem' }}>
               {filteredDocs.map((d) => (
-                <li key={d.id} style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem' }}>
-                  <a href={d.fileUrl} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 600 }}>
+                <li
+                  key={d.id}
+                  style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem' }}
+                >
+                  <a
+                    href={d.fileUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ fontWeight: 600 }}
+                  >
                     {d.title}
                   </a>
                   {d.description && (
-                    <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginTop: '0.25rem' }}>{d.description}</p>
+                    <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginTop: '0.25rem' }}>
+                      {d.description}
+                    </p>
                   )}
                 </li>
               ))}
@@ -656,7 +1430,7 @@ export default function ResidentPage() {
         </section>
       )}
 
-      {tab === 'debtors' && !loading && transparency?.debtors && (
+      {tab === 'debtors' && !transparencyLoading && transparency?.debtors && (
         <section className="card">
           <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>
             {t('residentDebtorsHeading', {
@@ -689,6 +1463,24 @@ export default function ResidentPage() {
           </div>
         </section>
       )}
+
+      <PaySheet
+        open={payOpen}
+        onClose={() => setPayOpen(false)}
+        debt={debt}
+        bankAccounts={transparency?.bankAccounts}
+        buildingEdrpou={transparency?.building?.edrpou}
+        paymentPurpose={paymentPurpose}
+        onlinePayEnabled={onlinePayEnabled}
+        payBusy={payBusy}
+        onOnlinePay={(amount) => void handleOnlinePay(amount)}
+        onReceipt={
+          openLineForReceipt ? () => void handleReceipt(openLineForReceipt.id) : undefined
+        }
+        hasReceipt={Boolean(openLineForReceipt)}
+        copied={copied}
+        onCopy={(label, text) => void copyText(label, text)}
+      />
     </main>
   );
 }

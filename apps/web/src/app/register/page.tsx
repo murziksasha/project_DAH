@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { PendingApprovalCard } from '@/components/PendingApprovalCard';
 import { useI18n } from '@/components/LocaleProvider';
 import { apiFetch } from '@/lib/api';
 
@@ -31,19 +32,43 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [loadingApartments, setLoadingApartments] = useState(true);
   const [registrationClosed, setRegistrationClosed] = useState(false);
+  const [inviteCode, setInviteCode] = useState('');
+  const [requiresInvite, setRequiresInvite] = useState(false);
+  const [inviteHint, setInviteHint] = useState('');
+
+  async function loadApartments(code?: string) {
+    setLoadingApartments(true);
+    setError('');
+    try {
+      const qs = code ? `?inviteCode=${encodeURIComponent(code)}` : '';
+      const res = await apiFetch<{
+        requiresInvite?: boolean;
+        apartments?: Apartment[];
+        message?: string;
+      } | Apartment[]>(`/auth/apartments${qs}`);
+      // Backward-compat: array or object
+      if (Array.isArray(res)) {
+        setApartments(res);
+        setRequiresInvite(false);
+        if (res[0]) setApartmentId(res[0].id);
+      } else {
+        setRequiresInvite(Boolean(res.requiresInvite));
+        setInviteHint(res.message ?? '');
+        const list = res.apartments ?? [];
+        setApartments(list);
+        if (list[0]) setApartmentId(list[0].id);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : t('registerFailApts');
+      setError(msg);
+      if (/вимкнен|disabled|заборонен|отключ/i.test(msg)) setRegistrationClosed(true);
+    } finally {
+      setLoadingApartments(false);
+    }
+  }
 
   useEffect(() => {
-    apiFetch<Apartment[]>('/auth/apartments')
-      .then((list) => {
-        setApartments(list);
-        if (list.length > 0) setApartmentId(list[0].id);
-      })
-      .catch((err) => {
-        const msg = err instanceof Error ? err.message : t('registerFailApts');
-        setError(msg);
-        if (/вимкнен|disabled|заборонен|отключ/i.test(msg)) setRegistrationClosed(true);
-      })
-      .finally(() => setLoadingApartments(false));
+    void loadApartments();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load once
   }, []);
 
@@ -70,9 +95,15 @@ export default function RegisterPage() {
           lastName,
           phone: phone || undefined,
           apartmentId,
+          inviteCode: inviteCode || undefined,
         }),
       });
       setSuccess(data.message || t('registerSuccess'));
+      try {
+        sessionStorage.setItem('dah_pending_email', email);
+      } catch {
+        /* ignore */
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : t('registerFail');
       setError(msg);
@@ -106,16 +137,33 @@ export default function RegisterPage() {
           </Link>
         </div>
       ) : success ? (
-        <div className="card" style={{ display: 'grid', gap: '1rem' }}>
-          <p style={{ color: 'var(--success)', fontWeight: 600 }}>{t('registerSuccessTitle')}</p>
-          <p style={{ color: 'var(--muted)', fontSize: '0.95rem' }}>{success}</p>
-          <p style={{ fontSize: '0.9rem' }}>{t('registerSuccessHint')}</p>
-          <Link href="/login" className="btn" style={{ textAlign: 'center' }}>
-            {t('registerGoLogin')}
-          </Link>
-        </div>
+        <PendingApprovalCard email={email} variant="register" />
       ) : (
         <form onSubmit={handleSubmit} className="card" style={{ display: 'grid', gap: '1rem' }}>
+          {(requiresInvite || inviteCode) && (
+            <div>
+              <label htmlFor="inviteCode">Код запрошення</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  id="inviteCode"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  placeholder="від правління"
+                  required={requiresInvite}
+                />
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  onClick={() => void loadApartments(inviteCode)}
+                >
+                  OK
+                </button>
+              </div>
+              {inviteHint && (
+                <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginTop: 4 }}>{inviteHint}</p>
+              )}
+            </div>
+          )}
           <div className="grid-2">
             <div>
               <label htmlFor="firstName">{t('firstName')}</label>

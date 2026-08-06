@@ -4,9 +4,12 @@ import {
   IsBoolean,
   IsIn,
   IsInt,
+  IsNumber,
   IsObject,
   IsOptional,
+  IsString,
   Max,
+  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -73,6 +76,18 @@ export class UpdateBuildingSettingsDto {
   @IsBoolean()
   registrationEnabled?: boolean;
 
+  @ApiPropertyOptional({ description: 'Invite code required for self-registration' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  registrationInviteCode?: string;
+
+  @ApiPropertyOptional({ description: 'Dual-approve expenses at/above this UAH amount' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  expenseDualApprovalThreshold?: number | null;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
@@ -91,6 +106,15 @@ export class UpdateBuildingSettingsDto {
   @Min(0)
   @Max(30)
   reminderDaysBeforeDue?: number;
+
+  @ApiPropertyOptional({
+    description: 'Day of month (1–28) deadline for resident meter readings',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(28)
+  metersReadingDeadlineDay?: number;
 
   @ApiPropertyOptional({ enum: ['uk', 'ru'] })
   @IsOptional()

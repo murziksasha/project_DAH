@@ -133,6 +133,12 @@ model User {
   totpEnabled        Boolean  @default(false)
   totpTempSecret     String?
   emailNotifyEnabled Boolean  @default(true)
+  /// Consecutive failed password logins (reset on success)
+  failedLoginCount   Int      @default(0)
+  /// Temporary lock after too many failed logins
+  lockedUntil        DateTime?
+  /// Soft onboarding flag for first login checklist
+  onboardingDone     Boolean  @default(false)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
@@ -140,6 +146,7 @@ model User {
   authSessions       AuthSession[]
   auditLogs          AuditLog[]
   createdExpenses    Expense[]           @relation("ExpenseCreatedBy")
+  approvedExpenses   Expense[]           @relation("ExpenseApprovedBy")
   announcements      Announcement[]
   requests           Request[]           @relation("RequestAuthor")
   assignedRequests   Request[]           @relation("RequestAssignee")
@@ -152,9 +159,41 @@ model User {
   meetingSignatures  MeetingSignature[]
   chatMemberships    ChatThreadMember[]
   chatMessages       ChatMessage[]
+  passwordResets     PasswordResetToken[]
+  appNotifications   AppNotification[]
+  announcementReads  AnnouncementRead[]
 
   @@index([tenantId])
   @@index([approvedById])
+}
+
+/** One-time password reset token (hashed). */
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+/** In-app notification center (bell). */
+model AppNotification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  url       String?
+  kind      String    @default("info")
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt, createdAt])
 }
 
 /** Refresh-token session with rotation + reuse detection (v1.0). */
@@ -350,10 +389,17 @@ model Expense {
   documentKey String?
   isVoided    Boolean         @default(false)
   voidReason  String?
+  /// pending | approved (dual-control for large expenses)
+  approvalStatus String       @default("approved")
+  approvedAt  DateTime?
+  approvedById String?
+  approvedBy  User?           @relation("ExpenseApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
   createdById String
   createdBy   User            @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
+
+  @@index([approvalStatus])
 }
 
 model AccrualTemplate {
@@ -457,6 +503,20 @@ model Announcement {
   author    User     @relation(fields: [authorId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  reads     AnnouncementRead[]
+}
+
+/** Per-user read state for resident news / badges. */
+model AnnouncementRead {
+  id             String       @id @default(cuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  announcementId String
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  readAt         DateTime     @default(now())
+
+  @@unique([userId, announcementId])
+  @@index([userId, readAt])
 }
 
 model Request {
@@ -470,15 +530,21 @@ model Request {
   author      User            @relation("RequestAuthor", fields: [authorId], references: [id])
   assigneeId  String?
   assignee    User?           @relation("RequestAssignee", fields: [assigneeId], references: [id])
+  /// Building scope (multi-building / tenant isolation)
+  buildingId  String?
   /// SLA target datetime (auto-filled from category/priority if omitted)
   dueAt       DateTime?
   /// MinIO object keys for attached photos
   photoKeys   Json            @default("[]")
+  /// When staff were notified about SLA warning/breach
+  slaWarnedAt   DateTime?
+  slaBreachedAt DateTime?
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
   @@index([status, dueAt])
   @@index([assigneeId, status])
+  @@index([buildingId, status])
 }
 
 model Poll {

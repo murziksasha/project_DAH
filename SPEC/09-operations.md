@@ -106,7 +106,9 @@ nginx production: `client_max_body_size 0` (unlimited); за потреби вр
 - `S3_SECRET_KEY`
 
 ### Мережа (production)
-Не публікувати порти Postgres, Redis, MinIO — лише 443 через nginx.
+Не публікувати порти Postgres, Redis, MinIO — лише 443 через nginx.  
+Файли для браузера: **лише** `/api/files/download` (API stream), не MinIO `:9000`.  
+Redis **не обовʼязковий** (worker — inline cron). Опційно: `docker compose --profile redis up -d redis`.
 
 ## Журнал аудиту
 

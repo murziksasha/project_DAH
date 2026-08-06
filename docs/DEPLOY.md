@@ -25,15 +25,22 @@ cp .env.example .env
 |--------|------|
 | `POSTGRES_PASSWORD` | Сильний пароль БД |
 | `JWT_SECRET` | Випадковий рядок 64+ символів |
-| `S3_SECRET_KEY` | Пароль MinIO |
+| `S3_SECRET_KEY` | Пароль MinIO (internal; не публікувати :9000) |
+| `REDIS_URL` | За замовчуванням `none` (worker без Redis) |
+| `FILE_DOWNLOAD_SECRET` | Опційно; інакше HMAC від `JWT_SECRET` |
 | `DOMAIN` | Ваш домен |
 | `CORS_ORIGIN` | `https://<домен>` |
 | `NEXT_PUBLIC_API_URL` | `https://<домен>/api` |
+| `APP_URL` | `https://<домен>` (посилання скидання пароля) |
 | `VAPID_*` | `npx web-push generate-vapid-keys` |
 | `COOKIE_SECURE` | `true` за HTTPS (HttpOnly refresh cookie) |
 | `BACKUP_DIR` | Каталог копій (Docker: `/backups`) |
 | `BACKUP_STATUS_PATH` | `last-backup.json` для health / ops |
 | `BACKUP_MAX_AGE_HOURS` | Поріг «stale» для health (напр. 192 для weekly) |
+| `SWAGGER_ENABLED` | у prod залиште вимкненим (default off when `NODE_ENV=production`) |
+| `REQUIRE_FINANCE_2FA` | default on; finance + backup download need TOTP |
+
+Повний чекліст: [SECURITY-CHECKLIST.md](./SECURITY-CHECKLIST.md).
 
 ## 3. TLS-сертифікати (Let's Encrypt)
 
@@ -64,8 +71,9 @@ docker compose exec api npx ts-node prisma/seed.ts   # лише перший р�
 Перевірка:
 
 - PWA: `https://<домен>/`
-- API health: `https://<домен>/api/health`
-- Swagger: `https://<домен>/api/docs`
+- API health: `https://<домен>/api/health` (мінімальний status)
+- Health details (staff JWT): `https://<домен>/api/health/details`
+- Swagger: only if `SWAGGER_ENABLED=true` → `https://<домен>/api/docs`
 
 ## 5. Резервне копіювання
 
@@ -80,7 +88,7 @@ backups/
   last-backup.json                  # для GET /api/health і /admin/ops
 ```
 
-- **Worker** щодня ~03:00 UTC запускає `backups.weekly`: якщо тижнева копія вже є (`manifest.status=ok`) — **skip**.
+- **Worker** (slim Nest context, **без Redis/BullMQ**): кожні 15 хв — reminders + SLA; ~02:00 UTC daily dump; ~03:00 UTC `backups.weekly` (skip якщо тиждень уже є).
 - **Ручна:** `/admin/ops` → «Створити копію зараз» (ролі: голова, правління, бухгалтер, super_admin). Мешканцям недоступно.
 - Env: `BACKUP_DIR=/backups`, `BACKUP_STATUS_PATH=/backups/last-backup.json`, опційно `BACKUP_MAX_AGE_HOURS` (для health «stale»; за замовчуванням у compose ~192 год / 8 днів).
 

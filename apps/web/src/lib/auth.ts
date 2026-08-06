@@ -39,8 +39,8 @@ export function getRoleHome(role: string, isInitialized = true): string {
   if (role === 'super_admin') {
     return isInitialized ? '/admin/organization' : '/admin/setup';
   }
-  if (role === 'dispatcher') return '/admin/dispatch';
-  if (role === 'crew') return '/admin/dispatch';
+  // Role dashboards live on /admin (dispatch queue remains a nav item)
+  if (role === 'dispatcher' || role === 'crew') return '/admin';
   if (ADMIN_ROLES.includes(role)) return '/admin';
   if (role === 'resident') return '/resident';
   return '/';

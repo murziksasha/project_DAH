@@ -37,9 +37,11 @@ docker compose exec api npx ts-node prisma/seed.ts
 
 ```bash
 npm install
-docker compose up -d postgres redis minio minio-init
+docker compose up -d postgres minio minio-init
 cp .env.example .env
 ```
+
+Redis **не потрібен** за замовчуванням (worker — inline cron). Опційно: `npm run docker:infra:redis`.
 
 Далі: `npm run dev` (або окремо `dev:api` / `dev:web`). Документація: [SPEC/](./SPEC/).
 
@@ -52,7 +54,9 @@ cp .env.example .env
 
 Деталі: [SPEC/12-organization-types.md](./SPEC/12-organization-types.md).
 
-Поточна версія: **1.10.0** — [CHANGELOG.md](./CHANGELOG.md), [SPEC/](./SPEC/).
+Поточна версія: **1.14.0** — [CHANGELOG.md](./CHANGELOG.md), [SPEC/](./SPEC/).  
+Prod security: [docs/SECURITY-CHECKLIST.md](./docs/SECURITY-CHECKLIST.md).  
 Конструктор квитанцій / звітів: `/admin/document-templates`.  
 Диспетчерська SLA: `/admin/dispatch`. Імпорт виписки: `/admin/payments` → «Імпорт».  
-Збори: `/admin/meetings` · Месенджер: `/admin/messenger` · `/resident/messenger`.
+Збори: `/admin/meetings` · Месенджер: `/admin/messenger` · `/resident/messenger`.  
+Скидання пароля: login → «Забули пароль?» (потрібен SMTP / `APP_URL`).

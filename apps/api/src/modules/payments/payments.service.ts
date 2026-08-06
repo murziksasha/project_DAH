@@ -309,6 +309,8 @@ export class PaymentsService {
     void this.mail.notifyResidentsOfApartments([dto.apartmentId], 'payment.received', () => ({
       amount: dto.amount,
       apartmentNumber: apartment.number,
+      actionPath: '/resident?tab=account',
+      actionLabel: 'Відкрити рахунок',
     }));
 
     return this.getPayment(payment.id, user);

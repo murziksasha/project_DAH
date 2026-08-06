@@ -168,7 +168,7 @@ export default function AccrualsListPage() {
                       {a.lines.map((l) => (
                         <tr key={l.id}>
                           <td>
-                            <Link href={`/admin/apartments/${l.apartment.id}`}>
+                            <Link href={`/admin/apartments/detail/?id=${encodeURIComponent(l.apartment.id)}`}>
                               {l.apartment.number}
                             </Link>
                           </td>
@@ -176,7 +176,7 @@ export default function AccrualsListPage() {
                           <td>{formatMoney(l.paidAmount)}</td>
                           <td>{l.status}</td>
                           <td>
-                            <Link href={`/admin/apartments/${l.apartment.id}`} className="btn btn-sm btn-ghost">
+                            <Link href={`/admin/apartments/detail/?id=${encodeURIComponent(l.apartment.id)}`} className="btn btn-sm btn-ghost">
                               {t('accountShort')}
                             </Link>
                           </td>

@@ -298,9 +298,11 @@ Query для preview: `?apartmentId=&amount=`
 
 | Method | Path | Auth | Опис |
 |--------|------|------|------|
-| POST | `/files/upload` | JWT | Завантажити файл (multipart) |
+| POST | `/files/upload` | JWT | Завантажити файл (multipart); відповідь `url` = same-origin download |
+| GET | `/files/download` | HMAC query | Stream з MinIO (`key`, `exp`, `sig`) — для `<img>` без Bearer |
 
-Query: `?folder=expenses|documents`
+Upload query: `?folder=expenses|documents|requests`  
+Download: short-lived HMAC (`FILE_DOWNLOAD_SECRET` або `JWT_SECRET`); браузер **не** ходить на MinIO `:9000`.
 
 ## Audit
 

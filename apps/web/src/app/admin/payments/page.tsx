@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { useI18n } from '@/components/LocaleProvider';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
 import { downloadCsv } from '@/lib/csv';
@@ -94,6 +95,8 @@ export default function PaymentsPage() {
   const [history, setHistory] = useState<PaymentRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [voidingId, setVoidingId] = useState<string | null>(null);
+  const [confirmVoid, setConfirmVoid] = useState<PaymentRow | null>(null);
+  const [voidReason, setVoidReason] = useState('');
   const [histFrom, setHistFrom] = useState('');
   const [histTo, setHistTo] = useState('');
 
@@ -205,20 +208,20 @@ export default function PaymentsPage() {
     }
   }
 
-  async function voidPayment(id: string) {
-    const reason = window.prompt(t('paymentsVoidPrompt'));
-    if (!reason?.trim()) return;
+  async function voidPayment(payment: PaymentRow, reason: string) {
     const token = getToken();
     if (!token) return;
-    setVoidingId(id);
+    setVoidingId(payment.id);
     setError('');
     try {
-      await apiFetch(`/payments/${id}/void`, {
+      await apiFetch(`/payments/${payment.id}/void`, {
         method: 'PATCH',
         token,
         body: JSON.stringify({ reason: reason.trim() }),
       });
       setMessage(t('paymentsVoided'));
+      setConfirmVoid(null);
+      setVoidReason('');
       await loadHistory();
     } catch (err) {
       setError(err instanceof Error ? err.message : t('paymentsVoidError'));
@@ -321,6 +324,7 @@ export default function PaymentsPage() {
   }
 
   return (
+    <>
     <main>
       <PageHeader
         title={t('paymentsTitle')}
@@ -697,7 +701,10 @@ export default function PaymentsPage() {
                           type="button"
                           className="btn btn-sm btn-ghost"
                           disabled={voidingId === p.id}
-                          onClick={() => voidPayment(p.id)}
+                          onClick={() => {
+                            setVoidReason('');
+                            setConfirmVoid(p);
+                          }}
                         >
                           {t('voidAction')}
                         </button>
@@ -711,5 +718,38 @@ export default function PaymentsPage() {
         </section>
       )}
     </main>
+      <ConfirmDialog
+        open={Boolean(confirmVoid)}
+        title={t('paymentsVoidTitle')}
+        message={
+          confirmVoid
+            ? `${t('paymentsVoidPrompt')} (−${formatMoney(confirmVoid.amount)}, кв. ${confirmVoid.apartment.number}, ${formatDateUk(confirmVoid.date)})`
+            : t('paymentsVoidPrompt')
+        }
+        confirmLabel={t('voidAction')}
+        cancelLabel={t('cancel')}
+        danger
+        busy={Boolean(voidingId)}
+        confirmDisabled={voidReason.trim().length < 2}
+        onConfirm={() => {
+          if (confirmVoid && voidReason.trim()) void voidPayment(confirmVoid, voidReason);
+        }}
+        onCancel={() => {
+          setConfirmVoid(null);
+          setVoidReason('');
+        }}
+      >
+        <div style={{ marginTop: 12 }}>
+          <label htmlFor="pay-void-reason">{t('paymentsVoidReason')}</label>
+          <input
+            id="pay-void-reason"
+            value={voidReason}
+            onChange={(e) => setVoidReason(e.target.value)}
+            placeholder={t('paymentsVoidReasonPh')}
+            autoFocus
+          />
+        </div>
+      </ConfirmDialog>
+    </>
   );
 }

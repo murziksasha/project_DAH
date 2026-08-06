@@ -96,6 +96,8 @@ export class RemindersService {
             body: r.body ?? undefined,
             dueDate: r.dueAt.toLocaleDateString('uk-UA'),
             apartmentNumber: r.apartment?.number,
+            actionPath: '/resident',
+            actionLabel: 'Відкрити кабінет',
           });
         } else if (r.apartmentId) {
           await this.mail.notifyResidentsOfApartments([r.apartmentId], 'reminder.due', () => ({
@@ -103,6 +105,8 @@ export class RemindersService {
             body: r.body ?? undefined,
             dueDate: r.dueAt.toLocaleDateString('uk-UA'),
             apartmentNumber: r.apartment?.number,
+            actionPath: '/resident',
+            actionLabel: 'Відкрити кабінет',
           }));
         } else {
           // broadcast to admins
@@ -110,6 +114,8 @@ export class RemindersService {
             title: r.title,
             body: r.body ?? undefined,
             dueDate: r.dueAt.toLocaleDateString('uk-UA'),
+            actionPath: '/admin',
+            actionLabel: 'Відкрити кабінет правління',
           });
         }
         await this.prisma.reminder.update({
@@ -201,6 +207,8 @@ export class RemindersService {
         amount: row.amount,
         dueDate: row.dueDate.toLocaleDateString('uk-UA'),
         title: row.title,
+        actionPath: '/resident?tab=account',
+        actionLabel: 'Сплатити / реквізити',
       }));
 
       await this.prisma.reminder.create({

@@ -80,7 +80,10 @@ export default function ExpensesPage() {
     setMessage('');
     setLoading(true);
     try {
-      await apiFetch('/finance/expenses', {
+      const createdExp = await apiFetch<{
+        needsApproval?: boolean;
+        approvalStatus?: string;
+      }>('/finance/expenses', {
         method: 'POST',
         token,
         body: JSON.stringify({
@@ -93,7 +96,11 @@ export default function ExpensesPage() {
           documentKey: documentKey || undefined,
         }),
       });
-      setMessage(t('expenseSaved'));
+      setMessage(
+        createdExp.needsApproval || createdExp.approvalStatus === 'pending'
+          ? `${t('expenseSaved')} · ${t('expenseStatusPending')}`
+          : t('expenseSaved'),
+      );
       setCreated(true);
       setAmount('');
       setDescription('');

@@ -1,13 +1,22 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
 import {
   normalizeDocumentTemplatesConfig,
   type DocumentTemplatesConfig,
 } from '@dah/shared';
-import { DocumentTemplateBuilder } from '@/components/DocumentTemplateBuilder';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
+
+const DocumentTemplateBuilder = dynamic(
+  () =>
+    import('@/components/DocumentTemplateBuilder').then((m) => m.DocumentTemplateBuilder),
+  {
+    ssr: false,
+    loading: () => <p style={{ color: 'var(--muted)' }}>Завантаження конструктора…</p>,
+  },
+);
 
 export default function DocumentTemplatesPage() {
   const [config, setConfig] = useState<DocumentTemplatesConfig | null>(null);

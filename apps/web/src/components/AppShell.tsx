@@ -2,13 +2,25 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ReactNode, useCallback, useEffect, useState } from 'react';
+import { ReactNode, Suspense, useCallback, useEffect, useState } from 'react';
 import { BuildingSwitcher } from '@/components/BuildingSwitcher';
-import { HealthBanner } from '@/components/HealthBanner';
+import { HeaderSearch } from '@/components/HeaderSearch';
 import { useI18n } from '@/components/LocaleProvider';
+import { NotificationBell } from '@/components/NotificationBell';
+import { OnboardingBanner } from '@/components/OnboardingBanner';
+import { MeterQueueFlusher } from '@/components/MeterQueueFlusher';
+import { ResidentApartmentSwitcher } from '@/components/ResidentApartmentSwitcher';
+import { ResidentBottomNav } from '@/components/ResidentBottomNav';
+import { ResidentTour } from '@/components/ResidentTour';
 import { NavIcon } from '@/components/ui/NavIcon';
 import { apiFetch, getToken } from '@/lib/api';
 import { getRoleHome, getStoredUser, logout } from '@/lib/auth';
+import {
+  applyComfort,
+  getStoredComfort,
+  toggleComfort,
+  type ComfortMode,
+} from '@/lib/comfort';
 import { groupLabel, navLabelForHref, type Locale } from '@/lib/i18n';
 import { getNavGroups, getShellTitle, type NavGroup } from '@/lib/nav-config';
 import { applyTheme, getStoredTheme, toggleTheme, type ThemeMode } from '@/lib/theme';
@@ -106,6 +118,7 @@ export default function AppShell({ children }: AppShellProps) {
   const [isDesktop, setIsDesktop] = useState(false);
   const [isInitialized, setIsInitialized] = useState(true);
   const [theme, setTheme] = useState<ThemeMode>('light');
+  const [comfort, setComfort] = useState<ComfortMode>('normal');
   const user = getStoredUser();
 
   const loadInitStatus = useCallback(async () => {
@@ -123,6 +136,8 @@ export default function AppShell({ children }: AppShellProps) {
   useEffect(() => {
     applyTheme(getStoredTheme());
     setTheme(getStoredTheme());
+    applyComfort(getStoredComfort());
+    setComfort(getStoredComfort());
     try {
       const stored = localStorage.getItem(NAV_COLLAPSED_KEY);
       if (stored === '1') setNavExpanded(false);
@@ -210,9 +225,15 @@ export default function AppShell({ children }: AppShellProps) {
     setTheme(toggleTheme());
   }
 
+  function onToggleComfort() {
+    setComfort(toggleComfort());
+  }
+
   function onToggleLocale() {
     setLocale(locale === 'uk' ? 'ru' : 'uk');
   }
+
+  const isResident = user.role === 'resident';
 
   return (
     <div
@@ -220,6 +241,7 @@ export default function AppShell({ children }: AppShellProps) {
         'app-shell',
         desktopCollapsed ? 'nav-collapsed' : '',
         mobileOpen ? 'nav-mobile-open' : '',
+        isResident ? 'is-resident' : '',
       ]
         .filter(Boolean)
         .join(' ')}
@@ -241,6 +263,20 @@ export default function AppShell({ children }: AppShellProps) {
         </div>
         <div className="app-header-actions">
           <BuildingSwitcher />
+          {isResident && <ResidentApartmentSwitcher />}
+          <HeaderSearch />
+          <NotificationBell />
+          {isResident && (
+            <button
+              type="button"
+              className="app-icon-btn"
+              aria-label={comfort === 'large' ? t('comfortNormal') : t('comfortLarge')}
+              title={comfort === 'large' ? t('comfortNormal') : t('comfortLarge')}
+              onClick={onToggleComfort}
+            >
+              {comfort === 'large' ? 'A' : 'A⁺'}
+            </button>
+          )}
           <button
             type="button"
             className="app-icon-btn"
@@ -264,8 +300,6 @@ export default function AppShell({ children }: AppShellProps) {
           </button>
         </div>
       </header>
-
-      <HealthBanner />
 
       <div className="app-shell-body">
         {mobileOpen && (
@@ -294,10 +328,42 @@ export default function AppShell({ children }: AppShellProps) {
             locale={locale}
             iconOnly={iconOnly}
           />
+          {isResident && (
+            <div className="app-drawer-footer">
+              <button
+                type="button"
+                className="app-drawer-link app-drawer-comfort"
+                onClick={onToggleComfort}
+                title={comfort === 'large' ? t('comfortNormal') : t('comfortLarge')}
+                aria-label={comfort === 'large' ? t('comfortNormal') : t('comfortLarge')}
+                aria-pressed={comfort === 'large'}
+              >
+                <span className="app-drawer-link-icon app-drawer-comfort-glyph" aria-hidden>
+                  {comfort === 'large' ? 'A' : 'A⁺'}
+                </span>
+                <span className="app-drawer-link-label">
+                  {comfort === 'large' ? t('comfortNormal') : t('comfortLarge')}
+                </span>
+              </button>
+            </div>
+          )}
         </aside>
 
-        <div className="app-content">{children}</div>
+        <div className={`app-content${isResident ? ' has-resident-nav' : ''}`}>
+          <OnboardingBanner />
+          {children}
+        </div>
       </div>
+
+      {isResident && (
+        <>
+          <MeterQueueFlusher />
+          <ResidentTour />
+          <Suspense fallback={null}>
+            <ResidentBottomNav />
+          </Suspense>
+        </>
+      )}
     </div>
   );
 }

@@ -36,10 +36,18 @@ export class MailService {
     }
 
     const building = await this.prisma.building.findFirst({ select: { name: true } });
+    const base = this.getAppUrl().replace(/\/$/, '');
+    // Prefer explicit actionUrl; otherwise actionPath + base; password_reset may pass full appUrl as link
+    const actionUrl =
+      ctx.actionUrl ||
+      (ctx.actionPath
+        ? `${base}${ctx.actionPath.startsWith('/') ? ctx.actionPath : `/${ctx.actionPath}`}`
+        : undefined);
     const rendered = renderTemplate(template, {
       buildingName: building?.name,
-      appUrl: this.getAppUrl(),
+      appUrl: base,
       ...ctx,
+      ...(actionUrl ? { actionUrl } : {}),
     });
 
     return this.sendRaw({

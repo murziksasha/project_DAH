@@ -176,11 +176,14 @@ export class BuildingService {
       isInitialized: building.isInitialized,
       showDebtorsToResidents: building.showDebtorsToResidents,
       registrationEnabled: json.registrationEnabled ?? DEFAULT_BUILDING_SETTINGS.registrationEnabled,
+      registrationInviteCode: json.registrationInviteCode ?? '',
+      expenseDualApprovalThreshold: json.expenseDualApprovalThreshold ?? null,
       showBankDetailsToResidents:
         json.showBankDetailsToResidents ?? DEFAULT_BUILDING_SETTINGS.showBankDetailsToResidents,
       defaultAccrualDueDays:
         json.defaultAccrualDueDays ?? DEFAULT_BUILDING_SETTINGS.defaultAccrualDueDays,
       reminderDaysBeforeDue: json.reminderDaysBeforeDue ?? 3,
+      metersReadingDeadlineDay: json.metersReadingDeadlineDay ?? 5,
       locale: json.locale ?? DEFAULT_BUILDING_SETTINGS.locale,
       slaHoursByCategory: json.slaHoursByCategory ?? {},
       features: json.features ?? {},
@@ -204,6 +207,9 @@ export class BuildingService {
       ...(dto.reminderDaysBeforeDue !== undefined
         ? { reminderDaysBeforeDue: dto.reminderDaysBeforeDue }
         : {}),
+      ...(dto.metersReadingDeadlineDay !== undefined
+        ? { metersReadingDeadlineDay: dto.metersReadingDeadlineDay }
+        : {}),
       ...(dto.locale !== undefined ? { locale: dto.locale } : {}),
       ...(dto.slaHoursByCategory !== undefined
         ? {
@@ -212,6 +218,12 @@ export class BuildingService {
               ...dto.slaHoursByCategory,
             },
           }
+        : {}),
+      ...(dto.registrationInviteCode !== undefined
+        ? { registrationInviteCode: dto.registrationInviteCode?.trim() || undefined }
+        : {}),
+      ...(dto.expenseDualApprovalThreshold !== undefined
+        ? { expenseDualApprovalThreshold: dto.expenseDualApprovalThreshold }
         : {}),
     };
 
@@ -247,14 +259,92 @@ export class BuildingService {
       name: updated.name,
       showDebtorsToResidents: updated.showDebtorsToResidents,
       registrationEnabled: json.registrationEnabled ?? DEFAULT_BUILDING_SETTINGS.registrationEnabled,
+      registrationInviteCode: json.registrationInviteCode ?? '',
+      expenseDualApprovalThreshold: json.expenseDualApprovalThreshold ?? null,
       showBankDetailsToResidents:
         json.showBankDetailsToResidents ?? DEFAULT_BUILDING_SETTINGS.showBankDetailsToResidents,
       defaultAccrualDueDays:
         json.defaultAccrualDueDays ?? DEFAULT_BUILDING_SETTINGS.defaultAccrualDueDays,
       reminderDaysBeforeDue: json.reminderDaysBeforeDue ?? 3,
+      metersReadingDeadlineDay: json.metersReadingDeadlineDay ?? 5,
       locale: json.locale ?? DEFAULT_BUILDING_SETTINGS.locale,
       slaHoursByCategory: json.slaHoursByCategory ?? {},
     };
+  }
+
+  /** Global search: apartments, users, open requests (admin). */
+  async globalSearch(q: string, tenantId?: string | null) {
+    const term = q.trim();
+    if (term.length < 1) {
+      return { apartments: [], users: [], requests: [] };
+    }
+    const buildingWhere = tenantId ? { building: { tenantId } } : {};
+    const userWhere = tenantId ? { tenantId } : {};
+
+    const [apartments, users, requests] = await Promise.all([
+      this.prisma.apartment.findMany({
+        where: {
+          ...buildingWhere,
+          OR: [
+            { number: { contains: term, mode: 'insensitive' } },
+            { residents: { some: { lastName: { contains: term, mode: 'insensitive' } } } },
+          ],
+        },
+        take: 20,
+        select: {
+          id: true,
+          number: true,
+          entrance: true,
+          area: true,
+          building: { select: { id: true, name: true } },
+        },
+        orderBy: { number: 'asc' },
+      }),
+      this.prisma.user.findMany({
+        where: {
+          ...userWhere,
+          OR: [
+            { email: { contains: term, mode: 'insensitive' } },
+            { firstName: { contains: term, mode: 'insensitive' } },
+            { lastName: { contains: term, mode: 'insensitive' } },
+            { phone: { contains: term } },
+          ],
+        },
+        take: 20,
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          role: true,
+          status: true,
+          apartmentId: true,
+        },
+        orderBy: { lastName: 'asc' },
+      }),
+      this.prisma.request.findMany({
+        where: {
+          status: { not: 'done' },
+          OR: [
+            { title: { contains: term, mode: 'insensitive' } },
+            { description: { contains: term, mode: 'insensitive' } },
+            { id: { contains: term } },
+          ],
+        },
+        take: 15,
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          priority: true,
+          category: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    return { apartments, users, requests };
   }
 
   /**

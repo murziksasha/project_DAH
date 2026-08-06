@@ -4,13 +4,19 @@ services:
   api:
     environment:
       CORS_ORIGIN: ${CORS_ORIGIN:-https://localhost}
+      REDIS_URL: ${REDIS_URL:-none}
+    restart: always
+    # Do not publish MinIO/Postgres/Redis ports in prod — only via this overlay on host firewall
+
+  worker:
+    environment:
+      REDIS_URL: ${REDIS_URL:-none}
     restart: always
 
   web:
     build:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://localhost/api}
-        API_UPSTREAM: ${API_UPSTREAM:-http://api:3001}
     restart: always
 
   nginx:
@@ -24,9 +30,8 @@ services:
 
   postgres:
     restart: always
-
-  redis:
-    restart: always
+    # Prefer not publishing 5432 publicly in real prod (override ports: [] if needed)
 
   minio:
     restart: always
+    # Prefer not publishing 9000/9001 publicly — files stream via API /api/files/download

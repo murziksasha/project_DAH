@@ -13,9 +13,12 @@ interface Settings {
   edrpou?: string | null;
   showDebtorsToResidents: boolean;
   registrationEnabled: boolean;
+  registrationInviteCode?: string;
+  expenseDualApprovalThreshold?: number | null;
   showBankDetailsToResidents: boolean;
   defaultAccrualDueDays: number;
   reminderDaysBeforeDue?: number;
+  metersReadingDeadlineDay?: number;
   locale: 'uk' | 'ru';
   slaHoursByCategory?: Record<string, number>;
 }
@@ -299,6 +302,71 @@ export default function SettingsPage() {
           onToggle={() => patch({ registrationEnabled: !settings.registrationEnabled })}
           disabled={saving}
         />
+        <div style={{ marginTop: '1rem' }}>
+          <label htmlFor="invite-code">Код запрошення (реєстрація)</label>
+          <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '0 0 0.5rem' }}>
+            Якщо задано — список квартир і реєстрація лише з цим кодом (захист від перебору).
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              id="invite-code"
+              value={settings.registrationInviteCode ?? ''}
+              onChange={(e) =>
+                setSettings({ ...settings, registrationInviteCode: e.target.value })
+              }
+              placeholder="напр. OSBB-2026"
+              style={{ flex: 1, minWidth: 160 }}
+            />
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={saving}
+              onClick={() =>
+                void patch({
+                  registrationInviteCode: settings.registrationInviteCode ?? '',
+                })
+              }
+            >
+              Зберегти код
+            </button>
+          </div>
+        </div>
+        <div style={{ marginTop: '1rem' }}>
+          <label htmlFor="dual-threshold">Подвійне підтвердження витрат від (₴)</label>
+          <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '0 0 0.5rem' }}>
+            0 або порожньо — вимкнено. Більші витрати потребують другого підпису.
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              id="dual-threshold"
+              type="number"
+              min={0}
+              step={100}
+              value={settings.expenseDualApprovalThreshold ?? ''}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  expenseDualApprovalThreshold:
+                    e.target.value === '' ? null : Number(e.target.value),
+                })
+              }
+              style={{ flex: 1, minWidth: 120 }}
+            />
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={saving}
+              onClick={() =>
+                void patch({
+                  expenseDualApprovalThreshold:
+                    settings.expenseDualApprovalThreshold ?? null,
+                })
+              }
+            >
+              Зберегти
+            </button>
+          </div>
+        </div>
       </section>
 
       <section className="card" style={{ marginBottom: '1rem' }}>
@@ -384,6 +452,30 @@ export default function SettingsPage() {
             }
             onBlur={() => patch({ reminderDaysBeforeDue: settings.reminderDaysBeforeDue ?? 3 })}
           />
+        </div>
+        <div style={{ marginBottom: '1rem' }}>
+          <label htmlFor="metersDeadline">Дедлайн показів лічильників (день місяця, 1–28)</label>
+          <input
+            id="metersDeadline"
+            type="number"
+            min={1}
+            max={28}
+            value={settings.metersReadingDeadlineDay ?? 5}
+            onChange={(e) =>
+              setSettings({
+                ...settings,
+                metersReadingDeadlineDay: Number(e.target.value),
+              })
+            }
+            onBlur={() =>
+              patch({
+                metersReadingDeadlineDay: settings.metersReadingDeadlineDay ?? 5,
+              })
+            }
+          />
+          <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginTop: 4 }}>
+            Мешканці бачать банер на домівці до цього дня, якщо покази ще не передано.
+          </p>
         </div>
         <div>
           <label htmlFor="locale">{t('settingsLocale')}</label>
