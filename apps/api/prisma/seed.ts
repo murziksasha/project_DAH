@@ -2,6 +2,7 @@ import {
   AccrualDistribution,
   AccrualLineStatus,
   FundType,
+  MeterType,
   PaymentSource,
   PrismaClient,
   UserRole,
@@ -35,7 +36,7 @@ async function main() {
     );
   }
 
-  const buildingName = process.env.BUILDING_NAME ?? 'ОСББ вул. Прикладна 1';
+  const buildingName = process.env.BUILDING_NAME ?? 'Мій дім — демо (ОСББ вул. Прикладна 1)';
 
   await prisma.auditLog.deleteMany();
   await prisma.emailLog.deleteMany();
@@ -70,7 +71,7 @@ async function main() {
   await prisma.tenant.deleteMany();
 
   const tenant = await prisma.tenant.create({
-    data: { name: buildingName, slug: 'default' },
+    data: { name: buildingName, slug: 'default', orgType: 'osbb' },
   });
 
   const building = await prisma.building.create({
@@ -94,7 +95,7 @@ async function main() {
       buildingId: building.id,
       bankName: 'ПриватБанк',
       iban: 'UA123456789012345678901234567',
-      description: 'Основний рахунок ОСББ',
+      description: 'Основний рахунок організації',
     },
   });
 
@@ -235,11 +236,45 @@ async function main() {
       status: UserStatus.active,
       tenantId: tenant.id,
       apartmentId: apartments[0].id,
+      // Two apartments → multi-apt switcher in resident UI / e2e
       apartmentLinks: {
-        create: { apartmentId: apartments[0].id, isPrimary: true },
+        create: [
+          { apartmentId: apartments[0].id, isPrimary: true },
+          ...(apartments[1]
+            ? [{ apartmentId: apartments[1].id, isPrimary: false }]
+            : []),
+        ],
       },
     },
   });
+
+  // Demo meters for primary resident apartment (batch + offline e2e)
+  const prevPeriod = '2026-07';
+  const meterDefs: Array<{ type: MeterType; name: string; unit: string; prev: number }> = [
+    { type: MeterType.cold_water, name: 'Холодна вода', unit: 'm3', prev: 120.5 },
+    { type: MeterType.hot_water, name: 'Гаряча вода', unit: 'm3', prev: 45.2 },
+    { type: MeterType.electricity, name: 'Електроенергія', unit: 'kWh', prev: 3450 },
+  ];
+  for (const def of meterDefs) {
+    const meter = await prisma.meter.create({
+      data: {
+        apartmentId: apartments[0].id,
+        type: def.type,
+        name: def.name,
+        unit: def.unit,
+        isActive: true,
+      },
+    });
+    await prisma.meterReading.create({
+      data: {
+        meterId: meter.id,
+        period: prevPeriod,
+        value: def.prev,
+        previousValue: null,
+        consumption: 0,
+      },
+    });
+  }
 
   const chairman = await prisma.user.findUnique({ where: { email: 'chairman@osbb.local' } });
 
@@ -363,6 +398,8 @@ async function main() {
   console.log('    auditor@osbb.local / password123');
   console.log('    resident@osbb.local / password123');
   console.log('  Announcements: 1, Polls: 1 (id:', poll.id + ')');
+  console.log('  Resident meters: 3 (cold/hot water, electricity) on primary apt');
+  console.log('  Resident multi-apt: primary + second apartment link (if ≥2 apts)');
 }
 
 main()

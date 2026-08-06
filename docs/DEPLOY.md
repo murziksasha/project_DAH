@@ -1,6 +1,7 @@
-# Розгортання DAH у production
+# Розгортання «Мій дім» у production
 
-Один інстанс Docker = одне ОСМД. Нижче — мінімальний production-чекліст.
+Один інстанс Docker = одна або кілька **організацій** (ОСББ та/або УК) через multi-tenant.  
+Нижче — мінімальний production-чекліст.
 
 ## 1. Підготовка сервера
 
@@ -12,9 +13,11 @@
 ## 2. Клонування та конфігурація
 
 ```bash
-git clone <repo-url> dah && cd dah
+git clone <repo-url> miy-dim && cd miy-dim
 cp .env.example .env
 ```
+
+Після старту super-admin створює організації на `/admin/tenants` з типом **ОСББ** (`osbb`) або **УК** (`management_company`).
 
 Обов'язково змініть у `.env`:
 
@@ -22,13 +25,22 @@ cp .env.example .env
 |--------|------|
 | `POSTGRES_PASSWORD` | Сильний пароль БД |
 | `JWT_SECRET` | Випадковий рядок 64+ символів |
-| `S3_SECRET_KEY` | Пароль MinIO |
+| `S3_SECRET_KEY` | Пароль MinIO (internal; не публікувати :9000) |
+| `REDIS_URL` | За замовчуванням `none` (worker без Redis) |
+| `FILE_DOWNLOAD_SECRET` | Опційно; інакше HMAC від `JWT_SECRET` |
 | `DOMAIN` | Ваш домен |
 | `CORS_ORIGIN` | `https://<домен>` |
 | `NEXT_PUBLIC_API_URL` | `https://<домен>/api` |
+| `APP_URL` | `https://<домен>` (посилання скидання пароля) |
 | `VAPID_*` | `npx web-push generate-vapid-keys` |
 | `COOKIE_SECURE` | `true` за HTTPS (HttpOnly refresh cookie) |
-| `BACKUP_STATUS_PATH` | Шлях до `last-backup.json` (опційно, для /admin/ops) |
+| `BACKUP_DIR` | Каталог копій (Docker: `/backups`) |
+| `BACKUP_STATUS_PATH` | `last-backup.json` для health / ops |
+| `BACKUP_MAX_AGE_HOURS` | Поріг «stale» для health (напр. 192 для weekly) |
+| `SWAGGER_ENABLED` | у prod залиште вимкненим (default off when `NODE_ENV=production`) |
+| `REQUIRE_FINANCE_2FA` | default on; finance + backup download need TOTP |
+
+Повний чекліст: [SECURITY-CHECKLIST.md](./SECURITY-CHECKLIST.md).
 
 ## 3. TLS-сертифікати (Let's Encrypt)
 
@@ -59,10 +71,28 @@ docker compose exec api npx ts-node prisma/seed.ts   # лише перший р�
 Перевірка:
 
 - PWA: `https://<домен>/`
-- API health: `https://<домен>/api/health`
-- Swagger: `https://<домен>/api/docs`
+- API health: `https://<домен>/api/health` (мінімальний status)
+- Health details (staff JWT): `https://<домен>/api/health/details`
+- Swagger: only if `SWAGGER_ENABLED=true` → `https://<домен>/api/docs`
 
 ## 5. Резервне копіювання
+
+### 5.1. In-app (тижневі + ручні копії БД)
+
+Сервіси `api` і `worker` монтують `./backups` і пишуть:
+
+```
+backups/
+  weekly/2026-W31/database.sql.gz   # один слот на ISO-тиждень
+  manual/20260801_153045/…          # кожна ручна — окремо
+  last-backup.json                  # для GET /api/health і /admin/ops
+```
+
+- **Worker** (slim Nest context, **без Redis/BullMQ**): кожні 15 хв — reminders + SLA; ~02:00 UTC daily dump; ~03:00 UTC `backups.weekly` (skip якщо тиждень уже є).
+- **Ручна:** `/admin/ops` → «Створити копію зараз» (ролі: голова, правління, бухгалтер, super_admin). Мешканцям недоступно.
+- Env: `BACKUP_DIR=/backups`, `BACKUP_STATUS_PATH=/backups/last-backup.json`, опційно `BACKUP_MAX_AGE_HOURS` (для health «stale»; за замовчуванням у compose ~192 год / 8 днів).
+
+### 5.2. CLI dump
 
 **Швидкий dump БД (Docker profile):**
 
@@ -83,26 +113,24 @@ chmod +x infra/scripts/backup.sh
 powershell -File infra/scripts/backup.ps1
 ```
 
-Архіви зберігаються в `backups/<timestamp>/`:
-- `database.sql.gz` (або `.sql` на Windows)
-- `files/` — дзеркало бакета MinIO
-- `manifest.json`
+Архіви CLI: `backups/<timestamp>/` — `database.sql.gz`, `files/` (MinIO), `manifest.json`.
 
 **Відновлення:**
 
 ```bash
 ./infra/scripts/restore.sh backups/20260625_120000
+# або restore з backups/weekly/2026-W31 (лише БД)
 ```
 
-Рекомендація: cron щодня о 03:00 + копія `backups/` на інший диск або S3.
+Рекомендація: покладайтесь на in-app weekly + раз на тиждень/місяць full `backup.sh` off-site.
 
 ```cron
-0 3 * * * cd /opt/dah && ./infra/scripts/backup.sh >> /var/log/dah-backup.log 2>&1
+0 4 * * 0 cd /opt/dah && ./infra/scripts/backup.sh >> /var/log/dah-backup.log 2>&1
 ```
 
 ## 6. Ноутбук + KeenDNS (доступ у мережу будинку)
 
-Типовий сценарій: DAH працює на ноутбуці голови/бухгалтера, мешканці заходять з телефону через Wi‑Fi або з інтернету через **KeenDNS** (Keenetic).
+Типовий сценарій: «Мій дім» працює на ноутбуці голови/бухгалтера/УК, мешканці заходять з телефону через Wi‑Fi або з інтернету через **KeenDNS** (Keenetic).
 
 ### 6.1. Локальна мережа
 
@@ -135,7 +163,7 @@ powershell -File infra/scripts/backup.ps1
 
 ### 6.4. UX при обриві зв’язку
 
-У кабінеті є **банер**, якщо `/api/health` недоступний (Wi‑Fi, KeenDNS, сон ноутбука). Мешканцям варто пояснити: «сервер — ноутбук ОСМД, уночі може бути офлайн».
+У кабінеті є **банер**, якщо `/api/health` недоступний (Wi‑Fi, KeenDNS, сон ноутбука). Мешканцям варто пояснити: «сервер — ноутбук організації, уночі може бути офлайн».
 
 ## 7. Оновлення версії
 

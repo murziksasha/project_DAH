@@ -12,6 +12,7 @@ import { UpdateApartmentDto } from './dto/update-apartment.dto';
 import { UpdateResidentDto } from './dto/update-resident.dto';
 import { UpdateBuildingDto } from './dto/update-building.dto';
 import { UpdateBuildingSettingsDto } from './dto/update-settings.dto';
+import { UpdateDocumentTemplatesDto } from './dto/update-document-templates.dto';
 
 @ApiTags('building')
 @ApiBearerAuth()
@@ -79,6 +80,23 @@ export class BuildingController {
     UserRole.chairman,
     UserRole.accountant,
     UserRole.board,
+    UserRole.dispatcher,
+    UserRole.auditor,
+  )
+  @Get('search')
+  globalSearch(@Query('q') q: string | undefined, @CurrentUser() user: AuthUser) {
+    return this.building.globalSearch(
+      q ?? '',
+      user.role === 'super_admin' ? null : user.tenantId,
+    );
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(
+    UserRole.super_admin,
+    UserRole.chairman,
+    UserRole.accountant,
+    UserRole.board,
     UserRole.auditor,
   )
   @Get('ops-summary')
@@ -91,6 +109,22 @@ export class BuildingController {
   @Patch('settings')
   updateSettings(@Body() dto: UpdateBuildingSettingsDto, @CurrentUser() user: AuthUser) {
     return this.building.updateSettings(dto, user.id);
+  }
+
+  /** Document constructor: receipt / board report layouts + Excel export columns. */
+  @Get('document-templates')
+  getDocumentTemplates(@Query('buildingId') buildingId?: string) {
+    return this.building.getDocumentTemplates(buildingId);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.super_admin, UserRole.chairman, UserRole.board, UserRole.accountant)
+  @Patch('document-templates')
+  updateDocumentTemplates(
+    @Body() dto: UpdateDocumentTemplatesDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.building.updateDocumentTemplates(dto, user.id);
   }
 
   @UseGuards(RolesGuard)

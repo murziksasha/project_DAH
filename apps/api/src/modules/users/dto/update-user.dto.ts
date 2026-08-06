@@ -15,6 +15,8 @@ const UPDATABLE_ROLES = [
   UserRole.chairman,
   UserRole.accountant,
   UserRole.board,
+  UserRole.dispatcher,
+  UserRole.crew,
   UserRole.auditor,
   UserRole.resident,
 ] as const;

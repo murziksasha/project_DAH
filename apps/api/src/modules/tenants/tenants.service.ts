@@ -3,10 +3,15 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { UserRole, UserStatus } from '@prisma/client';
+import { OrganizationType, UserRole, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+
+function parseOrgType(value?: string): OrganizationType {
+  if (value === 'management_company') return OrganizationType.management_company;
+  return OrganizationType.osbb;
+}
 
 @Injectable()
 export class TenantsService {
@@ -32,12 +37,18 @@ export class TenantsService {
         _count: { select: { users: true, buildings: true } },
       },
     });
-    if (!t) throw new NotFoundException('Tenant не знайдено');
+    if (!t) throw new NotFoundException('Організацію не знайдено');
     return t;
   }
 
   async create(
-    dto: { name: string; slug: string; chairmanEmail?: string; chairmanPassword?: string },
+    dto: {
+      name: string;
+      slug: string;
+      orgType?: string;
+      chairmanEmail?: string;
+      chairmanPassword?: string;
+    },
     actorId: string,
   ) {
     const slug = dto.slug
@@ -50,11 +61,15 @@ export class TenantsService {
     const exists = await this.prisma.tenant.findUnique({ where: { slug } });
     if (exists) throw new BadRequestException('Slug уже зайнятий');
 
+    const orgType = parseOrgType(dto.orgType);
+    const isUk = orgType === OrganizationType.management_company;
+
     const tenant = await this.prisma.$transaction(async (tx) => {
       const t = await tx.tenant.create({
         data: {
           name: dto.name.trim(),
           slug,
+          orgType,
         },
       });
       await tx.building.create({
@@ -67,12 +82,16 @@ export class TenantsService {
       });
       if (dto.chairmanEmail && dto.chairmanPassword) {
         const emailTaken = await tx.user.findUnique({ where: { email: dto.chairmanEmail } });
-        if (emailTaken) throw new BadRequestException('Email голови вже зайнятий');
+        if (emailTaken) {
+          throw new BadRequestException(
+            isUk ? 'Email керівника вже зайнятий' : 'Email голови вже зайнятий',
+          );
+        }
         await tx.user.create({
           data: {
             email: dto.chairmanEmail,
             passwordHash: await bcrypt.hash(dto.chairmanPassword, 10),
-            firstName: 'Голова',
+            firstName: isUk ? 'Керівник' : 'Голова',
             lastName: dto.name.trim().slice(0, 40),
             role: UserRole.chairman,
             status: UserStatus.active,
@@ -88,23 +107,24 @@ export class TenantsService {
       action: 'tenant.created',
       entityType: 'Tenant',
       entityId: tenant.id,
-      payload: { slug: tenant.slug, name: tenant.name },
+      payload: { slug: tenant.slug, name: tenant.name, orgType: tenant.orgType },
     });
     return this.get(tenant.id);
   }
 
   async update(
     id: string,
-    dto: { name?: string; isActive?: boolean },
+    dto: { name?: string; isActive?: boolean; orgType?: string },
     actorId: string,
   ) {
     const t = await this.prisma.tenant.findUnique({ where: { id } });
-    if (!t) throw new NotFoundException('Tenant не знайдено');
+    if (!t) throw new NotFoundException('Організацію не знайдено');
     const updated = await this.prisma.tenant.update({
       where: { id },
       data: {
         ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+        ...(dto.orgType !== undefined ? { orgType: parseOrgType(dto.orgType) } : {}),
       },
     });
     await this.audit.log({

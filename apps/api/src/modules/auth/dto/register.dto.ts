@@ -28,4 +28,10 @@ export class RegisterDto {
   @ApiProperty({ description: 'ID квартири для прив\'язки' })
   @IsString()
   apartmentId!: string;
+
+  @ApiPropertyOptional({ description: 'Invite code if building requires it' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  inviteCode?: string;
 }

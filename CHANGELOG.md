@@ -1,5 +1,258 @@
 # Changelog
 
+## 1.14.0 — Runtime slim + performance (phases A–E)
+
+### A — Slim worker
+- `WorkerModule` loads only Prisma, Mail, Audit, Reminders, Backups, Notifications
+- No full `AppModule` (auth/finance/kep/messenger/throttler not booted in worker)
+
+### B — Jobs without Redis
+- Inline cron (`setInterval`): 15‑min reminders+SLA, daily/weekly backups
+- BullMQ removed; `REDIS_URL=none` by default; compose `redis` under `--profile redis`
+- Health: `redis: skipped` when URL empty/none/disabled
+
+### C — Same-origin files
+- `GET /api/files/download?key&exp&sig` streams from MinIO (HMAC token)
+- Upload / finance / documents / communications URLs no longer point at `:9000`
+- Unit tests: `file-download-token.spec.ts`
+
+### D — Static web
+- Next.js `output: 'export'` + `trailingSlash`; Docker web = **nginx:alpine** (no Node)
+- Apartment account: `/admin/apartments/detail/?id=` (static-export safe)
+- Soft auth via `AppShell` (middleware removed)
+
+### E — Client perf
+- React Query: dispatch queue, communications bundle, messenger threads/peers
+- `dynamic()` code-split for `DocumentTemplateBuilder`
+
+### Docs
+- SPEC/02, SPEC/09, SPEC/11, DEPLOY, SECURITY-CHECKLIST, `.env.example`
+
+## 1.13.5 — Seed meters/multi-apt, security polish, e2e helpers
+
+### Demo seed
+- 3 лічильники (хол./гар. вода, ел.) + покази за попередній період
+- Resident linked to **2 apartments** (switcher ready for e2e)
+
+### Resident security
+- Skeleton, back link, comfort toggle section, better labels/hints for email & push
+
+### QA
+- `e2e/helpers.ts` — loginAsResident / dismissTour / expandDesktopNav
+- Expanded resident + offline-apt e2e (real multi-apt + offline submit)
+
+## 1.13.4 — E2E offline/apt, mail CTA tests, drawer comfort
+
+### QA
+- Playwright: offline meter queue banner + flush; multi-apt soft switch (no reload); drawer comfort toggle
+- Jest: `mail.templates.spec.ts` — resolveActionUrl + HTML CTA deep-links
+
+### Resident
+- **Comfort mode** у desktop drawer (footer A⁺ / A), не лише header
+
+## 1.13.3 — Nav badges, home queue signal, global meter flush
+
+### Resident
+- **Bottom nav badges**: unread news (Ще), open requests, offline meter queue
+- **Action Home**: картка «Надіслати офлайн-покази»
+- **MeterQueueFlusher** у AppShell (flush з будь-якого екрану при online)
+- **NetworkStatusBanner**: resident offline copy + hint після recovery
+
+## 1.13.2 — Offline meters queue, soft apt switch, email deep-links
+
+### Resident
+- **Offline queue** показів: localStorage + auto-flush on `online` + manual «Надіслати зараз»
+- **Multi-apartment** без full reload (`dah-apartment-change` event → re-fetch account/meters)
+- **Email deep-links**: `actionPath` / CTA-кнопка в HTML (рахунок, новини, заявки, dispatch, login)
+
+## 1.13.1 — Multi-apt, comfort mode, messenger/meetings polish
+
+### Resident
+- **Multi-apartment switcher** (`/auth/profile` apartments + `?apartmentId=` on my-account)
+- **Comfort mode** (A⁺ larger type) for residents in header
+- **Messenger / meetings** polish: EmptyState, skeletons, i18n, mobile layout, previews
+- **One-tap PDF** за поточний місяць на спрощеному рахунку
+- **Modal a11y**: focus trap, aria-labelledby, restore focus
+
+## 1.13.0 — Resident flow UX (action home → A–E polish)
+
+### Кабінет мешканця (базовий flow)
+- **Action Home**, **bottom nav**, **Pay sheet**, news/requests split
+- **Спрощений рахунок**, deep-link сповіщень, **pending-реєстрація**
+
+### A–E (100%)
+- **A** Read-state оголошень (`AnnouncementRead`), badges, mark-all на вкладці Новини
+- **B** Заявки: dueAt/updatedAt/SLA, assignee, фото (upload folder `requests` для resident)
+- **C** Лічильники batch + `metersReadingDeadlineDay` + банер на домівці
+- **D** `ResidentTour` (3 кроки), empty apartment state
+- **E** Lazy-load: account/meters first → signals → transparency on demand
+- Migration `20260804140000_announcement_reads_meters_deadline`
+- SPEC `08-resident-portal.md`
+
+## 1.12.0 — Confirm dialogs, role dashboards, network banner
+
+### ConfirmDialog
+- Payments void: modal + required reason (no `window.prompt`)
+- Documents delete: modal with title/visibility (no `window.confirm`)
+
+### Role dashboards (`/admin`)
+- **Dispatcher** — SLA KPI, urgent list, take-in-progress
+- **Accountant** — cash-flow, pending dual-approve, debtors, quick finance actions
+- **Crew** — my open jobs
+- **Board/chairman/auditor** — existing board dashboard (extracted)
+- Login redirect uses `getRoleHome`; dispatcher/crew home → `/admin`
+- Dispatch supports `?filter=overdue|unassigned|mine`
+
+### Offline / PWA network
+- `NetworkStatusBanner`: browser offline vs API down vs recovered flash
+- Shown site-wide via root layout (login included)
+
+## 1.11.1 — Sessions UI, header search, expense void dialog
+
+- `GET/DELETE /auth/sessions` — список пристроїв + відкликання (family revoke)
+- Access JWT містить `sid` для позначки «цей пристрій»
+- UI: `SessionsPanel` у admin/resident security
+- Header quick search для staff
+- Витрати: анулювання через ConfirmDialog + причина (без `window.prompt`)
+- Audit labels для password reset / session / expense dual-approve
+- e2e: sessions smoke
+
+## 1.11.0 — Security hardening + UX for 200–300 users
+
+### Security (P0–P1)
+- Swagger **off by default in production** (`SWAGGER_ENABLED` explicit opt-in)
+- API security headers (CSP, nosniff, frame options)
+- nginx body limits: 25m API, 512m backups; CSP header
+- Public `/api/health` minimal; full details at `/api/health/details` (staff)
+- Messenger: building membership + same-tenant DMs/peers
+- Password policy (length + letter + digit + common list)
+- Login lockout after 10 failed attempts (15 min)
+- Password reset via email (`POST /auth/password/forgot|reset`)
+- TOTP secrets encrypted at rest (`enc:v1:` + AES-GCM)
+- File uploads validated by **magic bytes** (not client MIME alone)
+- Registration **invite code** (`Building.settings.registrationInviteCode`)
+- Finance + backup download: **require 2FA** (`REQUIRE_FINANCE_2FA`, default on)
+- Expense dual-approval threshold + `POST /finance/expenses/:id/approve`
+- Request `buildingId` + SLA notify job; audit on backup download
+
+### UX
+- Resident home triad (balance / request / meters)
+- Notification bell + in-app inbox
+- Admin global search (apartments, users, open requests)
+- Password reset UI on login; onboarding / 2FA banners
+- Dispatch mobile cards; toast provider; confirm dialog component
+- Settings: invite code + dual-approval threshold
+
+### Ops
+- Worker: daily backup + SLA scan
+- `docs/SECURITY-CHECKLIST.md`
+- Migration `20260804120000_security_ux_hardening`
+
+## 1.10.1 — Production КЕП / Дія.Підпис
+
+- Модуль **`/api/kep`**: SignSession, providers `mock` | `diia` | `cloud_kep` | `cades`
+- Diia offer API + deeplink; webhook `POST /api/kep/webhook` (secret / HMAC)
+- Cloud QES OAuth authorize + token exchange
+- CAdES upload (`signatureCms` base64) for EUSign/token
+- Mock authorize page; meetings `POST /meetings/:id/sign` → session + poll UI
+- `docs/KEP.md`, env `KEP_*` у `.env.example`
+- Unit-тести `kep.service.spec.ts`
+
+## 1.10.0 — Matching, crew, production pay, збори+КЕП, месенджер
+
+### Matching платежів
+- Зіставлення виписки: **квартира → IBAN мешканця → ПІБ**
+- `Resident.iban` для імпорту; matching unit-тести
+
+### SLA в Building.settings
+- `slaHoursByCategory` (sanitary/electric/elevator/…)
+- UI `/admin/settings`; auto-`dueAt` при створенні заявки
+
+### Роль «бригада» (`crew`)
+- `WORK_REQUESTS`: лише призначені заявки, без фінансів
+- Черга `/admin/dispatch` (mine only)
+
+### Production online-оплата
+- Модель `OnlinePaymentOrder` (pending/paid, idempotent webhook)
+- LiqPay / WayForPay / generic webhook parsers + amount check
+- `sandbox-complete` заблоковано при `ONLINE_PAYMENTS_SANDBOX=false`
+- Resident pay: production → checkout form; sandbox → instant complete
+- `GET /payments/online/orders/:orderId`, status.productionReady
+
+### Збори + КЕП
+- Модуль `/api/meetings`: draft→open→closed, agenda, register, vote, protocol
+- Підпис: `mock` (demo) | `kep`/`diia` (pending + challenge)
+- UI `/admin/meetings`, `/resident/meetings`
+
+### Месенджер
+- Threads: building / board_residents / direct
+- API `/api/messenger/*`; UI `/admin/messenger`, `/resident/messenger`
+
+## 1.9.0 — Bank adapters + диспетчер / SLA
+
+### Банківська виписка (будь-який банк)
+- Адаптери форматів: `auto` | `generic_csv` | `privatbank` | `monobank` | `oschadbank` | `mt940`
+- `POST /payments/import/preview` приймає `format`, `buildingId`; відповідь: `format`, `detectedFormat`
+- UI `/admin/payments` — вибір формату + підказка визначеного профілю
+- Unit-тести MT940 / detect
+
+### УК-портфель: диспетчер + SLA
+- Роль Prisma `dispatcher` (без фінансів; `MANAGE_REQUESTS`)
+- `Request.priority` (`low` | `normal` | `high` | `urgent`)
+- Авто-`dueAt` з категорії × пріоритету (`request-sla.ts`)
+- API: `GET /communications/requests/queue` (фільтри overdue / unassigned / mine)
+- UI: `/admin/dispatch` — черга, SLA-бейджі, «Взяти в роботу»
+- Nav / labels / create-user для диспетчера
+
+### Продуктові рішення
+- Фокус: **self-hosted one OSBB** (не SaaS)
+- Месенджер і збори+КЕП — **відкладено**
+- Пріоритет: УК диспетчер/SLA + універсальний імпорт виписок
+
+## 1.8.0 — Конструктор документів і звітів
+
+- **Конструктор PDF** (практика layout-блоків + `{{змінні}}`, як у print forms CRM):
+  - квитанції мешканців (`kind: receipt`)
+  - звіт для зборів / правління (`kind: board_report`)
+  - довільні шаблони
+- **Конструктор Excel / вигрузок**: увімкнення колонок (боржники, рух коштів, витрати, виписка) і склад export-pack ZIP
+- Збереження: `Building.settings.documentTemplates` (`forms` + `exports`)
+- API: `GET/PATCH /building/document-templates`
+- UI: `/admin/document-templates` (блоки, preview, змінні); посилання з Налаштувань і Звітів
+- PDF-генерація квитанцій і board PDF читає **активний** шаблон; export pack фільтрує файли/колонки
+- Shared: `@dah/shared` → `document-templates/*`
+
+## 1.7.0 — «Мій дім» + ОСББ / УК
+
+- **Ребрендинг:** DAH / ОСМД → **Мій дім** (UI, PWA, PDF, TOTP, email, landing, docs/SPEC)
+- **`Tenant.orgType`:** `osbb` \| `management_company` (міграція, default `osbb`)
+- API: create/patch tenants з `orgType`; login/`/auth/me` → `user.tenant`
+- Web: `/admin/tenants` — створення ОСББ або УК; labels кабінету/ролей для УК
+- `org-labels.ts`, інструкції, setup/settings без «лише ОСББ»
+- SPEC: 01, 03, 04, 12-organization-types, README, DEPLOY
+
+## 1.6.0 — Excel exports + resident account UX
+
+- Усі **експорти** → Excel (`.xlsx`): витрати, виписка квартири, export-pack ZIP, звіти
+- API: `GET /accruals/apartments/:id/statement.xlsx`
+- Кабінет мешканця: фільтри рік/місяць/тип/статус/пошук, історія за періодами, Excel-виписка, адаптив
+- Пошук на вкладках новин, документів, боржників, прозорості
+- SPEC/08, інструкції мешканця
+
+## 1.5.3 — weekly + manual data backups
+
+- In-app **тижневі копії** PostgreSQL (`backups/weekly/{ISO}`) — worker daily ~03:00 UTC, **skip** якщо за тиждень уже є
+- **Ручна копія** з `/admin/ops` + `POST /api/backups` (ролі правління/бухгалтер; не resident)
+- API: `GET /backups`, `/backups/status`, `POST /backups/weekly`
+- Docker: `postgresql-client`, volume `./backups` на api/worker
+- Документація: SPEC/09, 03, 05, DEPLOY, README, інструкції
+
+## 1.5.2 — reports: Cyrillic PDF + Excel exports
+
+- PDF для зборів / квитанції: вбудований **DejaVu Sans** (кирилиця замість «кракозябр» Helvetica)
+- Звіти: **Excel: рух** та **Excel: боржники** (`.xlsx` замість CSV)
+- Docker API: `assets/fonts` у production-образі
+
 ## 1.5.1 — plan complete: full tenant data scope
 
 - `@TenantId()` on finance, payments, accruals, meters, users

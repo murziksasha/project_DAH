@@ -4,11 +4,17 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { RequestStatus, UserRole, VoteWeightMode } from '@prisma/client';
+import { RequestPriority, RequestStatus, UserRole, VoteWeightMode } from '@prisma/client';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { roundMoney } from '../../common/utils/money';
+import {
+  computeDueAt,
+  computeSlaStatus,
+  type RequestPriority as SlaPriority,
+} from '../../common/utils/request-sla';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { StorageService } from '../files/storage.service';
 import { MailService } from '../mail/mail.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
@@ -16,7 +22,24 @@ import { CreatePollDto } from './dto/create-poll.dto';
 import { CreateRequestDto } from './dto/create-request.dto';
 import { UpdateRequestDto } from './dto/update-request.dto';
 
-const ADMIN_ROLES: UserRole[] = [UserRole.chairman, UserRole.accountant, UserRole.board];
+const ADMIN_ROLES: UserRole[] = [
+  UserRole.chairman,
+  UserRole.accountant,
+  UserRole.board,
+  UserRole.dispatcher,
+];
+
+const REQUEST_ASSIGNEE_ROLES: UserRole[] = [
+  UserRole.chairman,
+  UserRole.board,
+  UserRole.dispatcher,
+  UserRole.crew,
+];
+
+function parsePhotoKeys(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((k): k is string => typeof k === 'string' && k.length > 0);
+}
 
 @Injectable()
 export class CommunicationsService {
@@ -25,15 +48,89 @@ export class CommunicationsService {
     private notifications: NotificationsService,
     private audit: AuditService,
     private mail: MailService,
+    private storage: StorageService,
   ) {}
 
-  listAnnouncements() {
-    return this.prisma.announcement.findMany({
-      orderBy: [{ isPinned: 'desc' }, { createdAt: 'desc' }],
-      include: {
-        author: { select: { id: true, firstName: true, lastName: true } },
-      },
+  async listAnnouncements(userId: string) {
+    const [rows, reads] = await Promise.all([
+      this.prisma.announcement.findMany({
+        orderBy: [{ isPinned: 'desc' }, { createdAt: 'desc' }],
+        include: {
+          author: { select: { id: true, firstName: true, lastName: true } },
+        },
+      }),
+      this.prisma.announcementRead.findMany({
+        where: { userId },
+        select: { announcementId: true },
+      }),
+    ]);
+    const readSet = new Set(reads.map((r) => r.announcementId));
+    return rows.map((a) => ({
+      ...a,
+      isRead: readSet.has(a.id),
+    }));
+  }
+
+  async unreadAnnouncementCount(userId: string) {
+    const total = await this.prisma.announcement.count();
+    if (total === 0) return { unread: 0 };
+    const read = await this.prisma.announcementRead.count({ where: { userId } });
+    // Unread = announcements without a read row (approx if some deleted reads cascade)
+    const unread = await this.prisma.announcement.count({
+      where: { reads: { none: { userId } } },
     });
+    return { unread, total, read };
+  }
+
+  async markAnnouncementRead(userId: string, announcementId: string) {
+    const exists = await this.prisma.announcement.findUnique({
+      where: { id: announcementId },
+      select: { id: true },
+    });
+    if (!exists) throw new NotFoundException('Оголошення не знайдено');
+    await this.prisma.announcementRead.upsert({
+      where: {
+        userId_announcementId: { userId, announcementId },
+      },
+      create: { userId, announcementId },
+      update: { readAt: new Date() },
+    });
+    return { ok: true, announcementId };
+  }
+
+  async markAllAnnouncementsRead(userId: string) {
+    const ids = await this.prisma.announcement.findMany({ select: { id: true } });
+    if (!ids.length) return { marked: 0 };
+    await this.prisma.$transaction(
+      ids.map((a) =>
+        this.prisma.announcementRead.upsert({
+          where: {
+            userId_announcementId: { userId, announcementId: a.id },
+          },
+          create: { userId, announcementId: a.id },
+          update: { readAt: new Date() },
+        }),
+      ),
+    );
+    return { marked: ids.length };
+  }
+
+  private async withPhotoUrls<T extends { photoKeys: unknown }>(row: T) {
+    const keys = parsePhotoKeys(row.photoKeys);
+    const photoUrls = await Promise.all(
+      keys.map(async (key) => {
+        try {
+          return await this.storage.getDownloadUrl(key);
+        } catch {
+          return null;
+        }
+      }),
+    );
+    return {
+      ...row,
+      photoKeys: keys,
+      photoUrls: photoUrls.filter((u): u is string => Boolean(u)),
+    };
   }
 
   async createAnnouncement(dto: CreateAnnouncementDto, authorId: string) {
@@ -57,25 +154,35 @@ export class CommunicationsService {
       payload: { title: dto.title, isPinned: dto.isPinned ?? false },
     });
 
-    this.notifications
-      .sendToAll({
-        title: 'Нове оголошення',
-        body: dto.title,
-        url: '/resident?tab=communications',
-      })
-      .catch(() => undefined);
-
     void this.prisma.user
       .findMany({
-        where: { status: 'active', emailNotifyEnabled: true, role: 'resident' },
-        select: { email: true, firstName: true, lastName: true, emailNotifyEnabled: true },
+        where: { status: 'active', role: 'resident' },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          emailNotifyEnabled: true,
+        },
       })
-      .then((users) =>
-        this.mail.notifyUsers(users, 'announcement.created', {
+      .then(async (users) => {
+        const ids = users.map((u) => u.id);
+        if (ids.length) {
+          await this.notifications.notifyUsers(ids, {
+            title: 'Нове оголошення',
+            body: dto.title,
+            url: '/resident?tab=news',
+            kind: 'announcement',
+          });
+        }
+        const mailTargets = users.filter((u) => u.emailNotifyEnabled !== false);
+        await this.mail.notifyUsers(mailTargets, 'announcement.created', {
           title: dto.title,
           body: dto.body,
-        }),
-      )
+          actionPath: '/resident?tab=news',
+          actionLabel: 'Читати в кабінеті',
+        });
+      })
       .catch(() => undefined);
 
     return announcement;
@@ -95,26 +202,168 @@ export class CommunicationsService {
     return { id, deleted: true };
   }
 
-  listRequests(user: AuthUser) {
+  private enrichRequestSla<T extends { dueAt: Date | null; status: string; priority?: string }>(
+    row: T,
+  ) {
+    const slaStatus = computeSlaStatus(row.dueAt, row.status);
+    return {
+      ...row,
+      slaStatus,
+      isOverdue: slaStatus === 'breached',
+    };
+  }
+
+  private async resolveAuthorBuildingId(
+    authorId: string,
+    preferredBuildingId?: string,
+  ): Promise<string | null> {
+    if (preferredBuildingId) {
+      const b = await this.prisma.building.findUnique({
+        where: { id: preferredBuildingId },
+        select: { id: true },
+      });
+      return b?.id ?? null;
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id: authorId },
+      select: {
+        apartmentId: true,
+        apartmentLinks: { select: { apartment: { select: { buildingId: true } } }, take: 1 },
+      },
+    });
+    if (user?.apartmentId) {
+      const apt = await this.prisma.apartment.findUnique({
+        where: { id: user.apartmentId },
+        select: { buildingId: true },
+      });
+      if (apt) return apt.buildingId;
+    }
+    return user?.apartmentLinks[0]?.apartment.buildingId ?? null;
+  }
+
+  async listRequests(user: AuthUser) {
     const isAdmin = ADMIN_ROLES.includes(user.role as UserRole);
-    return this.prisma.request.findMany({
-      where: isAdmin ? undefined : { authorId: user.id },
-      orderBy: { createdAt: 'desc' },
+    const isCrew = user.role === UserRole.crew;
+    const where = isAdmin
+      ? user.tenantId
+        ? {
+            OR: [
+              { buildingId: null },
+              { author: { tenantId: user.tenantId } },
+            ],
+          }
+        : undefined
+      : isCrew
+        ? { assigneeId: user.id }
+        : { authorId: user.id };
+    const rows = await this.prisma.request.findMany({
+      where,
+      orderBy: [{ priority: 'desc' }, { dueAt: 'asc' }, { createdAt: 'desc' }],
       include: {
         author: { select: { id: true, firstName: true, lastName: true, email: true } },
         assignee: { select: { id: true, firstName: true, lastName: true } },
       },
     });
+    const withSla = rows.map((r) => this.enrichRequestSla(r));
+    return Promise.all(withSla.map((r) => this.withPhotoUrls(r)));
+  }
+
+  /**
+   * Dispatcher queue: open requests with SLA filters.
+   * query: status, overdueOnly, unassignedOnly, mineOnly, priority
+   */
+  async listRequestQueue(
+    user: AuthUser,
+    query: {
+      status?: string;
+      overdueOnly?: boolean;
+      unassignedOnly?: boolean;
+      mineOnly?: boolean;
+      priority?: string;
+    } = {},
+  ) {
+    const isCrew = user.role === UserRole.crew;
+    if (!ADMIN_ROLES.includes(user.role as UserRole) && !isCrew) {
+      throw new ForbiddenException('Немає доступу до черги заявок');
+    }
+
+    const where: {
+      status?: RequestStatus | { not: RequestStatus };
+      assigneeId?: string | null;
+      priority?: RequestPriority;
+    } = {};
+
+    if (query.status && Object.values(RequestStatus).includes(query.status as RequestStatus)) {
+      where.status = query.status as RequestStatus;
+    } else {
+      where.status = { not: RequestStatus.done };
+    }
+
+    if (isCrew || query.mineOnly) where.assigneeId = user.id;
+    else if (query.unassignedOnly) where.assigneeId = null;
+    if (
+      query.priority &&
+      Object.values(RequestPriority).includes(query.priority as RequestPriority)
+    ) {
+      where.priority = query.priority as RequestPriority;
+    }
+
+    const rows = await this.prisma.request.findMany({
+      where,
+      orderBy: [{ priority: 'desc' }, { dueAt: 'asc' }, { createdAt: 'asc' }],
+      include: {
+        author: { select: { id: true, firstName: true, lastName: true, email: true } },
+        assignee: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+
+    let enriched = rows.map((r) => this.enrichRequestSla(r));
+    if (query.overdueOnly) {
+      enriched = enriched.filter((r) => r.isOverdue);
+    }
+
+    const summary = {
+      open: enriched.length,
+      overdue: enriched.filter((r) => r.isOverdue).length,
+      warning: enriched.filter((r) => r.slaStatus === 'warning').length,
+      unassigned: enriched.filter((r) => !r.assigneeId).length,
+      urgent: enriched.filter((r) => r.priority === RequestPriority.urgent).length,
+    };
+
+    return { items: enriched, summary };
   }
 
   async createRequest(dto: CreateRequestDto, authorId: string) {
+    const priority = dto.priority ?? RequestPriority.normal;
+    const buildingId = await this.resolveAuthorBuildingId(authorId, dto.buildingId);
+    const building = buildingId
+      ? await this.prisma.building.findUnique({
+          where: { id: buildingId },
+          select: { settings: true },
+        })
+      : await this.prisma.building.findFirst({ select: { settings: true } });
+    const settings =
+      building?.settings && typeof building.settings === 'object'
+        ? (building.settings as { slaHoursByCategory?: Record<string, number> })
+        : {};
+    const dueAt = dto.dueAt
+      ? new Date(dto.dueAt)
+      : computeDueAt(
+          new Date(),
+          dto.category,
+          priority as SlaPriority,
+          settings.slaHoursByCategory ?? null,
+        );
+
     const request = await this.prisma.request.create({
       data: {
         title: dto.title,
         description: dto.description,
         category: dto.category,
+        buildingId: buildingId ?? undefined,
+        priority,
         authorId,
-        dueAt: dto.dueAt ? new Date(dto.dueAt) : undefined,
+        dueAt,
         photoKeys: dto.photoKeys ?? [],
       },
       include: {
@@ -126,7 +375,12 @@ export class CommunicationsService {
       action: 'request.created',
       entityType: 'Request',
       entityId: request.id,
-      payload: { title: dto.title, category: dto.category, dueAt: dto.dueAt ?? null },
+      payload: {
+        title: dto.title,
+        category: dto.category,
+        priority,
+        dueAt: dueAt.toISOString(),
+      },
     });
 
     void this.mail.notifyAdmins('request.created', {
@@ -134,19 +388,33 @@ export class CommunicationsService {
       lastName: request.author.lastName,
       title: dto.title,
       body: dto.description,
+      actionPath: '/admin/dispatch',
+      actionLabel: 'Відкрити чергу заявок',
     });
 
-    return request;
+    return this.withPhotoUrls(this.enrichRequestSla(request));
   }
 
-  async updateRequest(id: string, dto: UpdateRequestDto, userId: string) {
+  async updateRequest(id: string, dto: UpdateRequestDto, userId: string, actorRole?: string) {
     const request = await this.prisma.request.findUnique({ where: { id } });
     if (!request) throw new NotFoundException('Заявку не знайдено');
 
+    // Crew may only update own assigned tickets (status)
+    if (actorRole === UserRole.crew) {
+      if (request.assigneeId !== userId) {
+        throw new ForbiddenException('Бригада може змінювати лише призначені собі заявки');
+      }
+      if (dto.assigneeId && dto.assigneeId !== userId) {
+        throw new ForbiddenException('Бригада не може перепризначати заявки');
+      }
+    }
+
     if (dto.assigneeId) {
       const assignee = await this.prisma.user.findUnique({ where: { id: dto.assigneeId } });
-      if (!assignee || !ADMIN_ROLES.includes(assignee.role)) {
-        throw new BadRequestException('Виконавець має бути з правління');
+      if (!assignee || !REQUEST_ASSIGNEE_ROLES.includes(assignee.role)) {
+        throw new BadRequestException(
+          'Виконавець: диспетчер, бригада, правління або керівник',
+        );
       }
     }
 
@@ -154,6 +422,7 @@ export class CommunicationsService {
       where: { id },
       data: {
         status: dto.status,
+        priority: dto.priority,
         assigneeId: dto.assigneeId,
         ...(dto.dueAt !== undefined
           ? { dueAt: dto.dueAt ? new Date(dto.dueAt) : null }
@@ -174,18 +443,32 @@ export class CommunicationsService {
       },
     });
 
-    if (dto.status && dto.status !== request.status && updated.author.emailNotifyEnabled !== false) {
+    if (dto.status && dto.status !== request.status) {
       const statusLabel: Record<string, string> = {
         new: 'Нова',
         in_progress: 'В роботі',
         done: 'Виконано',
       };
-      void this.mail.sendTemplate(updated.author.email, 'request.status_changed', {
-        firstName: updated.author.firstName,
-        lastName: updated.author.lastName,
-        title: updated.title,
-        status: statusLabel[dto.status] ?? dto.status,
-      });
+      const statusText = statusLabel[dto.status] ?? dto.status;
+      void this.notifications
+        .notifyUser(updated.author.id, {
+          title: 'Статус заявки оновлено',
+          body: `${updated.title}: ${statusText}`,
+          url: `/resident?tab=requests&requestId=${updated.id}`,
+          kind: 'request_status',
+        })
+        .catch(() => undefined);
+      if (updated.author.emailNotifyEnabled !== false) {
+        void this.mail.sendTemplate(updated.author.email, 'request.status_changed', {
+          firstName: updated.author.firstName,
+          lastName: updated.author.lastName,
+          title: updated.title,
+          status: statusText,
+          requestId: updated.id,
+          actionPath: `/resident?tab=requests&requestId=${updated.id}`,
+          actionLabel: 'Відкрити мою заявку',
+        });
+      }
     }
 
     await this.audit.log({
@@ -193,9 +476,14 @@ export class CommunicationsService {
       action: 'request.updated',
       entityType: 'Request',
       entityId: id,
-      payload: { status: dto.status, assigneeId: dto.assigneeId, dueAt: dto.dueAt },
+      payload: {
+        status: dto.status,
+        priority: dto.priority,
+        assigneeId: dto.assigneeId,
+        dueAt: dto.dueAt,
+      },
     });
-    return updated;
+    return this.withPhotoUrls(this.enrichRequestSla(updated));
   }
 
   async listPolls(userId?: string) {

@@ -6,8 +6,10 @@ export interface AuthUser {
   role: string;
   apartmentId?: string | null;
   apartmentIds?: string[];
-  /** ОСББ tenant; null for platform super_admin */
+  /** Organization tenant; null for platform super_admin */
   tenantId?: string | null;
+  /** Refresh-session id from access JWT (for current-device marking). */
+  sid?: string | null;
 }
 
 export const CurrentUser = createParamDecorator(

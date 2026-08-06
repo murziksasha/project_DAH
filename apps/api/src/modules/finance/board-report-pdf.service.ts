@@ -1,5 +1,17 @@
 import { Injectable } from '@nestjs/common';
+import {
+  getActiveDocTemplate,
+  normalizeDocumentTemplatesConfig,
+  type DocTemplate,
+  type DocTemplateData,
+  type DocumentTemplatesConfig,
+} from '@dah/shared';
 import PDFDocument from 'pdfkit';
+import {
+  drawDocTemplate,
+  type DocTableRows,
+} from '../../common/utils/document-template-pdf';
+import { registerPdfFonts } from '../../common/utils/pdf-font';
 
 export interface BoardReportData {
   buildingName: string;
@@ -17,6 +29,62 @@ export interface BoardReportData {
     byCategory: Array<{ name: string; total: number }>;
   };
   debtors: Array<{ number: string; entrance: number; debt: number; isOverdue: boolean }>;
+  template?: DocTemplate;
+}
+
+function moneyUa(n: number) {
+  return `${n.toLocaleString('uk-UA', { minimumFractionDigits: 2 })} грн`;
+}
+
+export function boardReportToTemplateVars(data: BoardReportData): DocTemplateData {
+  const periodLabel =
+    data.period.from || data.period.to
+      ? `${data.period.from ?? '…'} — ${data.period.to ?? '…'}`
+      : 'Весь період';
+  const totalDebt = data.debtors.reduce((s, d) => s + d.debt, 0);
+  return {
+    buildingName: data.buildingName,
+    buildingAddress: data.buildingAddress,
+    periodFrom: data.period.from ?? '',
+    periodTo: data.period.to ?? '',
+    periodLabel,
+    generatedAt: data.generatedAt.toLocaleString('uk-UA'),
+    totalIncome: moneyUa(data.cashFlow.totalIncome),
+    totalExpenses: moneyUa(data.cashFlow.totalExpenses),
+    netFlow: moneyUa(data.cashFlow.netFlow),
+    totalDebt: moneyUa(totalDebt),
+    debtorsCount: String(data.debtors.length),
+    appName: 'Мій дім',
+    footerNote: '',
+  };
+}
+
+export function boardReportToTables(data: BoardReportData): DocTableRows {
+  return {
+    fund_balances: [
+      ['Фонд', 'Баланс', 'Надходження', 'Витрати'],
+      ...data.cashFlow.fundBalances.map((f) => [
+        f.fundName,
+        moneyUa(f.balance),
+        moneyUa(f.income),
+        moneyUa(f.expenses),
+      ]),
+    ],
+    expenses_by_category: [
+      ['Категорія', 'Сума'],
+      ...data.expensesSummary.byCategory.slice(0, 40).map((c) => [c.name, moneyUa(c.total)]),
+      ['Разом', moneyUa(data.expensesSummary.total)],
+    ],
+    debtors: [
+      ['Кв.', "Під'їзд", 'Борг', 'Статус'],
+      ...data.debtors.slice(0, 60).map((d) => [
+        d.number,
+        String(d.entrance),
+        moneyUa(d.debt),
+        d.isOverdue ? 'Прострочено' : 'До сплати',
+      ]),
+    ],
+  };
 }
 
 @Injectable()
@@ -29,77 +97,22 @@ export class BoardReportPdfService {
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      const money = (n: number) =>
-        `${n.toLocaleString('uk-UA', { minimumFractionDigits: 2 })} грн`;
+      registerPdfFonts(doc);
 
-      doc.fontSize(16).text('Фінансовий звіт для зборів / правління', { align: 'center' });
-      doc.moveDown(0.4);
-      doc.fontSize(11).fillColor('#444').text(data.buildingName, { align: 'center' });
-      doc.text(data.buildingAddress, { align: 'center' });
-      doc.moveDown(0.6);
-      doc.fillColor('#000').fontSize(10);
-      const periodLabel =
-        data.period.from || data.period.to
-          ? `${data.period.from ?? '…'} — ${data.period.to ?? '…'}`
-          : 'Весь період';
-      doc.text(`Період: ${periodLabel}`);
-      doc.text(`Сформовано: ${data.generatedAt.toLocaleString('uk-UA')}`);
-      doc.moveDown(1);
+      const template =
+        data.template ??
+        getActiveDocTemplate(normalizeDocumentTemplatesConfig(null), 'board_report');
+      const vars = boardReportToTemplateVars(data);
+      const tables = boardReportToTables(data);
+      drawDocTemplate(doc, template, vars, tables);
 
-      doc.fontSize(13).text('Рух коштів', { underline: true });
-      doc.moveDown(0.4);
-      doc.fontSize(11);
-      doc.text(`Надходження: ${money(data.cashFlow.totalIncome)}`);
-      doc.text(`Витрати: ${money(data.cashFlow.totalExpenses)}`);
-      doc.text(`Чистий рух: ${money(data.cashFlow.netFlow)}`);
-      doc.moveDown(0.8);
-
-      doc.fontSize(13).text('Баланс фондів', { underline: true });
-      doc.moveDown(0.4);
-      doc.fontSize(10);
-      for (const f of data.cashFlow.fundBalances) {
-        doc.text(
-          `${f.fundName}: баланс ${money(f.balance)} (надх. ${money(f.income)}, витр. ${money(f.expenses)})`,
-        );
-      }
-      doc.moveDown(0.8);
-
-      doc.fontSize(13).text('Витрати за категоріями', { underline: true });
-      doc.moveDown(0.4);
-      doc.fontSize(10);
-      if (!data.expensesSummary.byCategory.length) {
-        doc.text('Немає витрат за період');
-      } else {
-        for (const c of data.expensesSummary.byCategory.slice(0, 20)) {
-          doc.text(`${c.name}: ${money(c.total)}`);
-        }
-        doc.moveDown(0.3);
-        doc.text(`Разом витрат: ${money(data.expensesSummary.total)}`);
-      }
-      doc.moveDown(0.8);
-
-      doc.fontSize(13).text(`Боржники (${data.debtors.length})`, { underline: true });
-      doc.moveDown(0.4);
-      doc.fontSize(10);
-      if (!data.debtors.length) {
-        doc.text('Боржників немає');
-      } else {
-        for (const d of data.debtors.slice(0, 40)) {
-          doc.text(
-            `кв. ${d.number} (під'їзд ${d.entrance}): ${money(d.debt)}${d.isOverdue ? ' — прострочено' : ''}`,
-          );
-        }
-        if (data.debtors.length > 40) {
-          doc.text(`… та ще ${data.debtors.length - 40}`);
-        }
-        const totalDebt = data.debtors.reduce((s, d) => s + d.debt, 0);
-        doc.moveDown(0.3);
-        doc.text(`Загальна дебіторка: ${money(totalDebt)}`);
-      }
-
-      doc.moveDown(1.5);
-      doc.fontSize(9).fillColor('#888').text('DAH OSMD · self-hosted звіт', { align: 'center' });
       doc.end();
     });
   }
+}
+
+export function resolveBoardReportTemplate(
+  config: DocumentTemplatesConfig | unknown,
+): DocTemplate {
+  return getActiveDocTemplate(normalizeDocumentTemplatesConfig(config), 'board_report');
 }

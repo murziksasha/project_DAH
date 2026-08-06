@@ -9,8 +9,10 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { UserRole, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { randomUUID } from 'crypto';
+import { createHash, randomBytes, randomUUID } from 'crypto';
 import { resolveJwtSecret } from '../../common/config/jwt.config';
+import { assertPasswordStrength } from '../../common/utils/password-policy';
+import { openSecret, sealSecret } from '../../common/utils/secret-box';
 import { buildOtpAuthUrl, generateTotpSecret, verifyTotp } from '../../common/utils/totp';
 import { PrismaService } from '../../prisma/prisma.service';
 import { parseBuildingSettings } from '../building/building-settings';
@@ -27,6 +29,18 @@ const TWO_FA_ROLES: UserRole[] = [
   UserRole.board,
   UserRole.auditor,
 ];
+
+/** Roles that should use 2FA for finance / high privilege. */
+const FINANCE_2FA_ROLES: UserRole[] = [
+  UserRole.chairman,
+  UserRole.accountant,
+  UserRole.board,
+  UserRole.super_admin,
+];
+
+const MAX_FAILED_LOGINS = 10;
+const LOCK_MINUTES = 15;
+const RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
 
 export interface SessionMeta {
   userAgent?: string;
@@ -53,26 +67,37 @@ export class AuthService {
     private sms: SmsService,
   ) {}
 
+  private totpPlain(stored: string | null | undefined): string | null {
+    return openSecret(stored);
+  }
+
   async register(dto: RegisterDto) {
     const envEnabled = this.config.get('REGISTRATION_ENABLED', 'true') !== 'false';
     if (!envEnabled) {
       throw new BadRequestException('Реєстрація тимчасово вимкнена');
     }
 
-    const building = await this.prisma.building.findFirst({ select: { settings: true } });
-    const settings = parseBuildingSettings(building?.settings);
+    assertPasswordStrength(dto.password);
+
+    const apartment = await this.prisma.apartment.findUnique({
+      where: { id: dto.apartmentId },
+      include: { building: { select: { tenantId: true, settings: true } } },
+    });
+    if (!apartment) throw new BadRequestException('Квартиру не знайдено');
+
+    const settings = parseBuildingSettings(apartment.building.settings);
     if (settings.registrationEnabled === false) {
       throw new BadRequestException('Реєстрація тимчасово вимкнена адміністратором');
+    }
+    if (settings.registrationInviteCode) {
+      const code = (dto.inviteCode ?? '').trim();
+      if (!code || code !== settings.registrationInviteCode) {
+        throw new BadRequestException('Невірний код запрошення');
+      }
     }
 
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (existing) throw new BadRequestException('Email вже зареєстрований');
-
-    const apartment = await this.prisma.apartment.findUnique({
-      where: { id: dto.apartmentId },
-      include: { building: { select: { tenantId: true } } },
-    });
-    if (!apartment) throw new BadRequestException('Квартиру не знайдено');
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const user = await this.prisma.user.create({
@@ -104,12 +129,16 @@ export class AuthService {
       firstName: user.firstName,
       lastName: user.lastName,
       apartmentNumber: apartment.number,
+      actionPath: '/login?pending=1',
+      actionLabel: 'Сторінка входу',
     });
     void this.mail.notifyAdmins('registration.new_request', {
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
       apartmentNumber: apartment.number,
+      actionPath: '/admin/residents',
+      actionLabel: 'Відкрити заявки на реєстрацію',
     });
 
     return { user, message: 'Очікуйте підтвердження від правління' };
@@ -122,9 +151,16 @@ export class AuthService {
       throw new UnauthorizedException('Невірний email або пароль');
     }
 
+    if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
+      await this.auditLoginFailure(dto.email, 'locked', user.id);
+      throw new UnauthorizedException(
+        `Обліковий запис тимчасово заблоковано до ${user.lockedUntil.toISOString()}. Спробуйте пізніше.`,
+      );
+    }
+
     const valid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!valid) {
-      await this.auditLoginFailure(dto.email, 'bad_password', user.id);
+      await this.recordFailedLogin(user.id, dto.email);
       throw new UnauthorizedException('Невірний email або пароль');
     }
 
@@ -138,9 +174,18 @@ export class AuthService {
       throw new UnauthorizedException('Очікуйте підтвердження від правління');
     }
 
-    if (user.totpEnabled && user.totpSecret) {
+    // Reset lockout counters on good password
+    if (user.failedLoginCount > 0 || user.lockedUntil) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { failedLoginCount: 0, lockedUntil: null },
+      });
+    }
+
+    const totpSecret = this.totpPlain(user.totpSecret);
+    if (user.totpEnabled && totpSecret) {
       if (dto.code) {
-        if (!verifyTotp(dto.code, user.totpSecret)) {
+        if (!verifyTotp(dto.code, totpSecret)) {
           await this.auditLoginFailure(dto.email, 'bad_2fa', user.id);
           throw new UnauthorizedException('Невірний код 2FA');
         }
@@ -166,6 +211,29 @@ export class AuthService {
     return this.completeLogin(user, meta);
   }
 
+  private async recordFailedLogin(userId: string, email: string) {
+    await this.auditLoginFailure(email, 'bad_password', userId);
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { failedLoginCount: { increment: 1 } },
+      select: { failedLoginCount: true },
+    });
+    if (updated.failedLoginCount >= MAX_FAILED_LOGINS) {
+      const lockedUntil = new Date(Date.now() + LOCK_MINUTES * 60 * 1000);
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { lockedUntil, failedLoginCount: 0 },
+      });
+      await this.audit.log({
+        userId,
+        action: 'auth.account_locked',
+        entityType: 'User',
+        entityId: userId,
+        payload: { minutes: LOCK_MINUTES },
+      });
+    }
+  }
+
   async verify2fa(tempToken: string, code: string, meta: SessionMeta = {}) {
     let payload: { sub: string; purpose?: string };
     try {
@@ -180,10 +248,11 @@ export class AuthService {
     }
 
     const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
-    if (!user || user.status !== UserStatus.active || !user.totpEnabled || !user.totpSecret) {
+    const totpSecret = this.totpPlain(user?.totpSecret);
+    if (!user || user.status !== UserStatus.active || !user.totpEnabled || !totpSecret) {
       throw new UnauthorizedException('2FA недоступна');
     }
-    if (!verifyTotp(code, user.totpSecret)) {
+    if (!verifyTotp(code, totpSecret)) {
       await this.auditLoginFailure(user.email, 'bad_2fa', user.id);
       throw new UnauthorizedException('Невірний код 2FA');
     }
@@ -203,13 +272,13 @@ export class AuthService {
     const secret = generateTotpSecret();
     await this.prisma.user.update({
       where: { id: userId },
-      data: { totpTempSecret: secret },
+      data: { totpTempSecret: sealSecret(secret) },
     });
 
     const otpauthUrl = buildOtpAuthUrl({
       secret,
       email: user.email,
-      issuer: 'DAH OSMD',
+      issuer: 'Мій дім',
     });
 
     return {
@@ -221,16 +290,17 @@ export class AuthService {
 
   async enable2fa(userId: string, code: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user?.totpTempSecret) {
+    const temp = this.totpPlain(user?.totpTempSecret);
+    if (!user || !temp) {
       throw new BadRequestException('Спочатку викличте setup 2FA');
     }
-    if (!verifyTotp(code, user.totpTempSecret)) {
+    if (!verifyTotp(code, temp)) {
       throw new BadRequestException('Невірний код — перевірте застосунок-аутентифікатор');
     }
     await this.prisma.user.update({
       where: { id: userId },
       data: {
-        totpSecret: user.totpTempSecret,
+        totpSecret: sealSecret(temp),
         totpEnabled: true,
         totpTempSecret: null,
       },
@@ -250,8 +320,9 @@ export class AuthService {
     if (!user) throw new NotFoundException('Користувача не знайдено');
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) throw new UnauthorizedException('Невірний пароль');
-    if (user.totpEnabled && user.totpSecret) {
-      if (!code || !verifyTotp(code, user.totpSecret)) {
+    const totpSecret = this.totpPlain(user.totpSecret);
+    if (user.totpEnabled && totpSecret) {
+      if (!code || !verifyTotp(code, totpSecret)) {
         throw new BadRequestException('Потрібен код 2FA');
       }
     }
@@ -272,14 +343,135 @@ export class AuthService {
   async get2faStatus(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { totpEnabled: true, role: true, emailNotifyEnabled: true },
+      select: { totpEnabled: true, role: true, emailNotifyEnabled: true, onboardingDone: true },
     });
     if (!user) throw new NotFoundException('Користувача не знайдено');
+    const required =
+      FINANCE_2FA_ROLES.includes(user.role) &&
+      process.env.REQUIRE_FINANCE_2FA !== 'false';
     return {
       totpEnabled: user.totpEnabled,
       available: TWO_FA_ROLES.includes(user.role),
+      required: required && !user.totpEnabled,
+      finance2faRequired: required,
       emailNotifyEnabled: user.emailNotifyEnabled,
+      onboardingDone: user.onboardingDone,
     };
+  }
+
+  async completeOnboarding(userId: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { onboardingDone: true },
+    });
+    return { onboardingDone: true };
+  }
+
+  /**
+   * Soft-check for finance actions: when REQUIRE_FINANCE_2FA is on and role is finance,
+   * user must have totpEnabled. Controllers call this optionally.
+   */
+  async assertFinance2faIfRequired(userId: string) {
+    if (process.env.REQUIRE_FINANCE_2FA === 'false') return;
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true, totpEnabled: true },
+    });
+    if (!user) throw new UnauthorizedException();
+    if (FINANCE_2FA_ROLES.includes(user.role) && !user.totpEnabled) {
+      throw new BadRequestException(
+        'Увімкніть двофакторну автентифікацію (2FA) у «Безпека» перед фінансовими діями',
+      );
+    }
+  }
+
+  async requestPasswordReset(email: string) {
+    const generic = {
+      ok: true as const,
+      message: 'Якщо email зареєстровано, надіслано інструкції для скидання пароля',
+    };
+    const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
+    if (!user || user.status === UserStatus.blocked) {
+      return generic;
+    }
+
+    const raw = randomBytes(32).toString('base64url');
+    const tokenHash = createHash('sha256').update(raw).digest('hex');
+    const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS);
+
+    await this.prisma.passwordResetToken.create({
+      data: { userId: user.id, tokenHash, expiresAt },
+    });
+
+    const appUrl = (this.config.get<string>('APP_URL') ?? 'http://localhost:8080').replace(
+      /\/$/,
+      '',
+    );
+    const resetUrl = `${appUrl}/login?reset=${raw}`;
+
+    void this.mail.sendTemplate(user.email, 'auth.password_reset', {
+      firstName: user.firstName,
+      lastName: user.lastName,
+      actionUrl: resetUrl,
+      actionLabel: 'Скинути пароль',
+    });
+
+    await this.audit.log({
+      userId: user.id,
+      action: 'auth.password_reset_requested',
+      entityType: 'User',
+      entityId: user.id,
+      payload: {},
+    });
+
+    return generic;
+  }
+
+  async resetPasswordWithToken(token: string, newPassword: string) {
+    assertPasswordStrength(newPassword);
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const row = await this.prisma.passwordResetToken.findFirst({
+      where: {
+        tokenHash,
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      include: { user: true },
+    });
+    if (!row) {
+      throw new BadRequestException('Посилання недійсне або прострочене');
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: row.userId },
+        data: {
+          passwordHash,
+          failedLoginCount: 0,
+          lockedUntil: null,
+          refreshToken: null,
+        },
+      }),
+      this.prisma.passwordResetToken.update({
+        where: { id: row.id },
+        data: { usedAt: new Date() },
+      }),
+      this.prisma.authSession.updateMany({
+        where: { userId: row.userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+
+    await this.audit.log({
+      userId: row.userId,
+      action: 'auth.password_reset_completed',
+      entityType: 'User',
+      entityId: row.userId,
+      payload: {},
+    });
+
+    return { ok: true, message: 'Пароль змінено. Увійдіть з новим паролем.' };
   }
 
   async setEmailNotify(userId: string, enabled: boolean) {
@@ -302,12 +494,72 @@ export class AuthService {
         role: true,
         status: true,
         apartmentId: true,
+        tenantId: true,
         emailNotifyEnabled: true,
         totpEnabled: true,
+        tenant: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            orgType: true,
+            isActive: true,
+          },
+        },
+        apartmentLinks: {
+          orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+          select: {
+            isPrimary: true,
+            apartment: {
+              select: {
+                id: true,
+                number: true,
+                entrance: true,
+                building: { select: { id: true, name: true, address: true } },
+              },
+            },
+          },
+        },
       },
     });
     if (!user) throw new NotFoundException('Користувача не знайдено');
-    return user;
+    const apartments = user.apartmentLinks.map((l) => ({
+      id: l.apartment.id,
+      number: l.apartment.number,
+      entrance: l.apartment.entrance,
+      isPrimary: l.isPrimary,
+      buildingId: l.apartment.building.id,
+      buildingName: l.apartment.building.name,
+      buildingAddress: l.apartment.building.address,
+    }));
+    // Include legacy single apartmentId if not in links
+    if (
+      user.apartmentId &&
+      !apartments.some((a) => a.id === user.apartmentId)
+    ) {
+      const apt = await this.prisma.apartment.findUnique({
+        where: { id: user.apartmentId },
+        select: {
+          id: true,
+          number: true,
+          entrance: true,
+          building: { select: { id: true, name: true, address: true } },
+        },
+      });
+      if (apt) {
+        apartments.unshift({
+          id: apt.id,
+          number: apt.number,
+          entrance: apt.entrance,
+          isPrimary: true,
+          buildingId: apt.building.id,
+          buildingName: apt.building.name,
+          buildingAddress: apt.building.address,
+        });
+      }
+    }
+    const { apartmentLinks: _links, ...rest } = user;
+    return { ...rest, apartments };
   }
 
   async updateProfile(
@@ -356,6 +608,8 @@ export class AuthService {
       throw new BadRequestException('Новий пароль має відрізнятися від поточного');
     }
 
+    assertPasswordStrength(newPassword);
+
     const passwordHash = await bcrypt.hash(newPassword, 10);
     await this.prisma.user.update({
       where: { id: userId },
@@ -383,8 +637,26 @@ export class AuthService {
 
     const updated = await this.prisma.user.update({
       where: { id: userId },
-      data: { status: UserStatus.active },
-      select: { id: true, email: true, status: true, role: true, firstName: true, lastName: true },
+      data: {
+        status: UserStatus.active,
+        approvedAt: new Date(),
+        approvedById: actorId,
+      },
+      select: {
+        id: true,
+        email: true,
+        status: true,
+        role: true,
+        firstName: true,
+        lastName: true,
+        approvedAt: true,
+        approvedById: true,
+      },
+    });
+
+    const approver = await this.prisma.user.findUnique({
+      where: { id: actorId },
+      select: { id: true, email: true, firstName: true, lastName: true, role: true },
     });
 
     await this.audit.log({
@@ -392,12 +664,26 @@ export class AuthService {
       action: 'auth.approve',
       entityType: 'User',
       entityId: userId,
-      payload: { email: user.email, role: user.role },
+      payload: {
+        email: user.email,
+        role: user.role,
+        approvedBy: approver
+          ? {
+              id: approver.id,
+              email: approver.email,
+              firstName: approver.firstName,
+              lastName: approver.lastName,
+              role: approver.role,
+            }
+          : { id: actorId },
+      },
     });
 
     void this.mail.sendTemplate(updated.email, 'registration.approved', {
       firstName: updated.firstName,
       lastName: updated.lastName,
+      actionPath: '/login',
+      actionLabel: 'Увійти в кабінет',
     });
 
     return updated;
@@ -470,11 +756,57 @@ export class AuthService {
     });
   }
 
-  listApartmentsForRegistration() {
-    return this.prisma.apartment.findMany({
+  /**
+   * Public registration helper.
+   * If any building has registrationInviteCode, inviteCode is required and filters that building.
+   * Without invite config, returns apartments of the first building (single-OSBB mode).
+   */
+  async listApartmentsForRegistration(inviteCode?: string) {
+    const buildings = await this.prisma.building.findMany({
+      select: { id: true, settings: true, name: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const withInvite = buildings.filter((b) => {
+      const s = parseBuildingSettings(b.settings);
+      return Boolean(s.registrationInviteCode);
+    });
+
+    let buildingIds: string[];
+
+    if (withInvite.length > 0) {
+      const code = (inviteCode ?? '').trim();
+      if (!code) {
+        return {
+          requiresInvite: true as const,
+          apartments: [] as Array<{ id: string; entrance: number; number: string }>,
+          message: 'Введіть код запрошення від правління',
+        };
+      }
+      const matched = withInvite.filter((b) => {
+        const s = parseBuildingSettings(b.settings);
+        return s.registrationInviteCode === code;
+      });
+      if (!matched.length) {
+        throw new BadRequestException('Невірний код запрошення');
+      }
+      buildingIds = matched.map((b) => b.id);
+    } else {
+      // No invite: only expose first building (limit enumeration for multi-building)
+      const first = buildings[0];
+      if (!first) {
+        return { requiresInvite: false as const, apartments: [] };
+      }
+      buildingIds = [first.id];
+    }
+
+    const apartments = await this.prisma.apartment.findMany({
+      where: { buildingId: { in: buildingIds } },
       select: { id: true, entrance: true, number: true },
       orderBy: [{ entrance: 'asc' }, { number: 'asc' }],
     });
+
+    return { requiresInvite: withInvite.length > 0, apartments };
   }
 
   /**
@@ -525,7 +857,7 @@ export class AuthService {
     // Rotate: revoke current row, issue new session same family
     await this.prisma.authSession.update({
       where: { id: session.id },
-      data: { revokedAt: new Date() },
+      data: { revokedAt: new Date(), lastUsedAt: new Date() },
     });
 
     const tokens = await this.issueSessionTokens(
@@ -543,8 +875,15 @@ export class AuthService {
       data: { refreshToken: await bcrypt.hash(tokens.refreshToken, 10) },
     });
 
+    const tenant = user.tenantId
+      ? await this.prisma.tenant.findUnique({
+          where: { id: user.tenantId },
+          select: { id: true, name: true, slug: true, orgType: true },
+        })
+      : null;
+
     return {
-      user: this.publicUser(user),
+      user: this.publicUser(user, tenant),
       ...tokens,
     };
   }
@@ -599,6 +938,67 @@ export class AuthService {
     return { message: 'Усі сесії завершено' };
   }
 
+  /** Active (non-revoked) refresh sessions for device list UI. */
+  async listSessions(userId: string, currentSid?: string | null) {
+    const rows = await this.prisma.authSession.findMany({
+      where: { userId, revokedAt: null },
+      orderBy: { lastUsedAt: 'desc' },
+      select: {
+        id: true,
+        userAgent: true,
+        ip: true,
+        createdAt: true,
+        lastUsedAt: true,
+        familyId: true,
+      },
+      take: 50,
+    });
+    return {
+      items: rows.map((s) => ({
+        id: s.id,
+        userAgent: s.userAgent,
+        ip: s.ip,
+        createdAt: s.createdAt,
+        lastUsedAt: s.lastUsedAt,
+        current: Boolean(currentSid && s.id === currentSid),
+      })),
+    };
+  }
+
+  async revokeSession(userId: string, sessionId: string, currentSid?: string | null) {
+    const session = await this.prisma.authSession.findFirst({
+      where: { id: sessionId, userId, revokedAt: null },
+    });
+    if (!session) throw new NotFoundException('Сесію не знайдено');
+
+    await this.prisma.authSession.update({
+      where: { id: sessionId },
+      data: { revokedAt: new Date() },
+    });
+    // Revoke whole family so rotated refresh siblings die too
+    await this.prisma.authSession.updateMany({
+      where: { familyId: session.familyId, userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
+    await this.audit.log({
+      userId,
+      action: 'auth.session_revoked',
+      entityType: 'AuthSession',
+      entityId: sessionId,
+      payload: { familyId: session.familyId },
+    });
+
+    const isCurrent = Boolean(currentSid && sessionId === currentSid);
+    if (isCurrent) {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { refreshToken: null },
+      });
+    }
+    return { ok: true, currentRevoked: isCurrent };
+  }
+
   /** SMS OTP login — requires SMS_ENABLED and user.phone match. */
   async requestSmsLogin(phone: string) {
     if (!this.sms.isEnabled()) {
@@ -627,7 +1027,7 @@ export class AuthService {
     const full = await this.prisma.user.findUnique({ where: { id: user.id } });
     if (!full) throw new UnauthorizedException('Користувача не знайдено');
 
-    if (full.totpEnabled && full.totpSecret) {
+    if (full.totpEnabled && this.totpPlain(full.totpSecret)) {
       const tempToken = await this.jwt.signAsync(
         { sub: full.id, purpose: '2fa' },
         { expiresIn: '5m', secret: resolveJwtSecret(this.config) },
@@ -720,23 +1120,33 @@ export class AuthService {
       payload: { role: user.role, tenantId },
     });
 
+    const tenant = tenantId
+      ? await this.prisma.tenant.findUnique({
+          where: { id: tenantId },
+          select: { id: true, name: true, slug: true, orgType: true },
+        })
+      : null;
+
     return {
       requires2fa: false as const,
-      user: this.publicUser({ ...user, tenantId }),
+      user: this.publicUser({ ...user, tenantId }, tenant),
       ...tokens,
     };
   }
 
-  private publicUser(user: {
-    id: string;
-    email: string;
-    firstName: string;
-    lastName: string;
-    role: UserRole;
-    status: UserStatus;
-    apartmentId: string | null;
-    tenantId?: string | null;
-  }) {
+  private publicUser(
+    user: {
+      id: string;
+      email: string;
+      firstName: string;
+      lastName: string;
+      role: UserRole;
+      status: UserStatus;
+      apartmentId: string | null;
+      tenantId?: string | null;
+    },
+    tenant?: { id: string; name: string; slug: string; orgType: string } | null,
+  ) {
     return {
       id: user.id,
       email: user.email,
@@ -746,6 +1156,14 @@ export class AuthService {
       status: user.status,
       apartmentId: user.apartmentId,
       tenantId: user.tenantId ?? null,
+      tenant: tenant
+        ? {
+            id: tenant.id,
+            name: tenant.name,
+            slug: tenant.slug,
+            orgType: tenant.orgType,
+          }
+        : null,
     };
   }
 
@@ -773,6 +1191,7 @@ export class AuthService {
       email,
       role,
       typ: 'access',
+      sid: sessionId,
       tenantId: tid ?? null,
     });
     const refreshToken = await this.jwt.signAsync(

@@ -5,6 +5,14 @@ export interface UserApartmentLink {
   isPrimary?: boolean;
 }
 
+export interface UserApprover {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+}
+
 export interface UserRow {
   id: string;
   email: string;
@@ -14,6 +22,9 @@ export interface UserRow {
   role: string;
   status: string;
   apartmentId: string | null;
+  createdAt?: string;
+  approvedAt?: string | null;
+  approvedBy?: UserApprover | null;
   apartments?: UserApartmentLink[];
   apartment?: { id: string; number: string; entrance: number } | null;
 }

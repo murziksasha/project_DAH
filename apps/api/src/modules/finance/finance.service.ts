@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { JournalEntryType, Prisma } from '@prisma/client';
 import { resolveBuildingId } from '../../common/utils/building-scope';
-import { bomCsv, toCsv } from '../../common/utils/csv-export';
+import { rowsToXlsxBuffer } from '../../common/utils/xlsx-export';
 import {
   viaApartmentTenant,
   viaBuildingTenant,
@@ -16,7 +16,16 @@ import { AuditService } from '../audit/audit.service';
 import { JournalService } from '../journal/journal.service';
 import { StorageService } from '../files/storage.service';
 import { PaymentsService } from '../payments/payments.service';
-import { BoardReportPdfService } from './board-report-pdf.service';
+import {
+  enabledExportFieldKeys,
+  getExportProfile,
+  normalizeDocumentTemplatesConfig,
+} from '@dah/shared';
+import { parseBuildingSettings } from '../building/building-settings';
+import {
+  BoardReportPdfService,
+  resolveBoardReportTemplate,
+} from './board-report-pdf.service';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { CreateSupplierDto } from './dto/create-supplier.dto';
 
@@ -312,9 +321,14 @@ export class FinanceService {
     limit?: number;
     buildingId?: string;
     tenantId?: string | null;
+    /** pending | approved | all (default all non-voided) */
+    approvalStatus?: string;
   }) {
     const where: Prisma.ExpenseWhereInput = { isVoided: false };
     if (params?.fundId) where.fundId = params.fundId;
+    if (params?.approvalStatus === 'pending' || params?.approvalStatus === 'approved') {
+      where.approvalStatus = params.approvalStatus;
+    }
     if (params?.buildingId) {
       where.fund = {
         buildingId: params.buildingId,
@@ -341,9 +355,11 @@ export class FinanceService {
           fund: true,
           category: true,
           supplier: true,
-          createdBy: { select: { firstName: true, lastName: true } },
+          createdBy: { select: { id: true, firstName: true, lastName: true } },
+          approvedBy: { select: { id: true, firstName: true, lastName: true } },
         },
-        orderBy: { date: 'desc' },
+        // pending before approved (string desc: p > a)
+        orderBy: [{ approvalStatus: 'desc' }, { date: 'desc' }],
         skip,
         take: limit,
       }),
@@ -352,6 +368,7 @@ export class FinanceService {
     const items = await Promise.all(
       expenses.map(async (expense) => ({
         ...expense,
+        needsApproval: expense.approvalStatus === 'pending',
         documentUrl: expense.documentKey
           ? await this.storage.getDownloadUrl(expense.documentKey)
           : null,
@@ -387,9 +404,35 @@ export class FinanceService {
     };
   }
 
+  private async assertFinance2fa(userId: string) {
+    if (process.env.REQUIRE_FINANCE_2FA === 'false') return;
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true, totpEnabled: true },
+    });
+    if (!user) throw new BadRequestException('Користувача не знайдено');
+    const financeRoles = new Set(['chairman', 'accountant', 'board', 'super_admin']);
+    if (financeRoles.has(user.role) && !user.totpEnabled) {
+      throw new BadRequestException(
+        'Увімкніть 2FA у розділі «Безпека» перед фінансовими операціями',
+      );
+    }
+  }
+
   async createExpense(dto: CreateExpenseDto, userId: string) {
-    const fund = await this.prisma.fund.findUnique({ where: { id: dto.fundId } });
+    await this.assertFinance2fa(userId);
+    const fund = await this.prisma.fund.findUnique({
+      where: { id: dto.fundId },
+      include: { building: { select: { settings: true } } },
+    });
     if (!fund) throw new NotFoundException('Фонд не знайдено');
+
+    const settings = parseBuildingSettings(fund.building.settings);
+    const threshold = settings.expenseDualApprovalThreshold;
+    const needsApproval =
+      typeof threshold === 'number' &&
+      threshold > 0 &&
+      Number(dto.amount) >= threshold;
 
     const expense = await this.prisma.$transaction(async (tx) => {
       const created = await tx.expense.create({
@@ -402,6 +445,80 @@ export class FinanceService {
           description: dto.description,
           documentKey: dto.documentKey,
           createdById: userId,
+          approvalStatus: needsApproval ? 'pending' : 'approved',
+          approvedAt: needsApproval ? null : new Date(),
+          approvedById: needsApproval ? null : userId,
+        },
+        include: { fund: true, category: true, supplier: true },
+      });
+
+      if (!needsApproval) {
+        await this.journal.write(
+          {
+            type: JournalEntryType.expense,
+            refType: 'Expense',
+            refId: created.id,
+            description: dto.description ?? `Витрата ${dto.amount}`,
+            buildingId: fund.buildingId,
+            fundId: dto.fundId,
+            createdById: userId,
+            lines: [
+              { account: 'expense', debit: dto.amount, fundId: dto.fundId },
+              { account: 'cash', credit: dto.amount, fundId: dto.fundId },
+            ],
+          },
+          tx,
+        );
+      }
+
+      return created;
+    });
+
+    await this.audit.log({
+      userId,
+      action: needsApproval ? 'expense.pending_approval' : 'expense.created',
+      entityType: 'Expense',
+      entityId: expense.id,
+      payload: {
+        amount: dto.amount,
+        fundId: dto.fundId,
+        documentKey: dto.documentKey,
+        approvalStatus: expense.approvalStatus,
+      },
+    });
+
+    return {
+      ...expense,
+      needsApproval,
+      documentUrl: expense.documentKey
+        ? await this.storage.getDownloadUrl(expense.documentKey)
+        : null,
+    };
+  }
+
+  /** Second signature for dual-control expenses. */
+  async approveExpense(id: string, userId: string) {
+    await this.assertFinance2fa(userId);
+    const expense = await this.prisma.expense.findUnique({
+      where: { id },
+      include: { fund: true },
+    });
+    if (!expense) throw new NotFoundException('Витрату не знайдено');
+    if (expense.isVoided) throw new BadRequestException('Витрату анульовано');
+    if (expense.approvalStatus === 'approved') {
+      return expense;
+    }
+    if (expense.createdById === userId) {
+      throw new BadRequestException('Другий підпис має бути іншої особи');
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.expense.update({
+        where: { id },
+        data: {
+          approvalStatus: 'approved',
+          approvedAt: new Date(),
+          approvedById: userId,
         },
         include: { fund: true, category: true, supplier: true },
       });
@@ -410,45 +527,56 @@ export class FinanceService {
         {
           type: JournalEntryType.expense,
           refType: 'Expense',
-          refId: created.id,
-          description: dto.description ?? `Витрата ${dto.amount}`,
-          buildingId: fund.buildingId,
-          fundId: dto.fundId,
+          refId: id,
+          description: expense.description ?? `Витрата ${expense.amount}`,
+          buildingId: expense.fund.buildingId,
+          fundId: expense.fundId,
           createdById: userId,
           lines: [
-            { account: 'expense', debit: dto.amount, fundId: dto.fundId },
-            { account: 'cash', credit: dto.amount, fundId: dto.fundId },
+            { account: 'expense', debit: Number(expense.amount), fundId: expense.fundId },
+            { account: 'cash', credit: Number(expense.amount), fundId: expense.fundId },
           ],
         },
         tx,
       );
 
-      return created;
+      return row;
     });
 
     await this.audit.log({
       userId,
-      action: 'expense.created',
+      action: 'expense.approved',
       entityType: 'Expense',
-      entityId: expense.id,
-      payload: { amount: dto.amount, fundId: dto.fundId, documentKey: dto.documentKey },
+      entityId: id,
+      payload: { amount: Number(expense.amount) },
     });
 
-    return {
-      ...expense,
-      documentUrl: expense.documentKey
-        ? await this.storage.getDownloadUrl(expense.documentKey)
-        : null,
-    };
+    return updated;
   }
 
   async voidExpense(id: string, reason: string, userId: string) {
+    await this.assertFinance2fa(userId);
     const expense = await this.prisma.expense.findUnique({
       where: { id },
       include: { fund: true },
     });
     if (!expense) throw new NotFoundException('Витрату не знайдено');
     if (expense.isVoided) throw new BadRequestException('Витрату вже анульовано');
+    // Pending dual-control: just cancel without journal reverse
+    if (expense.approvalStatus === 'pending') {
+      const row = await this.prisma.expense.update({
+        where: { id },
+        data: { isVoided: true, voidReason: reason },
+      });
+      await this.audit.log({
+        userId,
+        action: 'expense.voided',
+        entityType: 'Expense',
+        entityId: id,
+        payload: { reason, wasPending: true },
+      });
+      return row;
+    }
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const row = await tx.expense.update({
@@ -619,8 +747,12 @@ export class FinanceService {
       this.payments.getDebtorsReport(buildingId, tenantId),
     ]);
 
+    const template = resolveBoardReportTemplate(
+      parseBuildingSettings(building?.settings).documentTemplates,
+    );
+
     const buffer = await this.boardPdf.generate({
-      buildingName: building?.name ?? 'ОСМД',
+      buildingName: building?.name ?? 'Мій дім',
       buildingAddress: building?.address ?? '',
       generatedAt: new Date(),
       period: { from, to },
@@ -645,6 +777,7 @@ export class FinanceService {
         debt: d.debt,
         isOverdue: d.isOverdue,
       })),
+      template,
     });
 
     const stamp = new Date().toISOString().slice(0, 10);
@@ -652,8 +785,7 @@ export class FinanceService {
   }
 
   /**
-   * Excel-friendly export pack (ZIP of UTF-8 CSV with BOM).
-   * Files open in Excel / LibreOffice; 1c_transactions.csv for accountant import.
+   * Export pack: ZIP of real Excel (.xlsx) workbooks.
    */
   async generateExportPack(
     from?: string,
@@ -661,6 +793,29 @@ export class FinanceService {
     buildingId?: string,
     tenantId?: string | null,
   ) {
+    const building = buildingId
+      ? await this.prisma.building.findFirst({
+          where: { id: buildingId, ...(tenantId ? { tenantId } : {}) },
+          select: { settings: true },
+        })
+      : await this.prisma.building.findFirst({
+          where: tenantId ? { tenantId } : undefined,
+          select: { settings: true },
+        });
+    const docConfig = normalizeDocumentTemplatesConfig(
+      parseBuildingSettings(building?.settings).documentTemplates,
+    );
+    const packKeys = new Set(
+      enabledExportFieldKeys(getExportProfile(docConfig, 'export_pack')),
+    );
+    const includeCashFlow = !packKeys.size || packKeys.has('includeCashFlow');
+    const includeDebtors = !packKeys.size || packKeys.has('includeDebtors');
+    const includeExpenses = !packKeys.size || packKeys.has('includeExpenses');
+    const includePayments = !packKeys.size || packKeys.has('includePayments');
+
+    const debtorsFields = enabledExportFieldKeys(getExportProfile(docConfig, 'debtors'));
+    const expenseFields = enabledExportFieldKeys(getExportProfile(docConfig, 'expenses'));
+
     const [cashFlow, expensesSummary, debtors, expensePage] = await Promise.all([
       this.getCashFlowReport(from, to, buildingId, tenantId),
       this.getExpensesSummary(from, to, buildingId, tenantId),
@@ -671,109 +826,171 @@ export class FinanceService {
     const dateFilter: Prisma.DateTimeFilter = {};
     if (from) dateFilter.gte = new Date(from);
     if (to) dateFilter.lte = new Date(to);
-    const payments = await this.prisma.payment.findMany({
-      where: {
-        isVoided: false,
-        ...(Object.keys(dateFilter).length ? { date: dateFilter } : {}),
-        ...(buildingId
-          ? { apartment: { buildingId, ...(tenantId ? { building: { tenantId } } : {}) } }
-          : viaApartmentTenant(tenantId)),
-      },
-      include: { apartment: true },
-      orderBy: { date: 'asc' },
-      take: 2000,
-    });
+    const payments = includePayments
+      ? await this.prisma.payment.findMany({
+          where: {
+            isVoided: false,
+            ...(Object.keys(dateFilter).length ? { date: dateFilter } : {}),
+            ...(buildingId
+              ? { apartment: { buildingId, ...(tenantId ? { building: { tenantId } } : {}) } }
+              : viaApartmentTenant(tenantId)),
+          },
+          include: { apartment: true },
+          orderBy: { date: 'asc' },
+          take: 2000,
+        })
+      : [];
 
-    const cashFlowCsv = toCsv([
-      ['period_from', from ?? ''],
-      ['period_to', to ?? ''],
-      ['total_income', cashFlow.totalIncome],
-      ['total_expenses', cashFlow.totalExpenses],
-      ['net_flow', cashFlow.netFlow],
-      [],
-      ['fund', 'balance', 'income', 'expenses'],
-      ...cashFlow.fundBalances.map((f) => [f.fundName, f.balance, f.income, f.expenses]),
-    ]);
+    const zipFiles: Array<{ name: string; data: Buffer }> = [];
 
-    const debtorsCsv = toCsv([
-      ['apartment', 'entrance', 'debt', 'lines', 'oldest_due', 'overdue'],
-      ...debtors.map((d) => [
-        d.number,
-        d.entrance,
-        d.debt,
-        d.lines,
-        d.oldestDue ? d.oldestDue.toISOString().slice(0, 10) : '',
-        d.isOverdue ? 1 : 0,
-      ]),
-    ]);
-
-    const expensesCsv = toCsv([
-      ['date', 'amount', 'fund', 'category', 'supplier', 'description', 'voided'],
-      ...expensePage.items.map((e) => [
-        new Date(e.date).toISOString().slice(0, 10),
-        Number(e.amount),
-        e.fund?.name ?? '',
-        e.category?.name ?? '',
-        e.supplier?.name ?? '',
-        e.description ?? '',
-        e.isVoided ? 1 : 0,
-      ]),
-    ]);
-
-    // 1C-style flat journal of money movement
-    const txRows: Array<Array<string | number>> = [
-      ['date', 'type', 'amount', 'debit_account', 'credit_account', 'counterpart', 'ref', 'note'],
-    ];
-    for (const p of payments) {
-      txRows.push([
-        p.date.toISOString().slice(0, 10),
-        'payment',
-        Number(p.amount),
-        'cash',
-        'receivable',
-        `kv.${p.apartment.number}`,
-        p.reference ?? p.id,
-        'incoming payment',
+    if (includeCashFlow) {
+      const cashFlowXlsx = await rowsToXlsxBuffer([
+        {
+          name: 'Cash flow',
+          rows: [
+            ['period_from', from ?? ''],
+            ['period_to', to ?? ''],
+            ['total_income', cashFlow.totalIncome],
+            ['total_expenses', cashFlow.totalExpenses],
+            ['net_flow', cashFlow.netFlow],
+            [],
+            ['fund', 'balance', 'income', 'expenses'],
+            ...cashFlow.fundBalances.map((f) => [
+              f.fundName,
+              f.balance,
+              f.income,
+              f.expenses,
+            ]),
+          ],
+        },
       ]);
+      zipFiles.push({ name: 'cash-flow.xlsx', data: cashFlowXlsx });
     }
-    for (const e of expensePage.items) {
-      txRows.push([
-        new Date(e.date).toISOString().slice(0, 10),
-        'expense',
-        Number(e.amount),
-        'expense',
-        'cash',
-        e.supplier?.name ?? e.category?.name ?? '',
-        e.id,
-        e.description ?? '',
-      ]);
-    }
-    const oneCCsv = toCsv(txRows);
 
-    const summaryCsv = toCsv([
-      ['metric', 'value'],
-      ['expenses_total', expensesSummary.total],
-      ['expenses_count', expensesSummary.count],
-      ...expensesSummary.byCategory.map((c) => [`category:${c.name}`, c.total]),
-    ]);
+    if (includeDebtors) {
+      const dKeys =
+        debtorsFields.length > 0
+          ? debtorsFields
+          : ['number', 'entrance', 'debt', 'lines', 'oldestDue', 'isOverdue'];
+      const headerMap: Record<string, string> = {
+        number: 'apartment',
+        entrance: 'entrance',
+        debt: 'debt',
+        lines: 'lines',
+        oldestDue: 'oldest_due',
+        isOverdue: 'overdue',
+      };
+      const debtorsXlsx = await rowsToXlsxBuffer([
+        {
+          name: 'Debtors',
+          rows: [
+            dKeys.map((k) => headerMap[k] ?? k),
+            ...debtors.map((d) =>
+              dKeys.map((k) => {
+                if (k === 'number') return d.number;
+                if (k === 'entrance') return d.entrance;
+                if (k === 'debt') return d.debt;
+                if (k === 'lines') return d.lines;
+                if (k === 'oldestDue')
+                  return d.oldestDue ? d.oldestDue.toISOString().slice(0, 10) : '';
+                if (k === 'isOverdue') return d.isOverdue ? 1 : 0;
+                return '';
+              }),
+            ),
+          ],
+        },
+      ]);
+      zipFiles.push({ name: 'debtors.xlsx', data: debtorsXlsx });
+    }
+
+    if (includeExpenses) {
+      const eKeys =
+        expenseFields.length > 0
+          ? expenseFields
+          : ['date', 'amount', 'fund', 'category', 'supplier', 'description'];
+      const expensesXlsx = await rowsToXlsxBuffer([
+        {
+          name: 'Expenses',
+          rows: [
+            eKeys,
+            ...expensePage.items.map((e) =>
+              eKeys.map((k) => {
+                if (k === 'date') return new Date(e.date).toISOString().slice(0, 10);
+                if (k === 'amount') return Number(e.amount);
+                if (k === 'fund') return e.fund?.name ?? '';
+                if (k === 'category') return e.category?.name ?? '';
+                if (k === 'supplier') return e.supplier?.name ?? '';
+                if (k === 'description') return e.description ?? '';
+                return '';
+              }),
+            ),
+          ],
+        },
+      ]);
+      zipFiles.push({ name: 'expenses.xlsx', data: expensesXlsx });
+
+      const summaryXlsx = await rowsToXlsxBuffer([
+        {
+          name: 'Summary',
+          rows: [
+            ['metric', 'value'],
+            ['expenses_total', expensesSummary.total],
+            ['expenses_count', expensesSummary.count],
+            ...expensesSummary.byCategory.map((c) => [`category:${c.name}`, c.total]),
+          ],
+        },
+      ]);
+      zipFiles.push({ name: 'expenses-summary.xlsx', data: summaryXlsx });
+    }
+
+    if (includePayments) {
+      const txRows: Array<Array<string | number>> = [
+        ['date', 'type', 'amount', 'debit_account', 'credit_account', 'counterpart', 'ref', 'note'],
+      ];
+      for (const p of payments) {
+        txRows.push([
+          p.date.toISOString().slice(0, 10),
+          'payment',
+          Number(p.amount),
+          'cash',
+          'receivable',
+          `kv.${p.apartment.number}`,
+          p.reference ?? p.id,
+          'incoming payment',
+        ]);
+      }
+      if (includeExpenses) {
+        for (const e of expensePage.items) {
+          txRows.push([
+            new Date(e.date).toISOString().slice(0, 10),
+            'expense',
+            Number(e.amount),
+            'expense',
+            'cash',
+            e.supplier?.name ?? e.category?.name ?? '',
+            e.id,
+            e.description ?? '',
+          ]);
+        }
+      }
+      const oneCXlsx = await rowsToXlsxBuffer([{ name: 'Transactions', rows: txRows }]);
+      zipFiles.push({ name: '1c_transactions.xlsx', data: oneCXlsx });
+    }
 
     const stamp = new Date().toISOString().slice(0, 10);
     const buffer = createZipStore([
-      { name: 'cash-flow.csv', data: bomCsv(cashFlowCsv) },
-      { name: 'debtors.csv', data: bomCsv(debtorsCsv) },
-      { name: 'expenses.csv', data: bomCsv(expensesCsv) },
-      { name: '1c_transactions.csv', data: bomCsv(oneCCsv) },
-      { name: 'expenses-summary.csv', data: bomCsv(summaryCsv) },
+      ...zipFiles,
       {
         name: 'README.txt',
         data: Buffer.from(
           [
-            'DAH export pack (Excel-friendly CSV, UTF-8 BOM)',
+            'Мій дім export pack (Excel .xlsx)',
             `Generated: ${new Date().toISOString()}`,
             `Period: ${from ?? '…'} – ${to ?? '…'}`,
+            `Files: ${zipFiles.map((f) => f.name).join(', ') || '(none — check constructor)'}`,
             '',
-            'Open CSV in Excel: Data → From Text/CSV, delimiter ";"',
-            '1c_transactions.csv — flat money movement for accountant import.',
+            'Склад пакету налаштовується в «Конструктор документів» → Excel / звіти.',
+            'Open .xlsx in Excel / LibreOffice.',
           ].join('\n'),
           'utf8',
         ),

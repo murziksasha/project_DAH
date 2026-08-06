@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { apiFetch, getToken } from '@/lib/api';
 import { getSelectedBuildingId, setSelectedBuildingId } from '@/lib/building-context';
 
@@ -12,6 +13,7 @@ interface BuildingRow {
 }
 
 export function BuildingSwitcher() {
+  const { t } = useI18n();
   const [buildings, setBuildings] = useState<BuildingRow[]>([]);
   const [selected, setSelected] = useState<string>('');
 
@@ -41,7 +43,7 @@ export function BuildingSwitcher() {
 
   return (
     <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem' }}>
-      <span style={{ color: 'var(--muted)' }}>Будинок</span>
+      <span style={{ color: 'var(--muted)' }}>{t('buildingSwitcher')}</span>
       <select
         value={selected}
         onChange={(e) => {

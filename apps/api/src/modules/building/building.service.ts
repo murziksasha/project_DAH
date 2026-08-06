@@ -1,4 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  normalizeDocumentTemplatesConfig,
+  type DocumentTemplatesConfig,
+} from '@dah/shared';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -12,6 +16,7 @@ import { CreateResidentDto } from './dto/create-resident.dto';
 import { UpdateApartmentDto } from './dto/update-apartment.dto';
 import { UpdateResidentDto } from './dto/update-resident.dto';
 import { UpdateBuildingSettingsDto } from './dto/update-settings.dto';
+import { UpdateDocumentTemplatesDto } from './dto/update-document-templates.dto';
 
 @Injectable()
 export class BuildingService {
@@ -171,12 +176,16 @@ export class BuildingService {
       isInitialized: building.isInitialized,
       showDebtorsToResidents: building.showDebtorsToResidents,
       registrationEnabled: json.registrationEnabled ?? DEFAULT_BUILDING_SETTINGS.registrationEnabled,
+      registrationInviteCode: json.registrationInviteCode ?? '',
+      expenseDualApprovalThreshold: json.expenseDualApprovalThreshold ?? null,
       showBankDetailsToResidents:
         json.showBankDetailsToResidents ?? DEFAULT_BUILDING_SETTINGS.showBankDetailsToResidents,
       defaultAccrualDueDays:
         json.defaultAccrualDueDays ?? DEFAULT_BUILDING_SETTINGS.defaultAccrualDueDays,
       reminderDaysBeforeDue: json.reminderDaysBeforeDue ?? 3,
+      metersReadingDeadlineDay: json.metersReadingDeadlineDay ?? 5,
       locale: json.locale ?? DEFAULT_BUILDING_SETTINGS.locale,
+      slaHoursByCategory: json.slaHoursByCategory ?? {},
       features: json.features ?? {},
     };
   }
@@ -198,7 +207,24 @@ export class BuildingService {
       ...(dto.reminderDaysBeforeDue !== undefined
         ? { reminderDaysBeforeDue: dto.reminderDaysBeforeDue }
         : {}),
+      ...(dto.metersReadingDeadlineDay !== undefined
+        ? { metersReadingDeadlineDay: dto.metersReadingDeadlineDay }
+        : {}),
       ...(dto.locale !== undefined ? { locale: dto.locale } : {}),
+      ...(dto.slaHoursByCategory !== undefined
+        ? {
+            slaHoursByCategory: {
+              ...(parseBuildingSettings(building.settings).slaHoursByCategory ?? {}),
+              ...dto.slaHoursByCategory,
+            },
+          }
+        : {}),
+      ...(dto.registrationInviteCode !== undefined
+        ? { registrationInviteCode: dto.registrationInviteCode?.trim() || undefined }
+        : {}),
+      ...(dto.expenseDualApprovalThreshold !== undefined
+        ? { expenseDualApprovalThreshold: dto.expenseDualApprovalThreshold }
+        : {}),
     };
 
     const updated = await this.prisma.building.update({
@@ -224,7 +250,7 @@ export class BuildingService {
       action: 'building.settings_updated',
       entityType: 'Building',
       entityId: building.id,
-      payload: { changes: { ...dto } },
+      payload: { changes: JSON.parse(JSON.stringify(dto)) } as Prisma.InputJsonValue,
     });
 
     const json = parseBuildingSettings(updated.settings);
@@ -233,13 +259,142 @@ export class BuildingService {
       name: updated.name,
       showDebtorsToResidents: updated.showDebtorsToResidents,
       registrationEnabled: json.registrationEnabled ?? DEFAULT_BUILDING_SETTINGS.registrationEnabled,
+      registrationInviteCode: json.registrationInviteCode ?? '',
+      expenseDualApprovalThreshold: json.expenseDualApprovalThreshold ?? null,
       showBankDetailsToResidents:
         json.showBankDetailsToResidents ?? DEFAULT_BUILDING_SETTINGS.showBankDetailsToResidents,
       defaultAccrualDueDays:
         json.defaultAccrualDueDays ?? DEFAULT_BUILDING_SETTINGS.defaultAccrualDueDays,
       reminderDaysBeforeDue: json.reminderDaysBeforeDue ?? 3,
+      metersReadingDeadlineDay: json.metersReadingDeadlineDay ?? 5,
       locale: json.locale ?? DEFAULT_BUILDING_SETTINGS.locale,
+      slaHoursByCategory: json.slaHoursByCategory ?? {},
     };
+  }
+
+  /** Global search: apartments, users, open requests (admin). */
+  async globalSearch(q: string, tenantId?: string | null) {
+    const term = q.trim();
+    if (term.length < 1) {
+      return { apartments: [], users: [], requests: [] };
+    }
+    const buildingWhere = tenantId ? { building: { tenantId } } : {};
+    const userWhere = tenantId ? { tenantId } : {};
+
+    const [apartments, users, requests] = await Promise.all([
+      this.prisma.apartment.findMany({
+        where: {
+          ...buildingWhere,
+          OR: [
+            { number: { contains: term, mode: 'insensitive' } },
+            { residents: { some: { lastName: { contains: term, mode: 'insensitive' } } } },
+          ],
+        },
+        take: 20,
+        select: {
+          id: true,
+          number: true,
+          entrance: true,
+          area: true,
+          building: { select: { id: true, name: true } },
+        },
+        orderBy: { number: 'asc' },
+      }),
+      this.prisma.user.findMany({
+        where: {
+          ...userWhere,
+          OR: [
+            { email: { contains: term, mode: 'insensitive' } },
+            { firstName: { contains: term, mode: 'insensitive' } },
+            { lastName: { contains: term, mode: 'insensitive' } },
+            { phone: { contains: term } },
+          ],
+        },
+        take: 20,
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          role: true,
+          status: true,
+          apartmentId: true,
+        },
+        orderBy: { lastName: 'asc' },
+      }),
+      this.prisma.request.findMany({
+        where: {
+          status: { not: 'done' },
+          OR: [
+            { title: { contains: term, mode: 'insensitive' } },
+            { description: { contains: term, mode: 'insensitive' } },
+            { id: { contains: term } },
+          ],
+        },
+        take: 15,
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          priority: true,
+          category: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    return { apartments, users, requests };
+  }
+
+  /**
+   * Document constructor: PDF templates (receipts, board reports) + Excel export field profiles.
+   * Defaults from @dah/shared when nothing saved yet.
+   */
+  async getDocumentTemplates(buildingId?: string): Promise<DocumentTemplatesConfig> {
+    const building = buildingId
+      ? await this.prisma.building.findFirst({
+          where: { id: buildingId },
+          select: { settings: true },
+        })
+      : await this.prisma.building.findFirst({ select: { settings: true } });
+    const json = parseBuildingSettings(building?.settings);
+    return normalizeDocumentTemplatesConfig(json.documentTemplates);
+  }
+
+  async updateDocumentTemplates(
+    dto: UpdateDocumentTemplatesDto,
+    userId: string,
+  ): Promise<DocumentTemplatesConfig> {
+    const building = await this.prisma.building.findFirst();
+    if (!building) throw new NotFoundException('Будинок не налаштовано');
+
+    const normalized = normalizeDocumentTemplatesConfig({
+      forms: dto.forms,
+      exports: dto.exports,
+    });
+
+    await this.prisma.building.update({
+      where: { id: building.id },
+      data: {
+        settings: mergeBuildingSettings(building.settings, {
+          documentTemplates: normalized,
+        }) as Prisma.InputJsonValue,
+      },
+    });
+
+    await this.audit.log({
+      userId,
+      action: 'building.document_templates_updated',
+      entityType: 'Building',
+      entityId: building.id,
+      payload: {
+        forms: normalized.forms.length,
+        exports: normalized.exports.length,
+      },
+    });
+
+    return normalized;
   }
 
   async listApartments(buildingId?: string, tenantId?: string | null) {
@@ -455,6 +610,7 @@ export class BuildingService {
         phone: dto.phone,
         email: dto.email,
         isOwner: dto.isOwner ?? true,
+        iban: dto.iban?.replace(/\s+/g, '').toUpperCase() || null,
       },
     });
 
@@ -481,6 +637,9 @@ export class BuildingService {
         ...(dto.phone !== undefined ? { phone: dto.phone } : {}),
         ...(dto.email !== undefined ? { email: dto.email } : {}),
         ...(dto.isOwner !== undefined ? { isOwner: dto.isOwner } : {}),
+        ...(dto.iban !== undefined
+          ? { iban: dto.iban ? dto.iban.replace(/\s+/g, '').toUpperCase() : null }
+          : {}),
       },
     });
 

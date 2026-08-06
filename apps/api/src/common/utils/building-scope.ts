@@ -14,7 +14,7 @@ export async function resolveBuildingId(
     });
     if (!b) throw new NotFoundException('Будинок не знайдено');
     if (tenantId && b.tenantId !== tenantId) {
-      throw new ForbiddenException('Будинок належить іншому ОСББ');
+      throw new ForbiddenException('Будинок належить іншій організації');
     }
     return b.id;
   }

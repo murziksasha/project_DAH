@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsDateString, IsOptional, IsString } from 'class-validator';
+import { RequestPriority } from '@prisma/client';
+import { IsArray, IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
 
 export class CreateRequestDto {
   @ApiProperty()
@@ -14,7 +15,12 @@ export class CreateRequestDto {
   @IsString()
   category!: string;
 
-  @ApiPropertyOptional({ description: 'SLA due date ISO' })
+  @ApiPropertyOptional({ enum: RequestPriority, default: RequestPriority.normal })
+  @IsOptional()
+  @IsEnum(RequestPriority)
+  priority?: RequestPriority;
+
+  @ApiPropertyOptional({ description: 'SLA due date ISO (auto from category if omitted)' })
   @IsOptional()
   @IsDateString()
   dueAt?: string;
@@ -24,4 +30,9 @@ export class CreateRequestDto {
   @IsArray()
   @IsString({ each: true })
   photoKeys?: string[];
+
+  @ApiPropertyOptional({ description: 'Building id (multi-building)' })
+  @IsOptional()
+  @IsString()
+  buildingId?: string;
 }

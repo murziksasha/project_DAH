@@ -15,9 +15,14 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { JournalService } from '../journal/journal.service';
 import { MailService } from '../mail/mail.service';
+import { parseBuildingSettings } from '../building/building-settings';
 import { CreateAccrualDto } from './dto/create-accrual.dto';
 import { CreateAccrualTemplateDto } from './dto/create-accrual-template.dto';
-import { ReceiptPdfService } from './receipt-pdf.service';
+import {
+  ReceiptPdfService,
+  resolveReceiptTemplate,
+  type ReceiptData,
+} from './receipt-pdf.service';
 
 @Injectable()
 export class AccrualsService {
@@ -288,6 +293,8 @@ export class AccrualsService {
       amount: amountByApt.get(apartmentId),
       dueDate: dueLabel,
       apartmentNumber: numberById.get(apartmentId),
+      actionPath: '/resident?tab=account',
+      actionLabel: 'Переглянути рахунок / сплатити',
     }));
 
     return this.getAccrual(accrual.id);
@@ -393,6 +400,7 @@ export class AccrualsService {
       paidAmount: Prisma.Decimal | number;
       dueDate: Date | null;
       createdAt: Date;
+      status: AccrualLineStatus;
       accrual: { period: string; title: string; fund: { name: string } };
     }>;
     payments: Array<{
@@ -415,17 +423,22 @@ export class AccrualsService {
     const events: Event[] = [];
 
     for (const line of apartment.accrualLines) {
+      const amount = Number(line.amount);
+      const paid = Number(line.paidAmount);
+      const status = this.resolveLineStatus(line.status, line.dueDate, amount, paid);
       events.push({
         id: `accrual-${line.id}`,
         kind: 'accrual',
         at: line.createdAt.toISOString(),
         title: `${line.accrual.title} (${line.accrual.period})`,
-        amount: Number(line.amount),
+        amount,
         meta: {
           fundName: line.accrual.fund.name,
-          paidAmount: Number(line.paidAmount),
+          paidAmount: paid,
           dueDate: line.dueDate,
           lineId: line.id,
+          status,
+          period: line.accrual.period,
         },
       });
     }
@@ -455,8 +468,13 @@ export class AccrualsService {
     const line = await this.prisma.accrualLine.findUnique({
       where: { id: lineId },
       include: {
-        apartment: { include: { building: true } },
-        accrual: { include: { fund: true } },
+        apartment: {
+          include: {
+            building: { include: { bankAccounts: { take: 1 } } },
+            residents: { where: { isOwner: true }, take: 1 },
+          },
+        },
+        accrual: { include: { fund: { include: { bankAccount: true } } } },
       },
     });
 
@@ -466,13 +484,57 @@ export class AccrualsService {
       throw new ForbiddenException('Немає доступу до цієї квитанції');
     }
 
+    const page = await this.toReceiptData(line);
+    return this.receiptPdf.generate(page);
+  }
+
+  private async toReceiptData(line: {
+    id: string;
+    amount: Prisma.Decimal | number;
+    paidAmount: Prisma.Decimal | number;
+    dueDate: Date | null;
+    createdAt: Date;
+    apartment: {
+      number: string;
+      entrance?: number | null;
+      area?: number | null;
+      residents?: Array<{ firstName: string; lastName: string; phone: string | null }>;
+      building: {
+        name: string;
+        address: string;
+        edrpou?: string | null;
+        settings?: unknown;
+        bankAccounts?: Array<{ bankName: string; iban: string }>;
+      };
+    };
+    accrual: {
+      period: string;
+      title: string;
+      fund: {
+        name: string;
+        bankAccount?: { bankName: string; iban: string } | null;
+      };
+    };
+  }): Promise<ReceiptData> {
     const amount = Number(line.amount);
     const paid = Number(line.paidAmount);
+    const owner = line.apartment.residents?.[0];
+    const bank =
+      line.accrual.fund.bankAccount ?? line.apartment.building.bankAccounts?.[0] ?? null;
+    const settings = parseBuildingSettings(line.apartment.building.settings);
+    const template = resolveReceiptTemplate(settings.documentTemplates);
 
-    return this.receiptPdf.generate({
+    return {
       buildingName: line.apartment.building.name,
       buildingAddress: line.apartment.building.address,
+      edrpou: line.apartment.building.edrpou ?? null,
       apartmentNumber: line.apartment.number,
+      entrance: line.apartment.entrance ?? null,
+      area: line.apartment.area != null ? Number(line.apartment.area) : null,
+      ownerName: owner ? `${owner.lastName} ${owner.firstName}` : null,
+      ownerPhone: owner?.phone ?? null,
+      bankName: bank?.bankName ?? null,
+      bankIban: bank?.iban ?? null,
       period: line.accrual.period,
       title: line.accrual.title,
       fundName: line.accrual.fund.name,
@@ -482,22 +544,32 @@ export class AccrualsService {
       dueDate: line.dueDate?.toISOString() ?? null,
       lineId: line.id,
       createdAt: line.createdAt,
-    });
+      template,
+    };
+  }
+
+  private accrualReceiptInclude() {
+    return {
+      fund: { include: { bankAccount: true as const } },
+      lines: {
+        include: {
+          apartment: {
+            include: {
+              building: { include: { bankAccounts: { take: 1 } } },
+              residents: { where: { isOwner: true }, take: 1 },
+            },
+          },
+        },
+        orderBy: { apartment: { number: 'asc' as const } },
+      },
+    };
   }
 
   /** ZIP with one PDF receipt per apartment line of an accrual. */
   async generateAccrualReceiptsZip(accrualId: string): Promise<{ buffer: Buffer; filename: string }> {
     const accrual = await this.prisma.accrual.findUnique({
       where: { id: accrualId },
-      include: {
-        fund: true,
-        lines: {
-          include: {
-            apartment: { include: { building: true } },
-          },
-          orderBy: { apartment: { number: 'asc' } },
-        },
-      },
+      include: this.accrualReceiptInclude(),
     });
     if (!accrual) throw new NotFoundException('Нарахування не знайдено');
     if (!accrual.lines.length) {
@@ -506,22 +578,15 @@ export class AccrualsService {
 
     const files: Array<{ name: string; data: Buffer }> = [];
     for (const line of accrual.lines) {
-      const amount = Number(line.amount);
-      const paid = Number(line.paidAmount);
-      const pdf = await this.receiptPdf.generate({
-        buildingName: line.apartment.building.name,
-        buildingAddress: line.apartment.building.address,
-        apartmentNumber: line.apartment.number,
-        period: accrual.period,
-        title: accrual.title,
-        fundName: accrual.fund.name,
-        amount,
-        paidAmount: paid,
-        balance: roundMoney(amount - paid),
-        dueDate: line.dueDate?.toISOString() ?? null,
-        lineId: line.id,
-        createdAt: line.createdAt,
+      const page = await this.toReceiptData({
+        ...line,
+        accrual: {
+          period: accrual.period,
+          title: accrual.title,
+          fund: accrual.fund,
+        },
       });
+      const pdf = await this.receiptPdf.generate(page);
       const safeNum = String(line.apartment.number).replace(/[^\w.-]+/g, '_');
       files.push({
         name: `kvytantsiia-${accrual.period}-kv-${safeNum}.pdf`,
@@ -538,39 +603,26 @@ export class AccrualsService {
   async generateAccrualReceiptsPdf(accrualId: string): Promise<{ buffer: Buffer; filename: string }> {
     const accrual = await this.prisma.accrual.findUnique({
       where: { id: accrualId },
-      include: {
-        fund: true,
-        lines: {
-          include: {
-            apartment: { include: { building: true } },
-          },
-          orderBy: { apartment: { number: 'asc' } },
-        },
-      },
+      include: this.accrualReceiptInclude(),
     });
     if (!accrual) throw new NotFoundException('Нарахування не знайдено');
     if (!accrual.lines.length) {
       throw new BadRequestException('Немає рядків для квитанцій');
     }
 
-    const pages = accrual.lines.map((line) => {
-      const amount = Number(line.amount);
-      const paid = Number(line.paidAmount);
-      return {
-        buildingName: line.apartment.building.name,
-        buildingAddress: line.apartment.building.address,
-        apartmentNumber: line.apartment.number,
-        period: accrual.period,
-        title: accrual.title,
-        fundName: accrual.fund.name,
-        amount,
-        paidAmount: paid,
-        balance: roundMoney(amount - paid),
-        dueDate: line.dueDate?.toISOString() ?? null,
-        lineId: line.id,
-        createdAt: line.createdAt,
-      };
-    });
+    const pages: ReceiptData[] = [];
+    for (const line of accrual.lines) {
+      pages.push(
+        await this.toReceiptData({
+          ...line,
+          accrual: {
+            period: accrual.period,
+            title: accrual.title,
+            fund: accrual.fund,
+          },
+        }),
+      );
+    }
 
     const buffer = await this.receiptPdf.generateMany(pages);
     return {
@@ -603,35 +655,60 @@ export class AccrualsService {
     return map;
   }
 
-  /** CSV statement for apartment (export pack). */
-  async exportApartmentStatementCsv(apartmentId: string) {
+  /** Excel statement for apartment (admin + resident export). */
+  async exportApartmentStatementXlsx(apartmentId: string) {
+    const { rowsToXlsxBuffer } = await import('../../common/utils/xlsx-export');
     const account = await this.getApartmentAccount(apartmentId);
-    const lines = [
-      'type;date;title;amount;paid;balance;status',
+    const timelineRows: Array<Array<string | number>> = [
+      ['Тип', 'Дата', 'Опис', 'Сума', 'Сплачено', 'Залишок'],
       ...account.timeline.map((e) => {
         const amount = e.amount;
         const meta = e.meta ?? {};
-        return [
-          e.kind,
-          e.at.slice(0, 10),
-          `"${e.title.replace(/"/g, '""')}"`,
-          amount,
-          meta.paidAmount ?? '',
+        const paid =
+          typeof meta.paidAmount === 'number' ? Number(meta.paidAmount) : '';
+        const balance =
           e.kind === 'accrual' && typeof meta.paidAmount === 'number'
             ? roundMoney(amount - Number(meta.paidAmount))
-            : '',
-          '',
-        ].join(';');
+            : '';
+        return [
+          e.kind === 'payment' ? 'Платіж' : 'Нарахування',
+          e.at.slice(0, 10),
+          e.title,
+          amount,
+          paid,
+          balance,
+        ];
       }),
-      '',
-      `summary;debt;${account.summary.debt}`,
-      `summary;advance;${account.summary.advance}`,
-      `summary;totalAccrued;${account.summary.totalAccrued}`,
-      `summary;totalPaid;${account.summary.totalPaid}`,
     ];
+    const linesRows: Array<Array<string | number>> = [
+      ['Період', 'Послуга', 'Фонд', 'Сума', 'Сплачено', 'Залишок', 'Статус'],
+      ...account.lines.map((l) => [
+        l.period,
+        l.title,
+        l.fundName,
+        l.amount,
+        l.paidAmount,
+        l.balance,
+        l.status,
+      ]),
+    ];
+    const summaryRows: Array<Array<string | number>> = [
+      ['Показник', 'Сума'],
+      ['Борг', account.summary.debt],
+      ['Аванс', account.summary.advance],
+      ['Нараховано', account.summary.totalAccrued],
+      ['Сплачено', account.summary.totalPaid],
+      ['Квартира', account.apartment.number],
+      ['Будинок', account.apartment.buildingName],
+    ];
+    const buffer = await rowsToXlsxBuffer([
+      { name: 'Підсумок', rows: summaryRows },
+      { name: 'Історія', rows: timelineRows },
+      { name: 'Нарахування', rows: linesRows },
+    ]);
     return {
-      filename: `account-kv-${account.apartment.number}.csv`,
-      csv: '\uFEFF' + lines.join('\n'),
+      filename: `account-kv-${account.apartment.number}.xlsx`,
+      buffer,
     };
   }
 

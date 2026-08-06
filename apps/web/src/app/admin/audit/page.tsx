@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
@@ -26,30 +27,6 @@ interface AuditResponse {
   nextCursor: string | null;
 }
 
-const ACTION_LABELS: Record<string, string> = {
-  'auth.login': 'Вхід',
-  'auth.logout': 'Вихід',
-  'auth.approve': 'Підтвердження мешканця',
-  'auth.reject': 'Відхилення мешканця',
-  'auth.2fa_enabled': '2FA увімкнено',
-  'auth.2fa_disabled': '2FA вимкнено',
-  'expense.created': 'Витрата створена',
-  'expense.voided': 'Витрата анульована',
-  'accrual.created': 'Нарахування',
-  'payment.created': 'Платіж',
-  'payment.voided': 'Платіж анульовано',
-  'payment.import': 'Імпорт платежів',
-  'announcement.created': 'Оголошення',
-  'announcement.deleted': 'Оголошення видалено',
-  'request.created': 'Заявка',
-  'request.updated': 'Заявка оновлена',
-  'poll.created': 'Опитування',
-  'poll.closed': 'Опитування закрито',
-  'document.created': 'Документ',
-  'document.deleted': 'Документ видалено',
-  'building.settings_updated': 'Налаштування',
-};
-
 const PRESET_ACTIONS = [
   '',
   'payment',
@@ -61,6 +38,7 @@ const PRESET_ACTIONS = [
 ];
 
 export default function AuditPage() {
+  const { t, locale } = useI18n();
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
@@ -69,6 +47,39 @@ export default function AuditPage() {
   const [to, setTo] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const ACTION_LABELS: Record<string, string> = {
+    'auth.login': t('login'),
+    'auth.logout': t('logout'),
+    'auth.logout_all': t('securityLogoutAll'),
+    'auth.session_revoked': t('securitySessionRevoke'),
+    'auth.password_reset_requested': 'Password reset request',
+    'auth.password_reset_completed': 'Password reset',
+    'auth.password_changed': t('securityPasswordChanged'),
+    'auth.account_locked': 'Account locked',
+    'auth.approve': t('residentsApprove'),
+    'auth.reject': t('residentsReject'),
+    'auth.2fa_enabled': t('securityEnabled'),
+    'auth.2fa_disabled': t('securityDisabled'),
+    'expense.created': t('expenseSaved'),
+    'expense.pending_approval': t('expenseStatusPending'),
+    'expense.approved': t('expenseApproved'),
+    'expense.voided': t('expenseVoided'),
+    'backup.downloaded': 'Backup download',
+    'accrual.created': t('accrualsTitle'),
+    'payment.created': t('paymentsTitle'),
+    'payment.voided': t('paymentsTitle'),
+    'payment.import': t('import'),
+    'announcement.created': t('commsAnnouncements'),
+    'announcement.deleted': t('commsAnnDeleted'),
+    'request.created': t('commsRequests'),
+    'request.updated': t('commsRequests'),
+    'poll.created': t('commsPolls'),
+    'poll.closed': t('commsPolls'),
+    'document.created': t('documents'),
+    'document.deleted': t('documents'),
+    'building.settings_updated': t('settings'),
+  };
 
   const load = useCallback(
     async (nextCursor?: string | null, append = false) => {
@@ -90,26 +101,28 @@ export default function AuditPage() {
         setLogs(append ? (prev) => [...prev, ...data.items] : data.items);
         setCursor(data.nextCursor);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Помилка');
+        setError(err instanceof Error ? err.message : t('error'));
       } finally {
         setLoading(false);
       }
     },
-    [filter, entityType, from, to],
+    [filter, entityType, from, to, t],
   );
 
   useEffect(() => {
     load().catch(() => undefined);
   }, [load]);
 
+  const timeLocale = locale === 'ru' ? 'ru-RU' : 'uk-UA';
+
   return (
     <main>
       <PageHeader
-        title="Журнал аудиту"
-        description="Фінансові та адміністративні дії"
+        title={t('auditPageTitle')}
+        description={t('auditPageDesc')}
         actions={
           <button type="button" className="btn btn-sm btn-ghost no-print" onClick={() => window.print()}>
-            Друк
+            {t('auditPrint')}
           </button>
         }
       />
@@ -125,9 +138,9 @@ export default function AuditPage() {
         }}
       >
         <div>
-          <label htmlFor="act">Дія</label>
+          <label htmlFor="act">{t('auditAction')}</label>
           <select id="act" value={filter} onChange={(e) => setFilter(e.target.value)}>
-            <option value="">Усі</option>
+            <option value="">{t('all')}</option>
             {PRESET_ACTIONS.filter(Boolean).map((a) => (
               <option key={a} value={a}>
                 {a}
@@ -136,7 +149,7 @@ export default function AuditPage() {
           </select>
         </div>
         <div>
-          <label htmlFor="ent">Сутність</label>
+          <label htmlFor="ent">{t('auditEntity')}</label>
           <input
             id="ent"
             placeholder="Payment, Expense…"
@@ -145,15 +158,15 @@ export default function AuditPage() {
           />
         </div>
         <div>
-          <label htmlFor="af">Від</label>
+          <label htmlFor="af">{t('from')}</label>
           <input id="af" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
         </div>
         <div>
-          <label htmlFor="at">До</label>
+          <label htmlFor="at">{t('to')}</label>
           <input id="at" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </div>
         <button type="button" onClick={() => load()} disabled={loading}>
-          {loading ? '…' : 'Оновити'}
+          {loading ? '…' : t('refresh')}
         </button>
       </div>
 
@@ -161,7 +174,7 @@ export default function AuditPage() {
 
       <section className="card">
         {logs.length === 0 ? (
-          <EmptyState title="Записів немає" description="Змініть фільтр або виконайте дію в системі." />
+          <EmptyState title={t('auditEmptyTitle')} description={t('auditEmptyDesc')} />
         ) : (
           <ul className="audit-log-list">
             {logs.map((log) => (
@@ -180,7 +193,7 @@ export default function AuditPage() {
                   </div>
                   <time className="audit-log-time">
                     {formatDateUk(log.createdAt)}{' '}
-                    {new Date(log.createdAt).toLocaleTimeString('uk-UA', {
+                    {new Date(log.createdAt).toLocaleTimeString(timeLocale, {
                       hour: '2-digit',
                       minute: '2-digit',
                     })}
@@ -201,7 +214,7 @@ export default function AuditPage() {
             disabled={loading}
             onClick={() => load(cursor, true)}
           >
-            Ще
+            {t('auditMore')}
           </button>
         )}
       </section>

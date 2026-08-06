@@ -1,9 +1,10 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
-import { setStoredLocale, type Locale } from '@/lib/i18n';
+import type { Locale } from '@/lib/i18n';
 
 interface Settings {
   id?: string;
@@ -12,13 +13,18 @@ interface Settings {
   edrpou?: string | null;
   showDebtorsToResidents: boolean;
   registrationEnabled: boolean;
+  registrationInviteCode?: string;
+  expenseDualApprovalThreshold?: number | null;
   showBankDetailsToResidents: boolean;
   defaultAccrualDueDays: number;
   reminderDaysBeforeDue?: number;
+  metersReadingDeadlineDay?: number;
   locale: 'uk' | 'ru';
+  slaHoursByCategory?: Record<string, number>;
 }
 
 export default function SettingsPage() {
+  const { t, setLocale } = useI18n();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [profile, setProfile] = useState({ name: '', address: '', edrpou: '' });
   const [message, setMessage] = useState('');
@@ -99,7 +105,7 @@ export default function SettingsPage() {
             }
           : s,
       );
-      setMessage('Дані ОСМД збережено');
+      setMessage('Дані організації збережено');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Помилка');
     } finally {
@@ -194,7 +200,7 @@ export default function SettingsPage() {
         className="card"
         style={{ display: 'grid', gap: '0.75rem', marginBottom: '1rem' }}
       >
-        <h2 style={{ fontSize: '1rem' }}>Профіль ОСМД</h2>
+        <h2 style={{ fontSize: '1rem' }}>Профіль організації</h2>
         <div>
           <label htmlFor="bname">Назва</label>
           <input
@@ -257,6 +263,17 @@ export default function SettingsPage() {
       </section>
 
       <section className="card" style={{ marginBottom: '1rem' }}>
+        <h2 style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>Документи та звіти</h2>
+        <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+          Конструктор квитанцій, PDF для зборів і колонок Excel — які поля бачать мешканці та
+          які дані потрапляють у вигрузки.
+        </p>
+        <a className="btn btn-sm" href="/admin/document-templates">
+          Відкрити конструктор документів
+        </a>
+      </section>
+
+      <section className="card" style={{ marginBottom: '1rem' }}>
         <h2 style={{ fontSize: '1rem', marginBottom: '1rem' }}>Прозорість</h2>
         <ToggleRow
           label="Список боржників для мешканців"
@@ -285,6 +302,125 @@ export default function SettingsPage() {
           onToggle={() => patch({ registrationEnabled: !settings.registrationEnabled })}
           disabled={saving}
         />
+        <div style={{ marginTop: '1rem' }}>
+          <label htmlFor="invite-code">Код запрошення (реєстрація)</label>
+          <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '0 0 0.5rem' }}>
+            Якщо задано — список квартир і реєстрація лише з цим кодом (захист від перебору).
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              id="invite-code"
+              value={settings.registrationInviteCode ?? ''}
+              onChange={(e) =>
+                setSettings({ ...settings, registrationInviteCode: e.target.value })
+              }
+              placeholder="напр. OSBB-2026"
+              style={{ flex: 1, minWidth: 160 }}
+            />
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={saving}
+              onClick={() =>
+                void patch({
+                  registrationInviteCode: settings.registrationInviteCode ?? '',
+                })
+              }
+            >
+              Зберегти код
+            </button>
+          </div>
+        </div>
+        <div style={{ marginTop: '1rem' }}>
+          <label htmlFor="dual-threshold">Подвійне підтвердження витрат від (₴)</label>
+          <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '0 0 0.5rem' }}>
+            0 або порожньо — вимкнено. Більші витрати потребують другого підпису.
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              id="dual-threshold"
+              type="number"
+              min={0}
+              step={100}
+              value={settings.expenseDualApprovalThreshold ?? ''}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  expenseDualApprovalThreshold:
+                    e.target.value === '' ? null : Number(e.target.value),
+                })
+              }
+              style={{ flex: 1, minWidth: 120 }}
+            />
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={saving}
+              onClick={() =>
+                void patch({
+                  expenseDualApprovalThreshold:
+                    settings.expenseDualApprovalThreshold ?? null,
+                })
+              }
+            >
+              Зберегти
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="card" style={{ marginBottom: '1rem' }}>
+        <h2 style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>SLA заявок (години)</h2>
+        <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+          Дедлайн заявки = години × пріоритет (urgent скорочує). Зберігається в Building.settings.
+        </p>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+            gap: '0.75rem',
+          }}
+        >
+          {(
+            [
+              ['sanitary', 'Сантехніка', 24],
+              ['electric', 'Електрика', 24],
+              ['cleaning', 'Прибирання', 72],
+              ['elevator', 'Ліфт', 4],
+              ['heating', 'Опалення', 12],
+              ['other', 'Інше', 48],
+              ['default', 'За замовч.', 48],
+            ] as const
+          ).map(([key, label, def]) => (
+            <div key={key}>
+              <label htmlFor={`sla-${key}`}>{label}</label>
+              <input
+                id={`sla-${key}`}
+                type="number"
+                min={1}
+                max={720}
+                value={settings.slaHoursByCategory?.[key] ?? def}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    slaHoursByCategory: {
+                      ...(settings.slaHoursByCategory ?? {}),
+                      [key]: Number(e.target.value),
+                    },
+                  })
+                }
+                onBlur={() =>
+                  patch({
+                    slaHoursByCategory: {
+                      ...(settings.slaHoursByCategory ?? {}),
+                      [key]: settings.slaHoursByCategory?.[key] ?? def,
+                    },
+                  })
+                }
+              />
+            </div>
+          ))}
+        </div>
       </section>
 
       <section className="card">
@@ -317,15 +453,39 @@ export default function SettingsPage() {
             onBlur={() => patch({ reminderDaysBeforeDue: settings.reminderDaysBeforeDue ?? 3 })}
           />
         </div>
+        <div style={{ marginBottom: '1rem' }}>
+          <label htmlFor="metersDeadline">Дедлайн показів лічильників (день місяця, 1–28)</label>
+          <input
+            id="metersDeadline"
+            type="number"
+            min={1}
+            max={28}
+            value={settings.metersReadingDeadlineDay ?? 5}
+            onChange={(e) =>
+              setSettings({
+                ...settings,
+                metersReadingDeadlineDay: Number(e.target.value),
+              })
+            }
+            onBlur={() =>
+              patch({
+                metersReadingDeadlineDay: settings.metersReadingDeadlineDay ?? 5,
+              })
+            }
+          />
+          <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginTop: 4 }}>
+            Мешканці бачать банер на домівці до цього дня, якщо покази ще не передано.
+          </p>
+        </div>
         <div>
-          <label htmlFor="locale">Мова інтерфейсу</label>
+          <label htmlFor="locale">{t('settingsLocale')}</label>
           <select
             id="locale"
             value={settings.locale}
             onChange={(e) => {
               const locale = e.target.value as Locale;
               setSettings({ ...settings, locale });
-              setStoredLocale(locale);
+              setLocale(locale);
               patch({ locale });
             }}
           >

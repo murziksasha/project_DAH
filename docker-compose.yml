@@ -16,7 +16,9 @@ services:
       timeout: 5s
       retries: 5
 
+  # Optional legacy queue (worker uses inline cron by default). Start with: --profile redis
   redis:
+    profiles: ["redis"]
     image: redis:7-alpine
     restart: unless-stopped
     ports:
@@ -69,12 +71,17 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-dah}:${POSTGRES_PASSWORD:-dah_secret_change_me}@postgres:5432/${POSTGRES_DB:-dah}
-      REDIS_URL: redis://redis:6379
+      # Redis optional (health skips when empty / none)
+      REDIS_URL: ${REDIS_URL:-none}
       S3_ENDPOINT: http://minio:9000
+      BACKUP_DIR: /backups
+      BACKUP_STATUS_PATH: /backups/last-backup.json
+      # Weekly dumps are fine for health "stale" threshold (default was 48h)
+      BACKUP_MAX_AGE_HOURS: ${BACKUP_MAX_AGE_HOURS:-192}
+    volumes:
+      - ./backups:/backups
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
@@ -90,12 +97,17 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-dah}:${POSTGRES_PASSWORD:-dah_secret_change_me}@postgres:5432/${POSTGRES_DB:-dah}
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: ${REDIS_URL:-none}
       S3_ENDPOINT: http://minio:9000
+      BACKUP_DIR: /backups
+      BACKUP_STATUS_PATH: /backups/last-backup.json
+    volumes:
+      - ./backups:/backups
     depends_on:
       api:
         condition: service_started
 
+  # Static Next export served by nginx:alpine (no Node process)
   web:
     build:
       context: .
@@ -103,9 +115,6 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001/api}
     restart: unless-stopped
-    env_file: .env
-    environment:
-      API_UPSTREAM: http://api:3001
     depends_on:
       - api
     ports:

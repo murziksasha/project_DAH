@@ -1,6 +1,8 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
 import { downloadCsv } from '@/lib/csv';
@@ -49,6 +51,8 @@ interface ImportPreview {
     invalid: number;
     totalAmount: number;
   };
+  format?: string;
+  detectedFormat?: string;
 }
 
 type Tab = 'manual' | 'import' | 'history';
@@ -64,11 +68,12 @@ interface PaymentRow {
 }
 
 const SAMPLE_CSV = `Дата;Сума;Призначення
-01.03.2026;450,00;Оплата внесків ОСМД, кв. 101
+01.03.2026;450,00;Оплата внесків, кв. 101
 02.03.2026;500,00;Квартплата квартира 102
 `;
 
 export default function PaymentsPage() {
+  const { t } = useI18n();
   const [tab, setTab] = useState<Tab>('manual');
   const [apartments, setApartments] = useState<Apartment[]>([]);
   const [apartmentQuery, setApartmentQuery] = useState('');
@@ -83,12 +88,15 @@ export default function PaymentsPage() {
   const [loading, setLoading] = useState(false);
 
   const [csvText, setCsvText] = useState('');
+  const [statementFormat, setStatementFormat] = useState('auto');
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [importLoading, setImportLoading] = useState(false);
 
   const [history, setHistory] = useState<PaymentRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [voidingId, setVoidingId] = useState<string | null>(null);
+  const [confirmVoid, setConfirmVoid] = useState<PaymentRow | null>(null);
+  const [voidReason, setVoidReason] = useState('');
   const [histFrom, setHistFrom] = useState('');
   const [histTo, setHistTo] = useState('');
 
@@ -107,11 +115,11 @@ export default function PaymentsPage() {
       );
       setHistory(Array.isArray(data) ? data : data.items);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка історії');
+      setError(err instanceof Error ? err.message : t('paymentsHistoryError'));
     } finally {
       setHistoryLoading(false);
     }
-  }, [histFrom, histTo]);
+  }, [histFrom, histTo, t]);
 
   const apartmentsQuery = useApartmentsQuery(Boolean(getToken()));
 
@@ -164,7 +172,7 @@ export default function PaymentsPage() {
       );
       setPreview(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
       setPreview(null);
     }
   }
@@ -188,41 +196,42 @@ export default function PaymentsPage() {
           reference: reference || undefined,
         }),
       });
-      setMessage('Платіж зафіксовано та рознесено. Можна ввести наступний.');
+      setMessage(t('paymentsSavedLong'));
       setAmount('');
       setReference('');
       setPreview(null);
       if (tab === 'history') await loadHistory();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     } finally {
       setLoading(false);
     }
   }
 
-  async function voidPayment(id: string) {
-    const reason = window.prompt('Причина анулювання платежу?');
-    if (!reason?.trim()) return;
+  async function voidPayment(payment: PaymentRow, reason: string) {
     const token = getToken();
     if (!token) return;
-    setVoidingId(id);
+    setVoidingId(payment.id);
     setError('');
     try {
-      await apiFetch(`/payments/${id}/void`, {
+      await apiFetch(`/payments/${payment.id}/void`, {
         method: 'PATCH',
         token,
         body: JSON.stringify({ reason: reason.trim() }),
       });
-      setMessage('Платіж анульовано');
+      setMessage(t('paymentsVoided'));
+      setConfirmVoid(null);
+      setVoidReason('');
       await loadHistory();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка анулювання');
+      setError(err instanceof Error ? err.message : t('paymentsVoidError'));
     } finally {
       setVoidingId(null);
     }
   }
 
   function exportHistoryCsv() {
+    // Export content stays as-is (not translated UI chrome)
     const rows: Array<Array<string | number>> = [
       ['Дата', 'Квартира', 'Сума', 'Джерело', 'Референс'],
       ...history.map((p) => [
@@ -239,7 +248,7 @@ export default function PaymentsPage() {
   async function runImportPreview() {
     const token = getToken();
     if (!token || !csvText.trim()) {
-      setError('Вставте або завантажте CSV');
+      setError(t('paymentsPasteCsv'));
       return;
     }
     setImportLoading(true);
@@ -249,11 +258,11 @@ export default function PaymentsPage() {
       const data = await apiFetch<ImportPreview>('/payments/import/preview', {
         method: 'POST',
         token,
-        body: JSON.stringify({ csv: csvText }),
+        body: JSON.stringify({ csv: csvText, format: statementFormat }),
       });
       setImportPreview(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка розбору CSV');
+      setError(err instanceof Error ? err.message : t('paymentsCsvParseError'));
       setImportPreview(null);
     } finally {
       setImportLoading(false);
@@ -272,7 +281,7 @@ export default function PaymentsPage() {
         reference: r.reference || undefined,
       }));
     if (!rows.length) {
-      setError('Немає зіставлених рядків для імпорту');
+      setError(t('paymentsNoMatched'));
       return;
     }
     setImportLoading(true);
@@ -289,8 +298,8 @@ export default function PaymentsPage() {
         body: JSON.stringify({ rows, source: 'bank' }),
       });
       setMessage(
-        `Імпортовано: ${result.created}` +
-          (result.failed ? `, помилок: ${result.failed}` : ''),
+        t('paymentsImported', { created: result.created }) +
+          (result.failed ? t('paymentsImportFailed', { failed: result.failed }) : ''),
       );
       if (result.errors?.length) {
         setError(result.errors.map((e) => e.message).join('; '));
@@ -298,7 +307,7 @@ export default function PaymentsPage() {
       setImportPreview(null);
       setCsvText('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка імпорту');
+      setError(err instanceof Error ? err.message : t('paymentsImportError'));
     } finally {
       setImportLoading(false);
     }
@@ -315,33 +324,34 @@ export default function PaymentsPage() {
   }
 
   return (
+    <>
     <main>
       <PageHeader
-        title="Платежі"
-        description="Реєстрація надходжень з розноскою FIFO або імпорт банківської виписки"
+        title={t('paymentsTitle')}
+        description={t('paymentsDesc')}
       />
 
-      <nav className="nav-scroll" aria-label="Режим платежів">
+      <nav className="nav-scroll" aria-label={t('paymentsModeNav')}>
         <button
           type="button"
           className={`tab-btn${tab === 'manual' ? ' active' : ''}`}
           onClick={() => setTab('manual')}
         >
-          Один платіж
+          {t('paymentsTabManual')}
         </button>
         <button
           type="button"
           className={`tab-btn${tab === 'import' ? ' active' : ''}`}
           onClick={() => setTab('import')}
         >
-          Імпорт CSV
+          {t('paymentsTabImport')}
         </button>
         <button
           type="button"
           className={`tab-btn${tab === 'history' ? ' active' : ''}`}
           onClick={() => setTab('history')}
         >
-          Історія
+          {t('paymentsTabHistory')}
         </button>
       </nav>
 
@@ -352,16 +362,16 @@ export default function PaymentsPage() {
         <>
           <form onSubmit={handleSubmit} className="card" style={{ display: 'grid', gap: '1rem', marginBottom: '1.5rem' }}>
             <div>
-              <label htmlFor="apt-search">Пошук квартири</label>
+              <label htmlFor="apt-search">{t('paymentsAptSearch')}</label>
               <input
                 id="apt-search"
                 value={apartmentQuery}
                 onChange={(e) => setApartmentQuery(e.target.value)}
-                placeholder="Номер квартири або під'їзд"
+                placeholder={t('paymentsAptSearchPh')}
               />
             </div>
             <div>
-              <label htmlFor="apt">Квартира</label>
+              <label htmlFor="apt">{t('paymentsApt')}</label>
               <select
                 id="apt"
                 value={apartmentId}
@@ -371,17 +381,17 @@ export default function PaymentsPage() {
                 }}
                 required
               >
-                {filteredApartments.length === 0 && <option value="">Нічого не знайдено</option>}
+                {filteredApartments.length === 0 && <option value="">{t('nothingFound')}</option>}
                 {filteredApartments.map((a) => (
                   <option key={a.id} value={a.id}>
-                    кв. {a.number} (під&apos;їзд {a.entrance})
+                    {t('paymentsAptOption', { number: a.number, entrance: a.entrance })}
                   </option>
                 ))}
               </select>
             </div>
             <div className="grid-2">
               <div>
-                <label htmlFor="amount">Сума (₴)</label>
+                <label htmlFor="amount">{t('amountUah')}</label>
                 <input
                   id="amount"
                   type="number"
@@ -396,51 +406,55 @@ export default function PaymentsPage() {
                 />
               </div>
               <div>
-                <label htmlFor="date">Дата</label>
+                <label htmlFor="date">{t('paymentsDate')}</label>
                 <input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
               </div>
             </div>
             <div>
-              <label htmlFor="source">Джерело</label>
+              <label htmlFor="source">{t('paymentsSource')}</label>
               <select id="source" value={source} onChange={(e) => setSource(e.target.value as typeof source)}>
-                <option value="bank">Банк</option>
-                <option value="cash">Готівка</option>
-                <option value="transfer">Переказ</option>
+                <option value="bank">{t('paymentBank')}</option>
+                <option value="cash">{t('paymentCash')}</option>
+                <option value="transfer">{t('paymentTransfer')}</option>
               </select>
             </div>
             <div>
-              <label htmlFor="ref">Коментар / референс</label>
+              <label htmlFor="ref">{t('paymentsRef')}</label>
               <input
                 id="ref"
                 value={reference}
                 onChange={(e) => setReference(e.target.value)}
-                placeholder="№ платіжки, призначення..."
+                placeholder={t('paymentsRefPh')}
               />
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
               <button type="button" className="btn btn-ghost" onClick={loadPreview}>
-                Попередній перегляд розноски
+                {t('paymentsPreviewAlloc')}
               </button>
               <button type="submit" disabled={loading || !preview}>
-                {loading ? 'Збереження…' : 'Зафіксувати платіж'}
+                {loading ? t('saving') : t('paymentsNew')}
               </button>
             </div>
             {!preview && (
               <p style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>
-                Спочатку натисніть «Попередній перегляд», потім зафіксуйте платіж.
+                {t('paymentsPreviewHint')}
               </p>
             )}
           </form>
 
           {preview && (
             <section className="card">
-              <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>Розноска (FIFO)</h2>
+              <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>{t('paymentsFifoTitle')}</h2>
               <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginBottom: '1rem' }}>
-                Кв. {preview.apartment.number} · Рознесено: {formatMoney(preview.totalAllocated)}
-                {preview.advance > 0 && ` · Аванс: ${formatMoney(preview.advance)}`}
+                {t('paymentsFifoSummary', {
+                  number: preview.apartment.number,
+                  allocated: formatMoney(preview.totalAllocated),
+                })}
+                {preview.advance > 0 &&
+                  t('paymentsAdvance', { amount: formatMoney(preview.advance) })}
               </p>
               {preview.allocations.length === 0 ? (
-                <p style={{ color: 'var(--muted)' }}>Немає відкритих нарахувань — вся сума буде авансом</p>
+                <p style={{ color: 'var(--muted)' }}>{t('paymentsNoOpenAccruals')}</p>
               ) : (
                 <ul style={{ listStyle: 'none', display: 'grid', gap: '0.5rem' }}>
                   {preview.allocations.map((a) => (
@@ -464,26 +478,43 @@ export default function PaymentsPage() {
       {tab === 'import' && (
         <section className="card" style={{ display: 'grid', gap: '1rem' }}>
           <div>
-            <h2 style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>Банківська виписка (CSV)</h2>
+            <h2 style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>{t('paymentsImportCsvTitle')}</h2>
             <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
-              Колонки: <strong>дата</strong>, <strong>сума</strong>, <strong>призначення</strong> (кома або
-              крапка з комою). У призначенні має бути номер квартири: «кв. 101», «квартира 12».
-              Від&apos;ємні суми пропускаються.
+              {t('paymentsImportCsvDesc')}
             </p>
           </div>
 
           <div>
-            <label htmlFor="csv-file">Файл CSV</label>
+            <label htmlFor="statement-format">{t('paymentsStatementFormat')}</label>
+            <select
+              id="statement-format"
+              value={statementFormat}
+              onChange={(e) => {
+                setStatementFormat(e.target.value);
+                setImportPreview(null);
+              }}
+            >
+              <option value="auto">{t('paymentsFormatAuto')}</option>
+              <option value="generic_csv">{t('paymentsFormatGeneric')}</option>
+              <option value="privatbank">{t('paymentsFormatPrivat')}</option>
+              <option value="monobank">{t('paymentsFormatMono')}</option>
+              <option value="oschadbank">{t('paymentsFormatOschad')}</option>
+              <option value="mt940">{t('paymentsFormatMt940')}</option>
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="csv-file">{t('paymentsCsvFile')}</label>
             <input
               id="csv-file"
               type="file"
-              accept=".csv,text/csv,text/plain"
+              accept=".csv,.txt,text/csv,text/plain"
               onChange={(e) => onFile(e.target.files?.[0] ?? null)}
             />
           </div>
 
           <div>
-            <label htmlFor="csv-text">Або вставте текст</label>
+            <label htmlFor="csv-text">{t('paymentsOrPaste')}</label>
             <textarea
               id="csv-text"
               rows={8}
@@ -499,31 +530,38 @@ export default function PaymentsPage() {
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
             <button type="button" className="btn btn-ghost" onClick={() => setCsvText(SAMPLE_CSV)}>
-              Приклад
+              {t('paymentsExample')}
             </button>
             <button type="button" onClick={runImportPreview} disabled={importLoading || !csvText.trim()}>
-              {importLoading ? 'Обробка…' : 'Розібрати CSV'}
+              {importLoading ? t('processing') : t('paymentsParseCsv')}
             </button>
             <button
               type="button"
               onClick={commitImport}
               disabled={importLoading || !importPreview || importPreview.summary.matched === 0}
             >
-              Імпортувати зіставлені ({importPreview?.summary.matched ?? 0})
+              {t('paymentsImportMatched', { count: importPreview?.summary.matched ?? 0 })}
             </button>
           </div>
 
           {importPreview && (
             <>
+              {(importPreview.format || importPreview.detectedFormat) && (
+                <p style={{ color: 'var(--muted)', fontSize: '0.9rem', margin: 0 }}>
+                  {t('paymentsDetectedFormat', {
+                    format: importPreview.format ?? importPreview.detectedFormat ?? '',
+                  })}
+                </p>
+              )}
               <div className="grid-2">
                 <div className="card" style={{ boxShadow: 'none', background: 'var(--surface-2)' }}>
-                  <div className="stat-label">Зіставлено</div>
+                  <div className="stat-label">{t('paymentsMatched')}</div>
                   <div className="stat-value" style={{ fontSize: '1.25rem' }}>
                     {importPreview.summary.matched} / {importPreview.summary.total}
                   </div>
                 </div>
                 <div className="card" style={{ boxShadow: 'none', background: 'var(--surface-2)' }}>
-                  <div className="stat-label">Сума до імпорту</div>
+                  <div className="stat-label">{t('paymentsImportSum')}</div>
                   <div className="stat-value" style={{ fontSize: '1.25rem', color: 'var(--success)' }}>
                     {formatMoney(importPreview.summary.totalAmount)}
                   </div>
@@ -535,11 +573,11 @@ export default function PaymentsPage() {
                   <thead>
                     <tr>
                       <th>#</th>
-                      <th>Дата</th>
-                      <th>Сума</th>
-                      <th>Кв.</th>
-                      <th>Статус</th>
-                      <th>Призначення</th>
+                      <th>{t('date')}</th>
+                      <th>{t('amount')}</th>
+                      <th>{t('metersColApt')}</th>
+                      <th>{t('status')}</th>
+                      <th>{t('paymentsPurpose')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -562,12 +600,12 @@ export default function PaymentsPage() {
                             }`}
                           >
                             {r.status === 'matched'
-                              ? 'OK'
+                              ? t('paymentsStatusOk')
                               : r.status === 'unmatched'
-                                ? 'Без кв.'
+                                ? t('paymentsStatusNoApt')
                                 : r.status === 'skipped'
-                                  ? 'Пропуск'
-                                  : 'Помилка'}
+                                  ? t('paymentsStatusSkip')
+                                  : t('paymentsStatusError')}
                           </span>
                           {r.message && (
                             <div style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: '0.2rem' }}>
@@ -597,10 +635,10 @@ export default function PaymentsPage() {
               marginBottom: '1rem',
             }}
           >
-            <h2 style={{ fontSize: '1.1rem' }}>Останні платежі</h2>
+            <h2 style={{ fontSize: '1.1rem' }}>{t('paymentsRecent')}</h2>
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
               <button type="button" className="btn btn-sm btn-ghost" onClick={() => loadHistory()}>
-                Оновити
+                {t('refresh')}
               </button>
               <button
                 type="button"
@@ -622,31 +660,31 @@ export default function PaymentsPage() {
             }}
           >
             <div>
-              <label htmlFor="hf">Від</label>
+              <label htmlFor="hf">{t('from')}</label>
               <input id="hf" type="date" value={histFrom} onChange={(e) => setHistFrom(e.target.value)} />
             </div>
             <div>
-              <label htmlFor="ht">До</label>
+              <label htmlFor="ht">{t('to')}</label>
               <input id="ht" type="date" value={histTo} onChange={(e) => setHistTo(e.target.value)} />
             </div>
             <button type="button" className="btn btn-sm" onClick={() => loadHistory()}>
-              Застосувати
+              {t('apply')}
             </button>
           </div>
           {historyLoading ? (
-            <p style={{ color: 'var(--muted)' }}>Завантаження…</p>
+            <p style={{ color: 'var(--muted)' }}>{t('loading')}</p>
           ) : history.length === 0 ? (
-            <p style={{ color: 'var(--muted)' }}>Платіжів ще немає</p>
+            <p style={{ color: 'var(--muted)' }}>{t('paymentsEmptyYet')}</p>
           ) : (
             <div className="table-scroll">
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Дата</th>
-                    <th>Кв.</th>
-                    <th>Сума</th>
-                    <th>Джерело</th>
-                    <th>Референс</th>
+                    <th>{t('date')}</th>
+                    <th>{t('metersColApt')}</th>
+                    <th>{t('amount')}</th>
+                    <th>{t('paymentsColSource')}</th>
+                    <th>{t('paymentsColRef')}</th>
                     <th />
                   </tr>
                 </thead>
@@ -663,9 +701,12 @@ export default function PaymentsPage() {
                           type="button"
                           className="btn btn-sm btn-ghost"
                           disabled={voidingId === p.id}
-                          onClick={() => voidPayment(p.id)}
+                          onClick={() => {
+                            setVoidReason('');
+                            setConfirmVoid(p);
+                          }}
                         >
-                          Анулювати
+                          {t('voidAction')}
                         </button>
                       </td>
                     </tr>
@@ -677,5 +718,38 @@ export default function PaymentsPage() {
         </section>
       )}
     </main>
+      <ConfirmDialog
+        open={Boolean(confirmVoid)}
+        title={t('paymentsVoidTitle')}
+        message={
+          confirmVoid
+            ? `${t('paymentsVoidPrompt')} (−${formatMoney(confirmVoid.amount)}, кв. ${confirmVoid.apartment.number}, ${formatDateUk(confirmVoid.date)})`
+            : t('paymentsVoidPrompt')
+        }
+        confirmLabel={t('voidAction')}
+        cancelLabel={t('cancel')}
+        danger
+        busy={Boolean(voidingId)}
+        confirmDisabled={voidReason.trim().length < 2}
+        onConfirm={() => {
+          if (confirmVoid && voidReason.trim()) void voidPayment(confirmVoid, voidReason);
+        }}
+        onCancel={() => {
+          setConfirmVoid(null);
+          setVoidReason('');
+        }}
+      >
+        <div style={{ marginTop: 12 }}>
+          <label htmlFor="pay-void-reason">{t('paymentsVoidReason')}</label>
+          <input
+            id="pay-void-reason"
+            value={voidReason}
+            onChange={(e) => setVoidReason(e.target.value)}
+            placeholder={t('paymentsVoidReasonPh')}
+            autoFocus
+          />
+        </div>
+      </ConfirmDialog>
+    </>
   );
 }

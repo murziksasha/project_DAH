@@ -6,9 +6,23 @@ export interface StoredUser {
   firstName: string;
   lastName: string;
   role: string;
+  tenantId?: string | null;
+  tenant?: {
+    id: string;
+    name: string;
+    slug: string;
+    orgType: 'osbb' | 'management_company' | string;
+  } | null;
 }
 
-const ADMIN_ROLES = ['chairman', 'accountant', 'board', 'auditor'];
+const ADMIN_ROLES = [
+  'chairman',
+  'accountant',
+  'board',
+  'dispatcher',
+  'crew',
+  'auditor',
+];
 
 export function getStoredUser(): StoredUser | null {
   if (typeof window === 'undefined') return null;
@@ -25,6 +39,8 @@ export function getRoleHome(role: string, isInitialized = true): string {
   if (role === 'super_admin') {
     return isInitialized ? '/admin/organization' : '/admin/setup';
   }
+  // Role dashboards live on /admin (dispatch queue remains a nav item)
+  if (role === 'dispatcher' || role === 'crew') return '/admin';
   if (ADMIN_ROLES.includes(role)) return '/admin';
   if (role === 'resident') return '/resident';
   return '/';

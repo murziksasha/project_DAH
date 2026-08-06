@@ -1,9 +1,14 @@
 'use client';
 
+import Link from 'next/link';
 import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
+import { SessionsPanel } from '@/components/SessionsPanel';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { SkeletonCards } from '@/components/ui/Skeleton';
 import { apiFetch, getToken } from '@/lib/api';
 import { logout } from '@/lib/auth';
+import { getStoredComfort, toggleComfort, type ComfortMode } from '@/lib/comfort';
 import {
   canUsePush,
   getPushSubscriptionStatus,
@@ -12,6 +17,7 @@ import {
 } from '@/lib/push';
 
 export default function ResidentSecurityPage() {
+  const { t } = useI18n();
   const [emailNotify, setEmailNotify] = useState(true);
   const [phone, setPhone] = useState('');
   const [firstName, setFirstName] = useState('');
@@ -25,9 +31,11 @@ export default function ResidentSecurityPage() {
     subscribed: boolean;
     configured: boolean;
   } | null>(null);
+  const [comfort, setComfort] = useState<ComfortMode>('normal');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [pageLoading, setPageLoading] = useState(true);
 
   const load = useCallback(async () => {
     const token = getToken();
@@ -51,10 +59,13 @@ export default function ResidentSecurityPage() {
       setPhone(profile.phone ?? '');
       setFirstName(profile.firstName);
       setLastName(profile.lastName);
+      setComfort(getStoredComfort());
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
+    } finally {
+      setPageLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     load().catch(() => undefined);
@@ -71,9 +82,9 @@ export default function ResidentSecurityPage() {
         body: JSON.stringify({ enabled: next }),
       });
       setEmailNotify(next);
-      setMessage(next ? 'Email увімкнено' : 'Email вимкнено');
+      setMessage(next ? t('residentEmailEnabledMsg') : t('residentEmailDisabledMsg'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     }
   }
 
@@ -100,7 +111,7 @@ export default function ResidentSecurityPage() {
           phone: phone.trim() || null,
         }),
       });
-      setMessage('Профіль збережено');
+      setMessage(t('residentProfileSaved'));
       const prev = localStorage.getItem('dah_user');
       if (prev) {
         try {
@@ -118,7 +129,7 @@ export default function ResidentSecurityPage() {
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     } finally {
       setLoading(false);
     }
@@ -127,7 +138,7 @@ export default function ResidentSecurityPage() {
   async function changePassword(e: FormEvent) {
     e.preventDefault();
     if (newPassword !== newPassword2) {
-      setError('Нові паролі не збігаються');
+      setError(t('residentPasswordMismatch'));
       return;
     }
     const token = getToken();
@@ -140,120 +151,185 @@ export default function ResidentSecurityPage() {
         token,
         body: JSON.stringify({ currentPassword, newPassword }),
       });
-      setMessage('Пароль змінено. Увійдіть знову…');
+      setMessage(t('residentPasswordChanged'));
       setTimeout(() => logout(), 1200);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
       setLoading(false);
     }
   }
 
+  function onComfortToggle() {
+    const next = toggleComfort();
+    setComfort(next);
+    setMessage(next === 'large' ? t('comfortLarge') : t('comfortNormal'));
+  }
+
   return (
-    <main>
-      <PageHeader title="Безпека" description="Профіль, телефон для SMS-входу, пароль" />
+    <main className="resident-security">
+      <Link href="/resident" style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
+        {t('residentBackCabinet')}
+      </Link>
+      <PageHeader title={t('residentSecurityTitle')} description={t('residentSecurityDesc')} />
       {error && <p className="error">{error}</p>}
       {message && <p className="success-banner">{message}</p>}
+      {pageLoading && <SkeletonCards count={2} />}
 
-      <section className="card" style={{ marginBottom: '1rem' }}>
-        <h2 style={{ fontSize: '1.05rem', marginBottom: '0.75rem' }}>Профіль і телефон</h2>
-        <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
-          Телефон потрібен для входу по SMS (якщо увімкнено на сервері).
-        </p>
-        <form onSubmit={saveProfile} style={{ display: 'grid', gap: '0.75rem' }}>
-          <div>
-            <label>Імʼя</label>
-            <input value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
-          </div>
-          <div>
-            <label>Прізвище</label>
-            <input value={lastName} onChange={(e) => setLastName(e.target.value)} required />
-          </div>
-          <div>
-            <label>Телефон</label>
-            <input
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="+380501112233"
-            />
-          </div>
-          <button type="submit" disabled={loading}>
-            Зберегти профіль
-          </button>
-        </form>
-      </section>
+      {!pageLoading && (
+        <>
+          <section className="card" style={{ marginBottom: '1rem' }}>
+            <h2 className="resident-section-title">{t('residentComfortSection')}</h2>
+            <p className="resident-muted resident-sm" style={{ marginBottom: '0.75rem' }}>
+              {t('residentComfortHint')}
+            </p>
+            <button
+              type="button"
+              className="btn"
+              aria-pressed={comfort === 'large'}
+              onClick={onComfortToggle}
+            >
+              {comfort === 'large' ? t('comfortNormal') : t('comfortLarge')}
+            </button>
+          </section>
 
-      <section className="card" style={{ marginBottom: '1rem' }}>
-        <h2 style={{ fontSize: '1.05rem', marginBottom: '0.75rem' }}>Зміна пароля</h2>
-        <form onSubmit={changePassword} style={{ display: 'grid', gap: '0.75rem' }}>
-          <div>
-            <label>Поточний пароль</label>
-            <input
-              type="password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              required
-              minLength={8}
-            />
-          </div>
-          <div>
-            <label>Новий пароль</label>
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              required
-              minLength={8}
-            />
-          </div>
-          <div>
-            <label>Повтор</label>
-            <input
-              type="password"
-              value={newPassword2}
-              onChange={(e) => setNewPassword2(e.target.value)}
-              required
-              minLength={8}
-            />
-          </div>
-          <button type="submit" disabled={loading}>
-            Змінити
-          </button>
-        </form>
-      </section>
+          <section className="card" style={{ marginBottom: '1rem' }}>
+            <h2 className="resident-section-title">{t('residentProfilePhone')}</h2>
+            <p className="resident-muted resident-sm" style={{ marginBottom: '0.75rem' }}>
+              {t('residentProfilePhoneHint')}
+            </p>
+            <form onSubmit={saveProfile} style={{ display: 'grid', gap: '0.75rem' }}>
+              <div>
+                <label htmlFor="sec-first">{t('firstName')}</label>
+                <input
+                  id="sec-first"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  required
+                  autoComplete="given-name"
+                />
+              </div>
+              <div>
+                <label htmlFor="sec-last">{t('lastName')}</label>
+                <input
+                  id="sec-last"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  required
+                  autoComplete="family-name"
+                />
+              </div>
+              <div>
+                <label htmlFor="sec-phone">{t('phone')}</label>
+                <input
+                  id="sec-phone"
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+380501112233"
+                  autoComplete="tel"
+                />
+              </div>
+              <button type="submit" className="btn" disabled={loading}>
+                {t('residentSaveProfile')}
+              </button>
+            </form>
+          </section>
 
-      <section className="card" style={{ marginBottom: '1rem' }}>
-        <h2 style={{ fontSize: '1.05rem', marginBottom: '0.5rem' }}>Email</h2>
-        <button type="button" className="btn btn-sm" onClick={toggleEmail}>
-          {emailNotify ? 'Вимкнути email-сповіщення' : 'Увімкнути email-сповіщення'}
-        </button>
-      </section>
+          <section className="card" style={{ marginBottom: '1rem' }}>
+            <h2 className="resident-section-title">{t('securitySessions')}</h2>
+            <p className="resident-muted resident-sm" style={{ marginBottom: '0.75rem' }}>
+              {t('securitySessionsDesc')}
+            </p>
+            <SessionsPanel />
+          </section>
 
-      <section className="card">
-        <h2 style={{ fontSize: '1.05rem', marginBottom: '0.5rem' }}>Web Push</h2>
-        {!canUsePush() || !pushStatus?.supported ? (
-          <p style={{ color: 'var(--muted)' }}>Не підтримується в цьому браузері</p>
-        ) : !pushStatus.configured ? (
-          <p style={{ color: 'var(--muted)' }}>Push не налаштовано на сервері</p>
-        ) : (
-          <button
-            type="button"
-            className="btn btn-sm"
-            onClick={async () => {
-              try {
-                if (pushStatus.subscribed) await unsubscribeFromPush();
-                else await subscribeToPush();
-                setMessage(pushStatus.subscribed ? 'Push вимкнено' : 'Push увімкнено');
-                await load();
-              } catch (err) {
-                setError(err instanceof Error ? err.message : 'Помилка');
-              }
-            }}
-          >
-            {pushStatus.subscribed ? 'Вимкнути push' : 'Увімкнути push'}
-          </button>
-        )}
-      </section>
+          <section className="card" style={{ marginBottom: '1rem' }}>
+            <h2 className="resident-section-title">{t('residentChangePassword')}</h2>
+            <form onSubmit={changePassword} style={{ display: 'grid', gap: '0.75rem' }}>
+              <div>
+                <label htmlFor="sec-cur">{t('securityCurrentPassword')}</label>
+                <input
+                  id="sec-cur"
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  required
+                  minLength={8}
+                  autoComplete="current-password"
+                />
+              </div>
+              <div>
+                <label htmlFor="sec-new">{t('securityNewPassword')}</label>
+                <input
+                  id="sec-new"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                />
+              </div>
+              <div>
+                <label htmlFor="sec-new2">{t('residentPasswordRepeat')}</label>
+                <input
+                  id="sec-new2"
+                  type="password"
+                  value={newPassword2}
+                  onChange={(e) => setNewPassword2(e.target.value)}
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                />
+              </div>
+              <button type="submit" className="btn" disabled={loading}>
+                {t('residentChange')}
+              </button>
+            </form>
+          </section>
+
+          <section className="card" style={{ marginBottom: '1rem' }}>
+            <h2 className="resident-section-title">{t('email')}</h2>
+            <p className="resident-muted resident-sm" style={{ marginBottom: '0.5rem' }}>
+              {t('residentEmailNotifyHint')}
+            </p>
+            <button type="button" className="btn btn-sm" onClick={() => void toggleEmail()}>
+              {emailNotify ? t('residentEmailToggleOff') : t('residentEmailToggleOn')}
+            </button>
+          </section>
+
+          <section className="card">
+            <h2 className="resident-section-title">{t('securityPush')}</h2>
+            <p className="resident-muted resident-sm" style={{ marginBottom: '0.5rem' }}>
+              {t('residentPushHint')}
+            </p>
+            {!canUsePush() || !pushStatus?.supported ? (
+              <p className="resident-muted">{t('residentPushUnsupported')}</p>
+            ) : !pushStatus.configured ? (
+              <p className="resident-muted">{t('residentPushNotConfigured')}</p>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={async () => {
+                  try {
+                    if (pushStatus.subscribed) await unsubscribeFromPush();
+                    else await subscribeToPush();
+                    setMessage(
+                      pushStatus.subscribed ? t('residentPushOffMsg') : t('residentPushOnMsg'),
+                    );
+                    await load();
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : t('error'));
+                  }
+                }}
+              >
+                {pushStatus.subscribed ? t('securityPushDisable') : t('securityPushEnable')}
+              </button>
+            )}
+          </section>
+        </>
+      )}
     </main>
   );
 }

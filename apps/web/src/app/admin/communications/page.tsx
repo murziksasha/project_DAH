@@ -1,8 +1,10 @@
 'use client';
 
-import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useI18n } from '@/components/LocaleProvider';
 import { apiFetch, getToken } from '@/lib/api';
+import { useCommunicationsQuery } from '@/lib/queries';
 
 interface Announcement {
   id: string;
@@ -49,24 +51,21 @@ interface Poll {
 
 type Section = 'announcements' | 'requests' | 'polls';
 
-const STATUS_LABELS: Record<string, string> = {
-  new: 'Нова',
-  in_progress: 'В роботі',
-  done: 'Виконано',
-};
-
-const REQUEST_CATEGORIES = [
-  { value: 'sanitary', label: 'Сантехніка' },
-  { value: 'electric', label: 'Електрика' },
-  { value: 'cleaning', label: 'Прибирання' },
-  { value: 'other', label: 'Інше' },
-];
-
 export default function CommunicationsPage() {
+  const { t, locale } = useI18n();
+  const STATUS_LABELS: Record<string, string> = {
+    new: t('commsStatusNew'),
+    in_progress: t('commsStatusProgress'),
+    done: t('commsStatusDone'),
+  };
+  const REQUEST_CATEGORIES = [
+    { value: 'sanitary', label: t('commsCatSanitary') },
+    { value: 'electric', label: t('commsCatElectric') },
+    { value: 'cleaning', label: t('commsCatCleaning') },
+    { value: 'other', label: t('commsCatOther') },
+  ];
+  const queryClient = useQueryClient();
   const [section, setSection] = useState<Section>('announcements');
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [requests, setRequests] = useState<RequestItem[]>([]);
-  const [polls, setPolls] = useState<Poll[]>([]);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
@@ -81,25 +80,24 @@ export default function CommunicationsPage() {
   );
   const [pollQuorum, setPollQuorum] = useState('');
 
-  async function load() {
-    const token = getToken();
-    if (!token) {
-      window.location.href = '/login';
-      return;
-    }
-    const [a, r, p] = await Promise.all([
-      apiFetch<Announcement[]>('/communications/announcements', { token }),
-      apiFetch<RequestItem[]>('/communications/requests', { token }),
-      apiFetch<Poll[]>('/communications/polls', { token }),
-    ]);
-    setAnnouncements(a);
-    setRequests(r);
-    setPolls(p);
-  }
+  useEffect(() => {
+    if (!getToken()) window.location.href = '/login/';
+  }, []);
+
+  const commsQuery = useCommunicationsQuery(Boolean(getToken()));
+  const announcements = (commsQuery.data?.announcements ?? []) as Announcement[];
+  const requests = (commsQuery.data?.requests ?? []) as RequestItem[];
+  const polls = (commsQuery.data?.polls ?? []) as Poll[];
 
   useEffect(() => {
-    load().catch((err) => setError(err.message));
-  }, []);
+    if (commsQuery.error) {
+      setError(commsQuery.error instanceof Error ? commsQuery.error.message : String(commsQuery.error));
+    }
+  }, [commsQuery.error]);
+
+  async function load() {
+    await queryClient.invalidateQueries({ queryKey: ['communications'] });
+  }
 
   async function handleAnnouncement(e: FormEvent) {
     e.preventDefault();
@@ -112,13 +110,13 @@ export default function CommunicationsPage() {
         token,
         body: JSON.stringify({ title: annTitle, body: annBody, isPinned: annPinned }),
       });
-      setMessage('Оголошення опубліковано');
+      setMessage(t('commsAnnCreated'));
       setAnnTitle('');
       setAnnBody('');
       setAnnPinned(false);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     }
   }
 
@@ -133,7 +131,7 @@ export default function CommunicationsPage() {
       });
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     }
   }
 
@@ -143,7 +141,7 @@ export default function CommunicationsPage() {
     if (!token) return;
     const options = pollOptions.filter((o) => o.trim());
     if (options.length < 2) {
-      setError('Потрібно щонайменше 2 варіанти');
+      setError(t('commsMinOptions'));
       return;
     }
     setError('');
@@ -158,14 +156,14 @@ export default function CommunicationsPage() {
           quorumPercent: pollQuorum ? Number(pollQuorum) : undefined,
         }),
       });
-      setMessage('Опитування створено');
+      setMessage(t('commsPollCreated'));
       setPollQuestion('');
       setPollOptions(['', '']);
       setPollWeight('one_per_user');
       setPollQuorum('');
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     }
   }
 
@@ -177,15 +175,19 @@ export default function CommunicationsPage() {
   }
 
   const sections: { id: Section; label: string }[] = [
-    { id: 'announcements', label: 'Оголошення' },
-    { id: 'requests', label: `Заявки (${requests.filter((r) => r.status === 'new').length})` },
-    { id: 'polls', label: 'Опитування' },
+    { id: 'announcements', label: t('commsAnnouncements') },
+    {
+      id: 'requests',
+      label: `${t('commsRequests')} (${requests.filter((r) => r.status === 'new').length})`,
+    },
+    { id: 'polls', label: t('commsPolls') },
   ];
+  const dateLocale = locale === 'ru' ? 'ru-RU' : 'uk-UA';
 
   return (
     <main>
-      <h1 style={{ margin: '1rem 0 0.5rem' }}>Комунікації</h1>
-      <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>Оголошення, заявки мешканців, опитування</p>
+      <h1 style={{ margin: '1rem 0 0.5rem' }}>{t('commsPageTitle')}</h1>
+      <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>{t('commsDesc')}</p>
 
       <nav style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
         {sections.map((s) => (
@@ -210,23 +212,25 @@ export default function CommunicationsPage() {
       {section === 'announcements' && (
         <>
           <form onSubmit={handleAnnouncement} className="card" style={{ display: 'grid', gap: '1rem', marginBottom: '1.5rem' }}>
-            <h2>Нове оголошення</h2>
+            <h2>{t('commsNewAnnouncement')}</h2>
             <div>
-              <label>Заголовок</label>
+              <label>{t('commsAnnTitle')}</label>
               <input value={annTitle} onChange={(e) => setAnnTitle(e.target.value)} required />
             </div>
             <div>
-              <label>Текст</label>
+              <label>{t('commsAnnBody')}</label>
               <textarea rows={4} value={annBody} onChange={(e) => setAnnBody(e.target.value)} required />
             </div>
             <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <input type="checkbox" checked={annPinned} onChange={(e) => setAnnPinned(e.target.checked)} />
-              Закріпити зверху
+              {t('commsPin')}
             </label>
-            <button type="submit">Опублікувати</button>
+            <button type="submit">{t('commsPublish')}</button>
           </form>
           <section className="card">
-            <h2 style={{ marginBottom: '1rem' }}>Опубліковані ({announcements.length})</h2>
+            <h2 style={{ marginBottom: '1rem' }}>
+              {t('commsPublished', { count: announcements.length })}
+            </h2>
             <ul style={{ listStyle: 'none', display: 'grid', gap: '0.75rem' }}>
               {announcements.map((a) => (
                 <li key={a.id} style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem' }}>
@@ -238,14 +242,14 @@ export default function CommunicationsPage() {
                       <p style={{ color: 'var(--muted)', fontSize: '0.9rem', margin: '0.25rem 0' }}>{a.body}</p>
                       <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
                         {a.author.firstName} {a.author.lastName} ·{' '}
-                        {new Date(a.createdAt).toLocaleDateString('uk-UA')}
+                        {new Date(a.createdAt).toLocaleDateString(dateLocale)}
                       </div>
                     </div>
                     <button
                       type="button"
                       className="btn btn-sm btn-ghost"
                       onClick={async () => {
-                        if (!window.confirm('Видалити оголошення?')) return;
+                        if (!window.confirm(t('commsDeleteConfirm'))) return;
                         const token = getToken();
                         if (!token) return;
                         try {
@@ -254,13 +258,13 @@ export default function CommunicationsPage() {
                             token,
                           });
                           await load();
-                          setMessage('Оголошення видалено');
+                          setMessage(t('commsAnnDeleted'));
                         } catch (err) {
-                          setError(err instanceof Error ? err.message : 'Помилка');
+                          setError(err instanceof Error ? err.message : t('error'));
                         }
                       }}
                     >
-                      Видалити
+                      {t('delete')}
                     </button>
                   </div>
                 </li>
@@ -273,11 +277,11 @@ export default function CommunicationsPage() {
       {section === 'requests' && (
         <section>
           <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>
-            Заявки мешканців ({requests.length})
+            {t('commsRequestsHeading', { count: requests.length })}
           </h2>
           {requests.length === 0 ? (
             <div className="card">
-              <p style={{ color: 'var(--muted)' }}>Заявок немає</p>
+              <p style={{ color: 'var(--muted)' }}>{t('commsNoRequests')}</p>
             </div>
           ) : (
             <div
@@ -320,7 +324,7 @@ export default function CommunicationsPage() {
                                 className="btn btn-sm"
                                 onClick={() => handleRequestStatus(r.id, 'in_progress')}
                               >
-                                В роботу
+                                {t('commsToProgress')}
                               </button>
                             )}
                             {status === 'in_progress' && (
@@ -330,14 +334,14 @@ export default function CommunicationsPage() {
                                   className="btn btn-sm"
                                   onClick={() => handleRequestStatus(r.id, 'done')}
                                 >
-                                  Виконано
+                                  {t('commsMarkDone')}
                                 </button>
                                 <button
                                   type="button"
                                   className="btn btn-sm btn-ghost"
                                   onClick={() => handleRequestStatus(r.id, 'new')}
                                 >
-                                  Повернути
+                                  {t('commsReturn')}
                                 </button>
                               </>
                             )}
@@ -347,14 +351,14 @@ export default function CommunicationsPage() {
                                 className="btn btn-sm btn-ghost"
                                 onClick={() => handleRequestStatus(r.id, 'in_progress')}
                               >
-                                Знову в роботу
+                                {t('commsAgain')}
                               </button>
                             )}
                           </div>
                         </li>
                       ))}
                       {col.length === 0 && (
-                        <li style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>Порожньо</li>
+                        <li style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>{t('commsEmpty')}</li>
                       )}
                     </ul>
                   </div>
@@ -368,38 +372,38 @@ export default function CommunicationsPage() {
       {section === 'polls' && (
         <>
           <form onSubmit={handlePoll} className="card" style={{ display: 'grid', gap: '1rem', marginBottom: '1.5rem' }}>
-            <h2>Нове опитування</h2>
+            <h2>{t('commsNewPoll')}</h2>
             <div>
-              <label>Питання</label>
+              <label>{t('commsPollQuestion')}</label>
               <input value={pollQuestion} onChange={(e) => setPollQuestion(e.target.value)} required />
             </div>
             <div>
-              <label>Вага голосу</label>
+              <label>{t('commsVoteWeight')}</label>
               <select
                 value={pollWeight}
                 onChange={(e) =>
                   setPollWeight(e.target.value as 'one_per_user' | 'one_per_apartment' | 'by_area')
                 }
               >
-                <option value="one_per_user">1 користувач = 1 голос</option>
-                <option value="one_per_apartment">1 квартира = 1 голос</option>
-                <option value="by_area">За площею (м²)</option>
+                <option value="one_per_user">{t('commsWeightUser')}</option>
+                <option value="one_per_apartment">{t('commsWeightApt')}</option>
+                <option value="by_area">{t('commsWeightArea')}</option>
               </select>
             </div>
             <div>
-              <label>Кворум, % (опційно)</label>
+              <label>{t('commsQuorum')}</label>
               <input
                 type="number"
                 min={0}
                 max={100}
                 value={pollQuorum}
                 onChange={(e) => setPollQuorum(e.target.value)}
-                placeholder="напр. 50"
+                placeholder="50"
               />
             </div>
             {pollOptions.map((opt, i) => (
               <div key={i}>
-                <label>Варіант {i + 1}</label>
+                <label>{t('commsOptionN', { n: i + 1 })}</label>
                 <input
                   value={opt}
                   onChange={(e) => {
@@ -415,18 +419,23 @@ export default function CommunicationsPage() {
               style={{ background: 'var(--surface-2)', fontSize: '0.85rem' }}
               onClick={() => setPollOptions([...pollOptions, ''])}
             >
-              + Варіант
+              {t('commsAddOption')}
             </button>
-            <button type="submit">Створити</button>
+            <button type="submit">{t('create')}</button>
           </form>
           <section className="card">
-            <h2 style={{ marginBottom: '1rem' }}>Опитування ({polls.length})</h2>
+            <h2 style={{ marginBottom: '1rem' }}>{t('commsPollsCount', { count: polls.length })}</h2>
             <ul style={{ listStyle: 'none', display: 'grid', gap: '1rem' }}>
               {polls.map((p) => (
                 <li key={p.id} style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem' }}>
                   <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>
                     {p.question}
-                    {!p.isActive && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> (закрито)</span>}
+                    {!p.isActive && (
+                      <span style={{ color: 'var(--muted)', fontWeight: 400 }}>
+                        {' '}
+                        {t('commsPollClosed')}
+                      </span>
+                    )}
                   </div>
                   <ul style={{ listStyle: 'none', display: 'grid', gap: '0.35rem', marginBottom: '0.5rem' }}>
                     {p.options.map((o) => (
@@ -434,20 +443,22 @@ export default function CommunicationsPage() {
                         <span>{o.text}</span>
                         <span style={{ color: 'var(--muted)' }}>
                           {o.voteCount ?? o._count?.votes ?? 0}
-                          {o.weightSum != null ? ` (вага ${o.weightSum})` : ' гол.'}
+                          {o.weightSum != null
+                            ? t('commsWeightSum', { w: o.weightSum })
+                            : t('commsVotesShort')}
                         </span>
                       </li>
                     ))}
                   </ul>
                   <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
-                    Всього: {p._count.votes} голосів
+                    {t('commsVotesTotal', { count: p._count.votes })}
                     {p.isActive && (
                       <button
                         type="button"
                         onClick={() => closePoll(p.id)}
                         style={{ marginLeft: '0.75rem', fontSize: '0.8rem', padding: '0.2rem 0.5rem' }}
                       >
-                        Закрити
+                        {t('close')}
                       </button>
                     )}
                   </div>

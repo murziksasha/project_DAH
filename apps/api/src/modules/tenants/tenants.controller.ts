@@ -31,6 +31,8 @@ export class TenantsController {
     body: {
       name: string;
       slug: string;
+      /** osbb | management_company */
+      orgType?: string;
       chairmanEmail?: string;
       chairmanPassword?: string;
     },
@@ -42,7 +44,7 @@ export class TenantsController {
   @Patch(':id')
   update(
     @Param('id') id: string,
-    @Body() body: { name?: string; isActive?: boolean },
+    @Body() body: { name?: string; isActive?: boolean; orgType?: string },
     @CurrentUser() user: AuthUser,
   ) {
     return this.tenants.update(id, body, user.id);

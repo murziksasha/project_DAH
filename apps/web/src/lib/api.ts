@@ -177,7 +177,7 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     });
   } catch {
     throw new Error(
-      'Немає зв\'язку з сервером ОСМД. Перевірте мережу, KeenDNS або що API запущено.',
+      'Немає зв\'язку з сервером «Мій дім». Перевірте мережу, KeenDNS або що API запущено.',
     );
   }
 
@@ -190,9 +190,17 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: res.statusText }));
-    throw new Error(
-      Array.isArray(err.message) ? err.message.join(', ') : (err.message ?? `Помилка ${res.status}`),
-    );
+    const msg = Array.isArray(err.message)
+      ? err.message.join(', ')
+      : (err.message ?? `Помилка ${res.status}`);
+    const requestId = res.headers.get('x-request-id');
+    const e = new Error(requestId ? `${msg} (id: ${requestId.slice(0, 8)})` : msg) as Error & {
+      requestId?: string | null;
+      status?: number;
+    };
+    e.requestId = requestId;
+    e.status = res.status;
+    throw e;
   }
 
   if (res.status === 204) return undefined as T;

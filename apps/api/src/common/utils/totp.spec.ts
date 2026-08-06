@@ -45,7 +45,7 @@ describe('totp', () => {
   });
 
   it('builds otpauth url', () => {
-    const url = buildOtpAuthUrl({ secret: 'JBSWY3DPEHPK3PXP', email: 'a@b.c', issuer: 'DAH' });
+    const url = buildOtpAuthUrl({ secret: 'JBSWY3DPEHPK3PXP', email: 'a@b.c', issuer: 'Мій дім' });
     expect(url).toContain('otpauth://totp/');
     expect(url).toContain('secret=JBSWY3DPEHPK3PXP');
   });

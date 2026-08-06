@@ -2,15 +2,41 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
+import type { NextFunction, Request, Response } from 'express';
 import { assertProductionJwtSecret } from './common/config/jwt.config';
 import { RequestLoggingMiddleware } from './common/middleware/request-logging.middleware';
 import { AppModule } from './app.module';
+
+/** Lightweight security headers (helmet-equivalent without extra dep). */
+function securityHeaders(_req: Request, res: Response, next: NextFunction) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('X-DNS-Prefetch-Control', 'off');
+  res.setHeader('X-Download-Options', 'noopen');
+  res.setHeader(
+    'Permissions-Policy',
+    'camera=(), microphone=(), geolocation=(), payment=(self)',
+  );
+  // API returns JSON; tight CSP on responses still helps if HTML ever leaks
+  res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+  next();
+}
+
+function isSwaggerEnabled(): boolean {
+  const flag = process.env.SWAGGER_ENABLED;
+  if (flag === 'true') return true;
+  if (flag === 'false') return false;
+  // Production: off by default; dev/test: on
+  return process.env.NODE_ENV !== 'production';
+}
 
 async function bootstrap() {
   assertProductionJwtSecret();
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api');
   app.use(cookieParser());
+  app.use(securityHeaders);
   app.use(new RequestLoggingMiddleware().use.bind(new RequestLoggingMiddleware()));
   app.useGlobalPipes(
     new ValidationPipe({
@@ -30,11 +56,10 @@ async function bootstrap() {
     credentials: true,
   });
 
-  const swaggerEnabled = process.env.SWAGGER_ENABLED !== 'false';
-  if (swaggerEnabled) {
+  if (isSwaggerEnabled()) {
     const config = new DocumentBuilder()
-      .setTitle('DAH OSMD API')
-      .setDescription('API для управління ОСМД')
+      .setTitle('Мій дім API')
+      .setDescription('API для управління ОСББ та управляючих компаній (УК)')
       .setVersion('1.0.0')
       .addBearerAuth()
       .build();

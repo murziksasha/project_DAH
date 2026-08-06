@@ -11,8 +11,8 @@ export function buildOtpAuthUrl(opts: {
   email: string;
   issuer?: string;
 }): string {
-  const issuer = encodeURIComponent(opts.issuer ?? 'DAH OSMD');
-  const label = encodeURIComponent(`${opts.issuer ?? 'DAH'}:${opts.email}`);
+  const issuer = encodeURIComponent(opts.issuer ?? 'Мій дім');
+  const label = encodeURIComponent(`${opts.issuer ?? 'Мій дім'}:${opts.email}`);
   return `otpauth://totp/${label}?secret=${opts.secret}&issuer=${issuer}&algorithm=SHA1&digits=6&period=30`;
 }
 

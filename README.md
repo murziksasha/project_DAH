@@ -1,8 +1,8 @@
-# DAH — платформа управління ОСМД
+# Мій дім — платформа для ОСББ та УК
 
-**v1.0.0** — self-hosted платформа для ОСМД/ОСББ: фінанси, внески, прозорість, PWA, multi-building.
+Self-hosted кабінет для **ОСББ** і **управляючих компаній (УК)**: фінанси, внески, прозорість, PWA, multi-building.
 
-Self-hosted аналог [ДАХ](https://dah-online.com/) для одного ОСББ (один або кілька будинків).
+> Технічний каталог/пакети можуть називатися `project_DAH` / `@dah/*` — **продуктова назва**: **Мій дім**.
 
 ## Швидкий старт (Docker)
 
@@ -13,7 +13,7 @@ docker compose up -d
 
 - **PWA / Web**: http://localhost:8080
 - **API**: http://localhost:3001/api
-- **Swagger**: http://localhost:3001/api/docs
+- **Swagger**: http://localhost:3001/api/docs (**Мій дім API**)
 - **MinIO Console**: http://localhost:9001
 
 Після першого запуску API застосує міграції. Заповніть демо-дані:
@@ -26,68 +26,37 @@ docker compose exec api npx ts-node prisma/seed.ts
 
 | Email | Пароль | Роль |
 |-------|--------|------|
-| chairman@osbb.local | password123 | Голова правління |
+| chairman@osbb.local | password123 | Голова / керівник |
 | accountant@osbb.local | password123 | Бухгалтер |
 | auditor@osbb.local | password123 | Ревізійна комісія |
 | resident@osbb.local | password123 | Мешканець |
+
+Демо-організація: `orgType = osbb`. Super-admin може створити **УК** на `/admin/tenants`.
 
 ## Локальна розробка
 
 ```bash
 npm install
-docker compose up -d postgres redis minio minio-init
+docker compose up -d postgres minio minio-init
 cp .env.example .env
-
-npm run db:generate -w @dah/api
-npm run db:migrate:dev -w @dah/api
-npm run db:seed -w @dah/api
-
-npm run dev:api   # :3001
-npm run dev:web   # :3000
 ```
 
-## Структура
+Redis **не потрібен** за замовчуванням (worker — inline cron). Опційно: `npm run docker:infra:redis`.
 
-- `apps/api` — NestJS + Prisma + PostgreSQL
-- `apps/web` — Next.js 15 PWA
-- `packages/shared` — спільні типи та константи
-- `SPEC/` — **специфікація проєкту** (архітектура, API, фінанси, ролі)
-- `infra/nginx` — reverse proxy (+ HTTPS для production)
-- `infra/scripts` — backup / restore
-- `docs/DEPLOY.md` — production-гайд
+Далі: `npm run dev` (або окремо `dev:api` / `dev:web`). Документація: [SPEC/](./SPEC/).
 
-Повна документація: **[SPEC/README.md](SPEC/README.md)**
+## Організації
 
-## Production
+| Тип | Код | Призначення |
+|-----|-----|-------------|
+| ОСББ | `osbb` | Самоуправління співвласників |
+| УК | `management_company` | Управляюча компанія, портфель будинків |
 
-```bash
-# TLS-сертифікати в infra/certs/ (див. docs/DEPLOY.md)
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-```
+Деталі: [SPEC/12-organization-types.md](./SPEC/12-organization-types.md).
 
-Резервне копіювання:
-
-```bash
-npm run backup                              # швидкий dump БД
-./infra/scripts/backup.sh                   # БД + файли MinIO
-```
-
-## Roadmap
-
-- [x] MVP фази 0–8 (див. SPEC/11-roadmap.md)
-- [x] **v1.0–1.5.1** план глибокого поліпшення — **завершено**  
-  (sessions, journal, multi-building, meters, export, SMS, Diia mock, multi-tenant + full scope)
-
-Поточна версія: **1.5.1**. Деталі: [SPEC/11-roadmap.md](SPEC/11-roadmap.md), [CHANGELOG.md](CHANGELOG.md).  
-Оновлення з 0.9: [docs/UPGRADE-0.9-to-1.0.md](docs/UPGRADE-0.9-to-1.0.md)
-
-## Тестування
-
-```bash
-npm run test              # unit (API)
-npm run test:cov          # coverage
-npm run test:e2e          # API integration (потрібен dah_test)
-npm run test:e2e:web      # Playwright smoke
-```
-
-Деталі: [docs/TESTING.md](docs/TESTING.md)
+Поточна версія: **1.14.0** — [CHANGELOG.md](./CHANGELOG.md), [SPEC/](./SPEC/).  
+Prod security: [docs/SECURITY-CHECKLIST.md](./docs/SECURITY-CHECKLIST.md).  
+Конструктор квитанцій / звітів: `/admin/document-templates`.  
+Диспетчерська SLA: `/admin/dispatch`. Імпорт виписки: `/admin/payments` → «Імпорт».  
+Збори: `/admin/meetings` · Месенджер: `/admin/messenger` · `/resident/messenger`.  
+Скидання пароля: login → «Забули пароль?» (потрібен SMTP / `APP_URL`).

@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode, useEffect } from 'react';
+import { ReactNode, useEffect, useId, useRef } from 'react';
 import { Button } from './Button';
 
 interface ModalProps {
@@ -12,46 +12,77 @@ interface ModalProps {
 }
 
 export function Modal({ open, title, children, onClose, footer }: ModalProps) {
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const previouslyFocused = useRef<HTMLElement | null>(null);
+
   useEffect(() => {
     if (!open) return;
+    previouslyFocused.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      if (e.key !== 'Tab' || !panelRef.current) return;
+      const focusable = panelRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    // Focus first focusable / panel after paint
+    const t = window.setTimeout(() => {
+      const first = panelRef.current?.querySelector<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), [href]',
+      );
+      (first ?? panelRef.current)?.focus();
+    }, 0);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.clearTimeout(t);
+      previouslyFocused.current?.focus?.();
+    };
   }, [open, onClose]);
 
   if (!open) return null;
 
   return (
     <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.45)',
-        display: 'grid',
-        placeItems: 'center',
-        zIndex: 50,
-        padding: '1rem',
-      }}
+      className="modal-backdrop"
+      role="presentation"
       onClick={onClose}
     >
       <div
-        className="card"
-        style={{ width: 'min(480px, 100%)', maxHeight: '90vh', overflow: 'auto' }}
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="modal-panel card"
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 12 }}>
-          <h2 style={{ fontSize: '1.1rem', margin: 0 }}>{title}</h2>
+        <div className="modal-header">
+          <h2 id={titleId} className="modal-title">
+            {title}
+          </h2>
           <Button variant="ghost" size="sm" onClick={onClose} aria-label="Закрити">
             ✕
           </Button>
         </div>
         {children}
-        {footer && <div style={{ marginTop: 16 }}>{footer}</div>}
+        {footer && <div className="modal-footer">{footer}</div>}
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { useI18n } from '@/components/LocaleProvider';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
@@ -18,6 +19,7 @@ interface Reminder {
 }
 
 export default function RemindersPage() {
+  const { t } = useI18n();
   const [items, setItems] = useState<Reminder[]>([]);
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -37,11 +39,11 @@ export default function RemindersPage() {
       const data = await apiFetch<Reminder[]>('/reminders?includeSent=1', { token });
       setItems(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     load().catch(() => undefined);
@@ -66,10 +68,10 @@ export default function RemindersPage() {
       });
       setTitle('');
       setBody('');
-      setMessage('Нагадування створено');
+      setMessage(t('remindersCreated'));
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     }
   }
 
@@ -81,10 +83,12 @@ export default function RemindersPage() {
         method: 'POST',
         token,
       });
-      setMessage(`Оброблено: custom=${res.customSent}, debt emails=${res.debtSent}`);
+      setMessage(
+        t('remindersProcessed', { custom: res.customSent, debt: res.debtSent }),
+      );
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     }
   }
 
@@ -95,18 +99,18 @@ export default function RemindersPage() {
       await apiFetch(`/reminders/${id}`, { method: 'DELETE', token });
       setItems((prev) => prev.filter((i) => i.id !== id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка');
+      setError(err instanceof Error ? err.message : t('error'));
     }
   }
 
   return (
     <main>
       <PageHeader
-        title="Нагадування"
-        description="Кастомні нагадування та email про борг (worker кожні 15 хв)"
+        title={t('remindersTitle')}
+        description={t('remindersDesc')}
         actions={
           <button type="button" className="btn btn-sm btn-ghost" onClick={processNow}>
-            Запустити зараз
+            {t('remindersRunNow')}
           </button>
         }
       />
@@ -115,17 +119,17 @@ export default function RemindersPage() {
       {message && <p className="success-banner">{message}</p>}
 
       <form onSubmit={create} className="card" style={{ display: 'grid', gap: '0.75rem', marginBottom: '1.25rem' }}>
-        <h2 style={{ fontSize: '1.05rem' }}>Нове нагадування</h2>
+        <h2 style={{ fontSize: '1.05rem' }}>{t('remindersNew')}</h2>
         <div>
-          <label htmlFor="t">Заголовок</label>
+          <label htmlFor="t">{t('remindersTitleField')}</label>
           <input id="t" value={title} onChange={(e) => setTitle(e.target.value)} required />
         </div>
         <div>
-          <label htmlFor="b">Текст</label>
+          <label htmlFor="b">{t('remindersBody')}</label>
           <textarea id="b" rows={2} value={body} onChange={(e) => setBody(e.target.value)} />
         </div>
         <div>
-          <label htmlFor="d">Дата/час</label>
+          <label htmlFor="d">{t('remindersDue')}</label>
           <input
             id="d"
             type="datetime-local"
@@ -134,15 +138,15 @@ export default function RemindersPage() {
             required
           />
         </div>
-        <button type="submit">Створити</button>
+        <button type="submit">{t('create')}</button>
       </form>
 
       <section className="card">
-        <h2 style={{ fontSize: '1.05rem', marginBottom: '1rem' }}>Список</h2>
+        <h2 style={{ fontSize: '1.05rem', marginBottom: '1rem' }}>{t('remindersList')}</h2>
         {loading ? (
-          <p style={{ color: 'var(--muted)' }}>Завантаження…</p>
+          <p style={{ color: 'var(--muted)' }}>{t('loading')}</p>
         ) : items.length === 0 ? (
-          <EmptyState title="Немає нагадувань" />
+          <EmptyState title={t('remindersEmpty')} />
         ) : (
           <ul style={{ listStyle: 'none', display: 'grid', gap: '0.75rem' }}>
             {items.map((r) => (
@@ -161,18 +165,18 @@ export default function RemindersPage() {
                   <div style={{ fontWeight: 600 }}>
                     {r.title}{' '}
                     <span className={`badge badge-${r.sentAt ? 'muted' : 'warning'}`}>
-                      {r.sentAt ? 'Надіслано' : 'Очікує'}
+                      {r.sentAt ? t('remindersSentBadge') : t('remindersPendingBadge')}
                     </span>
                   </div>
                   <div style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>
                     {formatDateUk(r.dueAt)} · {r.type}
-                    {r.apartment ? ` · кв. ${r.apartment.number}` : ''}
+                    {r.apartment ? ` · ${t('aptPrefix')} ${r.apartment.number}` : ''}
                   </div>
                   {r.body && <p style={{ fontSize: '0.9rem', marginTop: '0.25rem' }}>{r.body}</p>}
                 </div>
                 {!r.sentAt && (
                   <button type="button" className="btn btn-sm btn-ghost" onClick={() => remove(r.id)}>
-                    Видалити
+                    {t('delete')}
                   </button>
                 )}
               </li>

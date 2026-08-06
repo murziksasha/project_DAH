@@ -126,7 +126,7 @@ export class SetupService {
   private async requireUninitializedBuilding() {
     const building = await this.prisma.building.findFirst();
     if (building?.isInitialized) {
-      throw new BadRequestException('ОСМД вже налаштовано');
+      throw new BadRequestException('Організацію / будинок уже налаштовано');
     }
     return building;
   }
@@ -174,7 +174,7 @@ export class SetupService {
 
   async setupBank(dto: SetupBankDto, actorId: string) {
     const building = await this.requireUninitializedBuilding();
-    if (!building) throw new BadRequestException('Спочатку створіть дані ОСМД');
+    if (!building) throw new BadRequestException('Спочатку створіть дані організації / будинку');
 
     const existingFunds = await this.prisma.fund.findMany({
       where: { buildingId: building.id },
@@ -225,7 +225,7 @@ export class SetupService {
 
   async setupApartments(dto: SetupApartmentsDto, actorId: string) {
     const building = await this.requireUninitializedBuilding();
-    if (!building) throw new BadRequestException('Спочатку створіть дані ОСМД');
+    if (!building) throw new BadRequestException('Спочатку створіть дані організації / будинку');
     if (!dto.apartments.length) throw new BadRequestException('Додайте хоча б одну квартиру');
 
     const existingCount = await this.prisma.apartment.count({ where: { buildingId: building.id } });
@@ -260,7 +260,7 @@ export class SetupService {
 
   async setupUsers(dto: SetupUsersDto, actorId: string) {
     const building = await this.requireUninitializedBuilding();
-    if (!building) throw new BadRequestException('Спочатку створіть дані ОСМД');
+    if (!building) throw new BadRequestException('Спочатку створіть дані організації / будинку');
 
     const singleSeatRoles: UserRole[] = [UserRole.chairman, UserRole.accountant, UserRole.auditor];
 
@@ -370,8 +370,8 @@ export class SetupService {
 
   async complete(actorId: string) {
     const building = await this.prisma.building.findFirst();
-    if (!building) throw new NotFoundException('ОСМД не знайдено');
-    if (building.isInitialized) throw new BadRequestException('ОСМД вже налаштовано');
+    if (!building) throw new NotFoundException('Будинок / організацію не знайдено');
+    if (building.isInitialized) throw new BadRequestException('Організацію / будинок уже налаштовано');
 
     const status = await this.getStatus();
     if (!status.canComplete) {

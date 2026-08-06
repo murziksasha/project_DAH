@@ -2,9 +2,20 @@
 
 import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
+import { PendingApprovalCard } from '@/components/PendingApprovalCard';
+import { useI18n } from '@/components/LocaleProvider';
 import { apiFetch, LoginResponse, persistAccessToken } from '@/lib/api';
+import { getRoleHome } from '@/lib/auth';
+import { isPendingApprovalMessage } from '@/lib/notification-links';
 
-const ADMIN_ROLES = ['chairman', 'accountant', 'board', 'auditor'];
+const ADMIN_ROLES = [
+  'chairman',
+  'accountant',
+  'board',
+  'auditor',
+  'dispatcher',
+  'crew',
+];
 
 function isLocalHost(): boolean {
   if (typeof window === 'undefined') return process.env.NODE_ENV === 'development';
@@ -18,9 +29,9 @@ function safeNextPath(raw: string | null): string | null {
   return raw;
 }
 
-async function finishLogin(data: LoginResponse) {
+async function finishLogin(data: LoginResponse, incompleteMsg: string) {
   if (!data.accessToken) {
-    throw new Error('Неповна відповідь сервера');
+    throw new Error(incompleteMsg);
   }
   persistAccessToken(data.accessToken);
   localStorage.setItem('dah_user', JSON.stringify(data.user));
@@ -28,14 +39,12 @@ async function finishLogin(data: LoginResponse) {
 
   const next = safeNextPath(new URLSearchParams(window.location.search).get('next'));
 
-  let target = '/resident';
+  let target = getRoleHome(data.user.role);
   if (data.user.role === 'super_admin') {
     const status = await apiFetch<{ isInitialized: boolean }>('/setup/status', {
       token: data.accessToken,
     });
     target = status.isInitialized ? '/admin/organization' : '/admin/setup';
-  } else if (ADMIN_ROLES.includes(data.user.role)) {
-    target = '/admin';
   }
 
   if (next) {
@@ -47,9 +56,10 @@ async function finishLogin(data: LoginResponse) {
   window.location.href = target;
 }
 
-type Mode = 'password' | 'sms' | '2fa';
+type Mode = 'password' | 'sms' | '2fa' | 'forgot' | 'reset' | 'pending';
 
 export default function LoginPage() {
+  const { t, locale, setLocale } = useI18n();
   const [mode, setMode] = useState<Mode>('password');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -65,9 +75,28 @@ export default function LoginPage() {
   const [smsAvailable, setSmsAvailable] = useState(false);
   const [identityAvailable, setIdentityAvailable] = useState(false);
   const [identityProvider, setIdentityProvider] = useState('mock');
+  const [resetToken, setResetToken] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [pendingEmail, setPendingEmail] = useState('');
 
   useEffect(() => {
-    if (isLocalHost()) {
+    const params = new URLSearchParams(window.location.search);
+    const reset = params.get('reset');
+    if (reset) {
+      setResetToken(reset);
+      setMode('reset');
+    }
+    if (params.get('pending') === '1') {
+      setMode('pending');
+      try {
+        const stored = sessionStorage.getItem('dah_pending_email') ?? '';
+        setPendingEmail(stored || params.get('email') || '');
+        if (stored) setEmail(stored);
+      } catch {
+        setPendingEmail(params.get('email') || '');
+      }
+    }
+    if (isLocalHost() && params.get('pending') !== '1') {
       setEmail('chairman@osbb.local');
       setPassword('password123');
       setShowDemoHints(true);
@@ -83,7 +112,6 @@ export default function LoginPage() {
       .catch(() => setIdentityAvailable(false));
 
     // Identity callback: /login?identity=callback&state=...&email=...
-    const params = new URLSearchParams(window.location.search);
     if (params.get('identity') === 'callback' && params.get('state')) {
       setLoading(true);
       apiFetch<LoginResponse>('/identity/callback', {
@@ -95,13 +123,52 @@ export default function LoginPage() {
           phone: params.get('phone') ?? undefined,
         }),
       })
-        .then((data) => finishLogin(data))
+        .then((data) => finishLogin(data, t('loginIncomplete')))
         .catch((err) => {
-          setError(err instanceof Error ? err.message : 'Помилка Diia/BankID');
+          setError(err instanceof Error ? err.message : t('loginError'));
           setLoading(false);
         });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- identity callback once on mount
   }, []);
+
+  async function handleForgot(e: FormEvent) {
+    e.preventDefault();
+    setError('');
+    setMessage('');
+    setLoading(true);
+    try {
+      const res = await apiFetch<{ message?: string }>('/auth/password/forgot', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      });
+      setMessage(res.message ?? 'Якщо email зареєстровано, надіслано інструкції');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('loginError'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleReset(e: FormEvent) {
+    e.preventDefault();
+    setError('');
+    setMessage('');
+    setLoading(true);
+    try {
+      const res = await apiFetch<{ message?: string }>('/auth/password/reset', {
+        method: 'POST',
+        body: JSON.stringify({ token: resetToken, newPassword }),
+      });
+      setMessage(res.message ?? 'Пароль змінено');
+      setMode('password');
+      setPassword('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('loginError'));
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function handlePassword(e: FormEvent) {
     e.preventDefault();
@@ -117,9 +184,21 @@ export default function LoginPage() {
         setMode('2fa');
         return;
       }
-      await finishLogin(data);
+      await finishLogin(data, t('loginIncomplete'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка входу');
+      const msg = err instanceof Error ? err.message : t('loginError');
+      if (isPendingApprovalMessage(msg)) {
+        setPendingEmail(email);
+        try {
+          sessionStorage.setItem('dah_pending_email', email);
+        } catch {
+          /* ignore */
+        }
+        setMode('pending');
+        setError('');
+        return;
+      }
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -136,9 +215,9 @@ export default function LoginPage() {
         body: JSON.stringify({ phone }),
       });
       setSmsSent(true);
-      setMessage(res.message ?? 'Код надіслано (якщо номер у системі)');
+      setMessage(res.message ?? t('loginSmsSentDefault'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка SMS');
+      setError(err instanceof Error ? err.message : t('error'));
     } finally {
       setLoading(false);
     }
@@ -158,9 +237,9 @@ export default function LoginPage() {
         setMode('2fa');
         return;
       }
-      await finishLogin(data);
+      await finishLogin(data, t('loginIncomplete'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Невірний код');
+      setError(err instanceof Error ? err.message : t('error'));
     } finally {
       setLoading(false);
     }
@@ -176,7 +255,7 @@ export default function LoginPage() {
       });
       window.location.href = res.authorizeUrl;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Identity недоступний');
+      setError(err instanceof Error ? err.message : t('error'));
       setLoading(false);
     }
   }
@@ -190,20 +269,42 @@ export default function LoginPage() {
         method: 'POST',
         body: JSON.stringify({ tempToken, code }),
       });
-      await finishLogin(data);
+      await finishLogin(data, t('loginIncomplete'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Невірний код 2FA');
+      setError(err instanceof Error ? err.message : t('error'));
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main style={{ maxWidth: 420, margin: '0 auto', padding: '2rem 1rem' }}>
-      <h1 style={{ marginBottom: '0.5rem' }}>Вхід</h1>
-      <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>DAH — кабінет ОСМД</p>
+    <main style={{ maxWidth: 420, margin: '0 auto', padding: '2rem 1rem', position: 'relative' }}>
+      <div style={{ position: 'absolute', top: '1rem', right: '1rem' }}>
+        <button
+          type="button"
+          className="btn btn-sm btn-ghost"
+          aria-label={locale === 'uk' ? 'RU' : 'UK'}
+          title={t('language')}
+          onClick={() => setLocale(locale === 'uk' ? 'ru' : 'uk')}
+        >
+          {locale === 'uk' ? 'RU' : 'UK'}
+        </button>
+      </div>
+      <h1 style={{ marginBottom: '0.5rem' }}>{t('loginTitle')}</h1>
+      <p style={{ color: 'var(--muted)', marginBottom: '1.5rem' }}>{t('loginSubtitle')}</p>
 
-      {mode !== '2fa' && smsAvailable && (
+      {mode === 'pending' && (
+        <PendingApprovalCard
+          email={pendingEmail || email}
+          variant="login"
+          onBackToLogin={() => {
+            setMode('password');
+            setError('');
+          }}
+        />
+      )}
+
+      {mode !== '2fa' && mode !== 'pending' && smsAvailable && (
         <div style={{ display: 'flex', gap: 8, marginBottom: '1rem' }}>
           <button
             type="button"
@@ -213,7 +314,7 @@ export default function LoginPage() {
               setError('');
             }}
           >
-            Email
+            {t('loginEmailTab')}
           </button>
           <button
             type="button"
@@ -223,7 +324,7 @@ export default function LoginPage() {
               setError('');
             }}
           >
-            SMS
+            {t('loginSmsTab')}
           </button>
         </div>
       )}
@@ -231,7 +332,7 @@ export default function LoginPage() {
       {mode === 'password' && (
         <form onSubmit={handlePassword} className="card" style={{ display: 'grid', gap: '1rem' }}>
           <div>
-            <label htmlFor="email">Email</label>
+            <label htmlFor="email">{t('loginEmail')}</label>
             <input
               id="email"
               type="email"
@@ -242,7 +343,7 @@ export default function LoginPage() {
             />
           </div>
           <div>
-            <label htmlFor="password">Пароль</label>
+            <label htmlFor="password">{t('loginPassword')}</label>
             <input
               id="password"
               type="password"
@@ -254,8 +355,20 @@ export default function LoginPage() {
             />
           </div>
           {error && <p className="error">{error}</p>}
+          {message && <p style={{ color: 'var(--success)' }}>{message}</p>}
           <button type="submit" disabled={loading}>
-            {loading ? 'Вхід…' : 'Увійти'}
+            {loading ? t('loginLoading') : t('loginSubmit')}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              setMode('forgot');
+              setError('');
+              setMessage('');
+            }}
+          >
+            Забули пароль?
           </button>
           {identityAvailable && (
             <button
@@ -265,12 +378,72 @@ export default function LoginPage() {
               onClick={() => void handleIdentity()}
             >
               {identityProvider === 'diia'
-                ? 'Увійти через Дію'
+                ? t('loginViaDiia')
                 : identityProvider === 'bankid'
-                  ? 'Увійти через BankID'
-                  : 'Увійти через Дію / BankID (mock)'}
+                  ? t('loginViaBankId')
+                  : t('loginViaIdentity')}
             </button>
           )}
+        </form>
+      )}
+
+      {mode === 'forgot' && (
+        <form onSubmit={handleForgot} className="card" style={{ display: 'grid', gap: '1rem' }}>
+          <p style={{ color: 'var(--muted)', margin: 0, fontSize: '0.9rem' }}>
+            Вкажіть email — надішлемо посилання для нового пароля (якщо акаунт існує).
+          </p>
+          <div>
+            <label htmlFor="forgot-email">{t('loginEmail')}</label>
+            <input
+              id="forgot-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              autoComplete="username"
+            />
+          </div>
+          {error && <p className="error">{error}</p>}
+          {message && <p style={{ color: 'var(--success)' }}>{message}</p>}
+          <button type="submit" disabled={loading}>
+            {loading ? '…' : 'Надіслати'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              setMode('password');
+              setError('');
+              setMessage('');
+            }}
+          >
+            Назад до входу
+          </button>
+        </form>
+      )}
+
+      {mode === 'reset' && (
+        <form onSubmit={handleReset} className="card" style={{ display: 'grid', gap: '1rem' }}>
+          <p style={{ color: 'var(--muted)', margin: 0, fontSize: '0.9rem' }}>
+            Встановіть новий пароль (мін. 8 символів, літера + цифра).
+          </p>
+          <div>
+            <label htmlFor="new-password">Новий пароль</label>
+            <input
+              id="new-password"
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              required
+              minLength={8}
+              autoComplete="new-password"
+            />
+          </div>
+          {error && <p className="error">{error}</p>}
+          {message && <p style={{ color: 'var(--success)' }}>{message}</p>}
+          <button type="submit" disabled={loading}>
+            {loading ? '…' : 'Зберегти пароль'}
+          </button>
         </form>
       )}
 
@@ -281,7 +454,7 @@ export default function LoginPage() {
           style={{ display: 'grid', gap: '1rem' }}
         >
           <div>
-            <label htmlFor="phone">Телефон</label>
+            <label htmlFor="phone">{t('loginSmsPhone')}</label>
             <input
               id="phone"
               type="tel"
@@ -294,7 +467,7 @@ export default function LoginPage() {
           </div>
           {smsSent && (
             <div>
-              <label htmlFor="sms-code">Код з SMS</label>
+              <label htmlFor="sms-code">{t('loginSmsCode')}</label>
               <input
                 id="sms-code"
                 inputMode="numeric"
@@ -309,7 +482,7 @@ export default function LoginPage() {
           {message && <p className="success-banner">{message}</p>}
           {error && <p className="error">{error}</p>}
           <button type="submit" disabled={loading}>
-            {loading ? '…' : smsSent ? 'Увійти' : 'Надіслати код'}
+            {loading ? '…' : smsSent ? t('loginSubmit') : t('loginSmsSend')}
           </button>
           {smsSent && (
             <button
@@ -320,7 +493,7 @@ export default function LoginPage() {
                 setSmsCode('');
               }}
             >
-              Змінити номер
+              {t('loginChangeNumber')}
             </button>
           )}
         </form>
@@ -328,11 +501,9 @@ export default function LoginPage() {
 
       {mode === '2fa' && (
         <form onSubmit={handle2fa} className="card" style={{ display: 'grid', gap: '1rem' }}>
-          <p style={{ fontSize: '0.95rem' }}>
-            Введіть 6-значний код з додатку-аутентифікатора (2FA).
-          </p>
+          <p style={{ fontSize: '0.95rem' }}>{t('login2faHint')}</p>
           <div>
-            <label htmlFor="code">Код 2FA</label>
+            <label htmlFor="code">{t('login2faCode')}</label>
             <input
               id="code"
               inputMode="numeric"
@@ -346,7 +517,7 @@ export default function LoginPage() {
           </div>
           {error && <p className="error">{error}</p>}
           <button type="submit" disabled={loading}>
-            {loading ? 'Перевірка…' : 'Підтвердити'}
+            {loading ? t('login2faChecking') : t('login2faSubmit')}
           </button>
           <button
             type="button"
@@ -358,20 +529,20 @@ export default function LoginPage() {
               setError('');
             }}
           >
-            Назад
+            {t('back')}
           </button>
         </form>
       )}
 
       {showDemoHints && mode === 'password' && (
         <p style={{ marginTop: '1rem', color: 'var(--muted)', fontSize: '0.85rem' }}>
-          Демо: chairman@osbb.local / password123
+          Demo: chairman@osbb.local / password123
           <br />
-          Супер-адмін: admin@dah.local / password123
+          Super-admin: admin@dah.local / password123
         </p>
       )}
       <p style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: 'var(--muted)' }}>
-        Немає облікового запису? <Link href="/register">Зареєструватися</Link>
+        {t('loginNoAccount')} <Link href="/register">{t('loginRegisterLink')}</Link>
       </p>
     </main>
   );
