@@ -8,7 +8,8 @@ dist/
 coverage/
 .turbo/
 apps/api/prisma/migrations/*_migration_lock.toml
-backups/
+# Only root data dumps (not apps/api/src/modules/backups/)
+/backups/
 coverage/
 playwright-report/
 test-results/
