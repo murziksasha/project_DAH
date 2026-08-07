@@ -45,6 +45,20 @@ Redis **не потрібен** за замовчуванням (worker — inli
 
 Далі: `npm run dev` (або окремо `dev:api` / `dev:web`). Документація: [SPEC/](./SPEC/).
 
+## Native (без Docker)
+
+Після `npm run build` і налаштованих Postgres + MinIO + `.env` (localhost):
+
+```bash
+npm run db:migrate
+npm run start          # API (:3001) + Worker (dotenv з .env)
+```
+
+Web — static export (`apps/web/out`); на хості віддає **nginx** з proxy `/api` → API.  
+Автозапуск на Lubuntu/Ubuntu: `sudo bash infra/scripts/install-native-systemd.sh`  
+Оновлення з git: `npm run update:native` (pull + install + build + migrate + restart).  
+Деталі: [docs/DEPLOY.md](./docs/DEPLOY.md) § Native host.
+
 ## Організації
 
 | Тип | Код | Призначення |

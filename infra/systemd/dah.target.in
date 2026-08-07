@@ -1,0 +1,7 @@
+[Unit]
+Description=DAH stack (MinIO + API + Worker; web via nginx)
+Wants=dah-minio.service dah-minio-init.service dah-api.service dah-worker.service nginx.service
+After=dah-minio.service dah-api.service dah-worker.service
+
+[Install]
+WantedBy=multi-user.target

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Native host (no Docker)
+- Root scripts: `npm run start` / `start:app` / `start:api` / `start:worker` (dotenv + API + Worker)
+- `@dah/api` script `start:worker`
+- `infra/scripts/run-with-env.sh`, `run-minio.sh`, `run-minio-init.sh`, `install-native-systemd.sh`
+- systemd templates `infra/systemd/dah-*.service.in`, `dah.target.in`
+- nginx native site template `infra/nginx/dah-native.conf.in` (static `out` + `/api` proxy)
+- Docs: README + DEPLOY §10 Native host
+- `npm run update:native` / `infra/scripts/update-native.sh` — one-shot pull→build→migrate→restart
+
 ## 1.14.0 — Runtime slim + performance (phases A–E)
 
 ### A — Slim worker
