@@ -127,6 +127,29 @@ export async function seedTestFixtures() {
     },
   });
 
+  await prisma.tenantMembership.createMany({
+    data: [
+      {
+        userId: chairman.id,
+        tenantId: tenant.id,
+        role: UserRole.chairman,
+        status: UserStatus.active,
+      },
+      {
+        userId: accountant.id,
+        tenantId: tenant.id,
+        role: UserRole.accountant,
+        status: UserStatus.active,
+      },
+      {
+        userId: resident.id,
+        tenantId: tenant.id,
+        role: UserRole.resident,
+        status: UserStatus.active,
+      },
+    ],
+  });
+
   const accrual = await prisma.accrual.create({
     data: {
       fundId: fund.id,

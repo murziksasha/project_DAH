@@ -43,17 +43,48 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         select: { isActive: true },
       });
       if (!tenant?.isActive) {
-        throw new UnauthorizedException('Організацію (tenant) деактивовано');
+        // Keep message aligned with AuthService.assertTenantActive (web detects this).
+        throw new UnauthorizedException(
+          'Організацію (tenant) деактивовано. Вхід заборонено адміністратором.',
+        );
       }
     }
     const apartmentIds = user.apartmentLinks.map((l) => l.apartmentId);
+    const tenantId = user.tenantId ?? payload.tenantId ?? null;
+
+    // Prefer membership for active tenant + denormalized role (dual roles per org)
+    let role = user.role;
+    if (tenantId) {
+      const membership =
+        (await this.prisma.tenantMembership.findUnique({
+          where: {
+            userId_tenantId_role: {
+              userId: user.id,
+              tenantId,
+              role: user.role,
+            },
+          },
+          select: { role: true, status: true },
+        })) ??
+        (await this.prisma.tenantMembership.findFirst({
+          where: { userId: user.id, tenantId, status: UserStatus.active },
+          select: { role: true, status: true },
+        }));
+      if (membership) {
+        if (membership.status !== UserStatus.active) {
+          throw new UnauthorizedException('Членство в організації неактивне');
+        }
+        role = membership.role;
+      }
+    }
+
     return {
       id: user.id,
       email: user.email,
-      role: user.role,
+      role,
       apartmentId: user.apartmentId ?? apartmentIds[0] ?? null,
       apartmentIds,
-      tenantId: user.tenantId ?? payload.tenantId ?? null,
+      tenantId,
       sid: payload.sid ?? null,
     };
   }

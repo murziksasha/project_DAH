@@ -31,7 +31,8 @@ docker compose exec api npx ts-node prisma/seed.ts
 | auditor@osbb.local | password123 | Ревізійна комісія |
 | resident@osbb.local | password123 | Мешканець |
 
-Демо-організація: `orgType = osbb`. Super-admin може створити **УК** на `/admin/tenants`.
+Демо-організація: `orgType = osbb`. Super-admin може створити **УК** на `/admin/tenants`.  
+**Вимкнення організації** (`isActive`) одразу блокує вхід і сесії голови/правління/мешканців — super-admin головніший за ролі tenant.
 
 ## Локальна розробка
 

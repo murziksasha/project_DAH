@@ -20,6 +20,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { RemindersModule } from './modules/reminders/reminders.module';
 import { SetupModule } from './modules/setup/setup.module';
 import { UsersModule } from './modules/users/users.module';
+import { RolesModule } from './modules/roles/roles.module';
 import { JournalModule } from './modules/journal/journal.module';
 import { MetersModule } from './modules/meters/meters.module';
 import { SmsModule } from './modules/sms/sms.module';
@@ -59,6 +60,7 @@ import { KepModule } from './modules/kep/kep.module';
     RemindersModule,
     TransparencyModule,
     UsersModule,
+    RolesModule,
     SetupModule,
     MeetingsModule,
     MessengerModule,

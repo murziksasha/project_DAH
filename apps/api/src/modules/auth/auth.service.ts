@@ -42,6 +42,10 @@ const MAX_FAILED_LOGINS = 10;
 const LOCK_MINUTES = 15;
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
 
+/** Stable phrase for web client detection (login / JWT / refresh). */
+export const TENANT_INACTIVE_MESSAGE =
+  'Організацію (tenant) деактивовано. Вхід заборонено адміністратором.';
+
 export interface SessionMeta {
   userAgent?: string;
   ip?: string;
@@ -69,6 +73,23 @@ export class AuthService {
 
   private totpPlain(stored: string | null | undefined): string | null {
     return openSecret(stored);
+  }
+
+  /**
+   * Platform super_admin has tenantId=null and is never blocked by tenant status.
+   * Deactivated org users must not receive tokens (login / 2FA / SMS / refresh).
+   */
+  private async assertTenantActive(
+    tenantId: string | null | undefined,
+  ): Promise<void> {
+    if (!tenantId) return;
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { isActive: true },
+    });
+    if (!tenant?.isActive) {
+      throw new UnauthorizedException(TENANT_INACTIVE_MESSAGE);
+    }
   }
 
   async register(dto: RegisterDto) {
@@ -100,29 +121,41 @@ export class AuthService {
     if (existing) throw new BadRequestException('Email вже зареєстрований');
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
-    const user = await this.prisma.user.create({
-      data: {
-        email: dto.email,
-        passwordHash,
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        phone: dto.phone,
-        role: UserRole.resident,
-        status: UserStatus.pending,
-        tenantId: apartment.building.tenantId,
-        apartmentId: dto.apartmentId,
-        apartmentLinks: {
-          create: { apartmentId: dto.apartmentId, isPrimary: true },
+    const tenantId = apartment.building.tenantId;
+    const user = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          email: dto.email,
+          passwordHash,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          phone: dto.phone,
+          role: UserRole.resident,
+          status: UserStatus.pending,
+          tenantId,
+          apartmentId: dto.apartmentId,
+          apartmentLinks: {
+            create: { apartmentId: dto.apartmentId, isPrimary: true },
+          },
         },
-      },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        role: true,
-        status: true,
-      },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          role: true,
+          status: true,
+        },
+      });
+      await tx.tenantMembership.create({
+        data: {
+          userId: created.id,
+          tenantId,
+          role: UserRole.resident,
+          status: UserStatus.pending,
+        },
+      });
+      return created;
     });
 
     void this.mail.sendTemplate(user.email, 'registration.pending', {
@@ -164,17 +197,7 @@ export class AuthService {
       throw new UnauthorizedException('Невірний email або пароль');
     }
 
-    if (user.status === UserStatus.blocked) {
-      await this.auditLoginFailure(dto.email, 'blocked', user.id);
-      throw new UnauthorizedException('Обліковий запис заблоковано');
-    }
-
-    if (user.status === UserStatus.pending) {
-      await this.auditLoginFailure(dto.email, 'pending', user.id);
-      throw new UnauthorizedException('Очікуйте підтвердження від правління');
-    }
-
-    // Reset lockout counters on good password
+    // Reset lockout counters on good password before membership resolution
     if (user.failedLoginCount > 0 || user.lockedUntil) {
       await this.prisma.user.update({
         where: { id: user.id },
@@ -182,33 +205,47 @@ export class AuthService {
       });
     }
 
-    const totpSecret = this.totpPlain(user.totpSecret);
-    if (user.totpEnabled && totpSecret) {
+    let activeUser = user;
+    try {
+      activeUser = await this.resolveLoginMembership(user, dto.tenantId, dto.role as UserRole | undefined);
+    } catch (err) {
+      if (err instanceof UnauthorizedException) {
+        const msg = err.message;
+        if (msg.includes('заблоковано')) await this.auditLoginFailure(dto.email, 'blocked', user.id);
+        else if (msg.includes('підтвердження')) await this.auditLoginFailure(dto.email, 'pending', user.id);
+        else if (msg.includes('деактивовано')) await this.auditLoginFailure(dto.email, 'tenant_inactive', user.id);
+        else await this.auditLoginFailure(dto.email, 'login_denied', user.id);
+      }
+      throw err;
+    }
+
+    const totpSecret = this.totpPlain(activeUser.totpSecret);
+    if (activeUser.totpEnabled && totpSecret) {
       if (dto.code) {
         if (!verifyTotp(dto.code, totpSecret)) {
-          await this.auditLoginFailure(dto.email, 'bad_2fa', user.id);
+          await this.auditLoginFailure(dto.email, 'bad_2fa', activeUser.id);
           throw new UnauthorizedException('Невірний код 2FA');
         }
-        return this.completeLogin(user, meta);
+        return this.completeLogin(activeUser, meta);
       }
       const tempToken = await this.jwt.signAsync(
-        { sub: user.id, purpose: '2fa' },
+        { sub: activeUser.id, purpose: '2fa' },
         { expiresIn: '5m', secret: resolveJwtSecret(this.config) },
       );
       return {
         requires2fa: true as const,
         tempToken,
         user: {
-          id: user.id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          role: user.role,
+          id: activeUser.id,
+          email: activeUser.email,
+          firstName: activeUser.firstName,
+          lastName: activeUser.lastName,
+          role: activeUser.role,
         },
       };
     }
 
-    return this.completeLogin(user, meta);
+    return this.completeLogin(activeUser, meta);
   }
 
   private async recordFailedLogin(userId: string, email: string) {
@@ -249,14 +286,15 @@ export class AuthService {
 
     const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
     const totpSecret = this.totpPlain(user?.totpSecret);
-    if (!user || user.status !== UserStatus.active || !user.totpEnabled || !totpSecret) {
+    if (!user || !user.totpEnabled || !totpSecret) {
       throw new UnauthorizedException('2FA недоступна');
     }
     if (!verifyTotp(code, totpSecret)) {
       await this.auditLoginFailure(user.email, 'bad_2fa', user.id);
       throw new UnauthorizedException('Невірний код 2FA');
     }
-    return this.completeLogin(user, meta);
+    const activeUser = await this.resolveLoginMembership(user);
+    return this.completeLogin(activeUser, meta);
   }
 
   async setup2fa(userId: string) {
@@ -635,23 +673,38 @@ export class AuthService {
       throw new BadRequestException('Користувач вже підтверджений або заблокований');
     }
 
-    const updated = await this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        status: UserStatus.active,
-        approvedAt: new Date(),
-        approvedById: actorId,
-      },
-      select: {
-        id: true,
-        email: true,
-        status: true,
-        role: true,
-        firstName: true,
-        lastName: true,
-        approvedAt: true,
-        approvedById: true,
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.user.update({
+        where: { id: userId },
+        data: {
+          status: UserStatus.active,
+          approvedAt: new Date(),
+          approvedById: actorId,
+        },
+        select: {
+          id: true,
+          email: true,
+          status: true,
+          role: true,
+          firstName: true,
+          lastName: true,
+          approvedAt: true,
+          approvedById: true,
+          tenantId: true,
+        },
+      });
+      if (row.tenantId) {
+        await tx.tenantMembership.updateMany({
+          where: { userId, tenantId: row.tenantId, status: UserStatus.pending },
+          data: { status: UserStatus.active },
+        });
+      } else {
+        await tx.tenantMembership.updateMany({
+          where: { userId, status: UserStatus.pending },
+          data: { status: UserStatus.active },
+        });
+      }
+      return row;
     });
 
     const approver = await this.prisma.user.findUnique({
@@ -852,6 +905,17 @@ export class AuthService {
     if (!user || user.status !== UserStatus.active) {
       await this.revokeAllSessions(payload.sub);
       throw new UnauthorizedException('Сесію завершено');
+    }
+
+    try {
+      await this.assertTenantActive(user.tenantId);
+    } catch {
+      await this.revokeAllSessions(payload.sub);
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { refreshToken: null },
+      });
+      throw new UnauthorizedException(TENANT_INACTIVE_MESSAGE);
     }
 
     // Rotate: revoke current row, issue new session same family
@@ -1074,6 +1138,242 @@ export class AuthService {
     });
   }
 
+  /**
+   * Resolve which tenant membership applies for login and sync denormalized User fields.
+   * Platform super_admin (no memberships, tenantId null) uses User.status only.
+   */
+  private async resolveLoginMembership<
+    T extends {
+      id: string;
+      email: string;
+      firstName: string;
+      lastName: string;
+      role: UserRole;
+      status: UserStatus;
+      apartmentId: string | null;
+      tenantId: string | null;
+      totpSecret?: string | null;
+      totpEnabled?: boolean;
+      passwordHash?: string;
+      failedLoginCount?: number;
+      lockedUntil?: Date | null;
+    },
+  >(user: T, preferredTenantId?: string, preferredRole?: UserRole): Promise<T> {
+    const isPlatformAdmin = user.role === UserRole.super_admin && !user.tenantId;
+    if (isPlatformAdmin) {
+      if (user.status === UserStatus.blocked) {
+        throw new UnauthorizedException('Обліковий запис заблоковано');
+      }
+      if (user.status === UserStatus.pending) {
+        throw new UnauthorizedException('Очікуйте підтвердження від правління');
+      }
+      if (user.status !== UserStatus.active) {
+        throw new UnauthorizedException('Обліковий запис недоступний');
+      }
+      return user;
+    }
+
+    const memberships = await this.prisma.tenantMembership.findMany({
+      where: { userId: user.id },
+      include: {
+        tenant: { select: { id: true, name: true, slug: true, orgType: true, isActive: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    // Legacy users without backfilled membership: treat User row as single membership
+    if (!memberships.length) {
+      if (user.status === UserStatus.blocked) {
+        throw new UnauthorizedException('Обліковий запис заблоковано');
+      }
+      if (user.status === UserStatus.pending) {
+        throw new UnauthorizedException('Очікуйте підтвердження від правління');
+      }
+      if (user.status !== UserStatus.active) {
+        throw new UnauthorizedException('Обліковий запис недоступний');
+      }
+      await this.assertTenantActive(user.tenantId);
+      if (user.tenantId && user.role !== UserRole.super_admin) {
+        await this.prisma.tenantMembership.create({
+          data: {
+            userId: user.id,
+            tenantId: user.tenantId,
+            role: user.role,
+            status: user.status,
+          },
+        }).catch(() => undefined);
+      }
+      return user;
+    }
+
+    const usable = memberships.filter(
+      (m) => m.status === UserStatus.active && m.tenant.isActive,
+    );
+
+    if (!usable.length) {
+      if (memberships.some((m) => m.status === UserStatus.pending)) {
+        throw new UnauthorizedException('Очікуйте підтвердження від правління');
+      }
+      if (memberships.some((m) => m.status === UserStatus.blocked)) {
+        throw new UnauthorizedException('Обліковий запис заблоковано');
+      }
+      if (memberships.some((m) => !m.tenant.isActive)) {
+        throw new UnauthorizedException(TENANT_INACTIVE_MESSAGE);
+      }
+      throw new UnauthorizedException('Немає доступу до жодної організації');
+    }
+
+    const preferred =
+      (preferredTenantId
+        ? usable.find(
+            (m) =>
+              m.tenantId === preferredTenantId &&
+              (!preferredRole || m.role === preferredRole),
+          )
+        : undefined) ??
+      usable.find(
+        (m) =>
+          m.tenantId === user.tenantId &&
+          (!preferredRole || m.role === preferredRole || m.role === user.role),
+      ) ??
+      usable.find((m) => m.tenantId === user.tenantId && m.role === user.role) ??
+      usable.find((m) => m.tenantId === user.tenantId) ??
+      usable[0];
+
+    if (preferredTenantId && !usable.some((m) => m.tenantId === preferredTenantId)) {
+      throw new UnauthorizedException('Немає доступу до обраної організації');
+    }
+    if (
+      preferredRole &&
+      preferredTenantId &&
+      !usable.some((m) => m.tenantId === preferredTenantId && m.role === preferredRole)
+    ) {
+      throw new UnauthorizedException('Немає доступу з обраною роллю в цій організації');
+    }
+
+    if (
+      user.tenantId !== preferred.tenantId ||
+      user.role !== preferred.role ||
+      user.status !== preferred.status
+    ) {
+      const updated = await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          tenantId: preferred.tenantId,
+          role: preferred.role,
+          status: preferred.status,
+        },
+      });
+      return { ...user, ...updated };
+    }
+
+    return user;
+  }
+
+  /**
+   * Switch active organization and/or role (persona) for multi-membership users.
+   * Re-issues session tokens. Pass `role` when the user has board+resident in the same org.
+   */
+  async selectTenant(
+    userId: string,
+    tenantId: string,
+    meta: SessionMeta = {},
+    role?: UserRole,
+  ) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || user.status === UserStatus.blocked) {
+      throw new UnauthorizedException('Користувач не авторизований');
+    }
+    if (user.role === UserRole.super_admin && !user.tenantId) {
+      throw new BadRequestException('Системний адміністратор не перемикає membership');
+    }
+
+    let membership = role
+      ? await this.prisma.tenantMembership.findUnique({
+          where: {
+            userId_tenantId_role: { userId, tenantId, role },
+          },
+          include: {
+            tenant: {
+              select: { id: true, name: true, slug: true, orgType: true, isActive: true },
+            },
+          },
+        })
+      : await this.prisma.tenantMembership.findFirst({
+          where: { userId, tenantId, status: UserStatus.active },
+          include: {
+            tenant: {
+              select: { id: true, name: true, slug: true, orgType: true, isActive: true },
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        });
+
+    // If multiple roles and no role specified, prefer matching current role then first
+    if (!role) {
+      const all = await this.prisma.tenantMembership.findMany({
+        where: { userId, tenantId, status: UserStatus.active },
+        include: {
+          tenant: {
+            select: { id: true, name: true, slug: true, orgType: true, isActive: true },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (all.length > 1) {
+        membership =
+          all.find((m) => m.role === user.role) ?? all[0] ?? membership;
+      } else if (all.length === 1) {
+        membership = all[0];
+      }
+    }
+
+    if (!membership) {
+      throw new BadRequestException('Немає членства в цій організації');
+    }
+    if (membership.status !== UserStatus.active) {
+      throw new BadRequestException('Членство в цій організації неактивне');
+    }
+    if (!membership.tenant.isActive) {
+      throw new UnauthorizedException(TENANT_INACTIVE_MESSAGE);
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        tenantId: membership.tenantId,
+        role: membership.role,
+        status: membership.status,
+      },
+    });
+
+    await this.revokeAllSessions(userId);
+    return this.completeLogin(updated, meta);
+  }
+
+  async listMemberships(userId: string) {
+    const rows = await this.prisma.tenantMembership.findMany({
+      where: { userId },
+      include: {
+        tenant: { select: { id: true, name: true, slug: true, orgType: true, isActive: true } },
+      },
+      orderBy: [{ tenantId: 'asc' }, { role: 'asc' }],
+    });
+    return rows.map((m) => ({
+      id: m.id,
+      tenantId: m.tenantId,
+      role: m.role,
+      status: m.status,
+      tenant: {
+        id: m.tenant.id,
+        name: m.tenant.name,
+        slug: m.tenant.slug,
+        orgType: m.tenant.orgType,
+        isActive: m.tenant.isActive,
+      },
+    }));
+  }
+
   /** Public for Identity / SMS providers after external auth succeeds. */
   async completeLogin(
     user: {
@@ -1098,6 +1398,7 @@ export class AuthService {
               select: { tenantId: true },
             })
           )?.tenantId ?? null;
+    await this.assertTenantActive(tenantId);
     const tokens = await this.issueSessionTokens(
       user.id,
       user.email,
@@ -1127,9 +1428,12 @@ export class AuthService {
         })
       : null;
 
+    const memberships = await this.listMemberships(user.id);
+
     return {
       requires2fa: false as const,
-      user: this.publicUser({ ...user, tenantId }, tenant),
+      user: this.publicUser({ ...user, tenantId }, tenant, memberships),
+      memberships,
       ...tokens,
     };
   }
@@ -1146,6 +1450,18 @@ export class AuthService {
       tenantId?: string | null;
     },
     tenant?: { id: string; name: string; slug: string; orgType: string } | null,
+    memberships?: Array<{
+      tenantId: string;
+      role: UserRole;
+      status: UserStatus;
+      tenant: {
+        id: string;
+        name: string;
+        slug: string;
+        orgType: string;
+        isActive: boolean;
+      };
+    }>,
   ) {
     return {
       id: user.id,
@@ -1164,6 +1480,7 @@ export class AuthService {
             orgType: tenant.orgType,
           }
         : null,
+      memberships: memberships ?? [],
     };
   }
 

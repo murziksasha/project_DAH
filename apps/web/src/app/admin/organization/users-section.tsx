@@ -2,8 +2,16 @@
 
 import { useI18n } from '@/components/LocaleProvider';
 import { formatDateUk } from '@/lib/money';
-import { getRoleLabel, getStatusLabel, PAGE_SIZE, STATUS_COLORS } from './constants';
-import { UserRow } from './types';
+import {
+  EDIT_ROLES,
+  getRoleLabel,
+  getStatusLabel,
+  PAGE_SIZE,
+  STATUS_COLORS,
+} from './constants';
+import { UserRow, UserSortField } from './types';
+
+// filterRoles can be overridden via filterRoleOptions
 
 function formatApartments(
   user: UserRow,
@@ -47,11 +55,58 @@ interface UsersSectionProps {
   total: number;
   page: number;
   search: string;
+  roleFilter: string;
+  statusFilter: string;
+  sortBy: UserSortField;
+  sortDir: 'asc' | 'desc';
   loading: boolean;
+  tenantReady: boolean;
   onSearchChange: (value: string) => void;
+  onRoleFilterChange: (value: string) => void;
+  onStatusFilterChange: (value: string) => void;
+  onSortChange: (field: UserSortField) => void;
   onPageChange: (page: number) => void;
   onEdit: (user: UserRow) => void;
   onToggleBlock: (user: UserRow) => void;
+  /** Role codes for filter dropdown (defaults to EDIT_ROLES) */
+  filterRoleOptions?: string[];
+}
+
+function SortHeader({
+  label,
+  field,
+  sortBy,
+  sortDir,
+  onSort,
+}: {
+  label: string;
+  field: UserSortField;
+  sortBy: UserSortField;
+  sortDir: 'asc' | 'desc';
+  onSort: (field: UserSortField) => void;
+}) {
+  const active = sortBy === field;
+  return (
+    <th style={{ padding: '0.35rem 0.5rem' }}>
+      <button
+        type="button"
+        onClick={() => onSort(field)}
+        style={{
+          background: 'none',
+          border: 'none',
+          color: 'inherit',
+          cursor: 'pointer',
+          padding: 0,
+          font: 'inherit',
+          fontWeight: active ? 600 : 400,
+        }}
+        title={label}
+      >
+        {label}
+        {active ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+      </button>
+    </th>
+  );
 }
 
 export function UsersSection({
@@ -59,60 +114,124 @@ export function UsersSection({
   total,
   page,
   search,
+  roleFilter,
+  statusFilter,
+  sortBy,
+  sortDir,
   loading,
+  tenantReady,
   onSearchChange,
+  onRoleFilterChange,
+  onStatusFilterChange,
+  onSortChange,
   onPageChange,
   onEdit,
   onToggleBlock,
+  filterRoleOptions,
 }: UsersSectionProps) {
   const { t, locale } = useI18n();
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const aptShort = (number: string) => t('orgAptShort', { number });
 
+  const filterRoles =
+    filterRoleOptions && filterRoleOptions.length
+      ? filterRoleOptions
+      : EDIT_ROLES.filter((r) => r !== 'super_admin' as never);
+
   return (
     <section className="card" style={{ marginBottom: '1.5rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '1rem',
+          marginBottom: '1rem',
+          flexWrap: 'wrap',
+        }}
+      >
         <h2 style={{ margin: 0 }}>{t('orgUsers')}</h2>
-        <input
-          placeholder={t('orgUserSearchPh')}
-          value={search}
-          onChange={(e) => onSearchChange(e.target.value)}
-          style={{ maxWidth: 280, flex: '1 1 200px' }}
-        />
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', flex: '1 1 320px', justifyContent: 'flex-end' }}>
+          <input
+            placeholder={t('orgUserSearchPh')}
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
+            disabled={!tenantReady}
+            style={{ maxWidth: 260, flex: '1 1 160px' }}
+          />
+          <select
+            value={roleFilter}
+            onChange={(e) => onRoleFilterChange(e.target.value)}
+            disabled={!tenantReady}
+            aria-label={t('orgFilterRole')}
+            style={{ maxWidth: 180 }}
+          >
+            <option value="">{t('orgFilterAllRoles')}</option>
+            {filterRoles.map((r) => (
+              <option key={r} value={r}>
+                {getRoleLabel(r, t)}
+              </option>
+            ))}
+          </select>
+          <select
+            value={statusFilter}
+            onChange={(e) => onStatusFilterChange(e.target.value)}
+            disabled={!tenantReady}
+            aria-label={t('orgFilterStatus')}
+            style={{ maxWidth: 150 }}
+          >
+            <option value="">{t('orgFilterAllStatuses')}</option>
+            <option value="active">{getStatusLabel('active', t)}</option>
+            <option value="pending">{getStatusLabel('pending', t)}</option>
+            <option value="blocked">{getStatusLabel('blocked', t)}</option>
+          </select>
+        </div>
       </div>
+
+      {!tenantReady && (
+        <p style={{ color: 'var(--muted)', marginBottom: '1rem' }}>{t('orgSelectTenantHint')}</p>
+      )}
 
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', fontSize: '0.9rem', minWidth: 720 }}>
           <thead>
             <tr style={{ textAlign: 'left', color: 'var(--muted)' }}>
-              <th style={{ padding: '0.35rem 0.5rem' }}>{t('firstName')}</th>
+              <SortHeader label={t('firstName')} field="name" sortBy={sortBy} sortDir={sortDir} onSort={onSortChange} />
               <th style={{ padding: '0.35rem 0.5rem' }}>{t('phone')}</th>
-              <th style={{ padding: '0.35rem 0.5rem' }}>{t('email')}</th>
-              <th style={{ padding: '0.35rem 0.5rem' }}>{t('orgRole')}</th>
-              <th style={{ padding: '0.35rem 0.5rem' }}>{t('orgStatus')}</th>
+              <SortHeader label={t('email')} field="email" sortBy={sortBy} sortDir={sortDir} onSort={onSortChange} />
+              <SortHeader label={t('orgRole')} field="role" sortBy={sortBy} sortDir={sortDir} onSort={onSortChange} />
+              <SortHeader label={t('orgStatus')} field="status" sortBy={sortBy} sortDir={sortDir} onSort={onSortChange} />
               <th style={{ padding: '0.35rem 0.5rem' }}>{t('orgApartments')}</th>
               <th style={{ padding: '0.35rem 0.5rem' }}>{t('orgApprovedBy')}</th>
               <th style={{ padding: '0.35rem 0.5rem' }}></th>
             </tr>
           </thead>
           <tbody>
-            {loading && (
+            {!tenantReady && (
+              <tr>
+                <td colSpan={8} style={{ padding: '1rem', color: 'var(--muted)' }}>
+                  {t('orgSelectTenantHint')}
+                </td>
+              </tr>
+            )}
+            {tenantReady && loading && (
               <tr>
                 <td colSpan={8} style={{ padding: '1rem', color: 'var(--muted)' }}>
                   {t('loading')}
                 </td>
               </tr>
             )}
-            {!loading && users.length === 0 && (
+            {tenantReady && !loading && users.length === 0 && (
               <tr>
                 <td colSpan={8} style={{ padding: '1rem', color: 'var(--muted)' }}>
                   {t('orgUsersNotFound')}
                 </td>
               </tr>
             )}
-            {!loading &&
+            {tenantReady &&
+              !loading &&
               users.map((u) => (
-                <tr key={u.id} style={{ borderTop: '1px solid var(--border)' }}>
+                <tr key={`${u.id}:${u.role}`} style={{ borderTop: '1px solid var(--border)' }}>
                   <td style={{ padding: '0.35rem 0.5rem', whiteSpace: 'nowrap' }}>
                     {u.firstName} {u.lastName}
                   </td>
@@ -161,19 +280,28 @@ export function UsersSection({
         </table>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', fontSize: '0.85rem', color: 'var(--muted)' }}>
-        <span>
-          {t('orgUsersPage', { page, pages: totalPages, total })}
-        </span>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
-          <button type="button" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
-            ←
-          </button>
-          <button type="button" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
-            →
-          </button>
+      {tenantReady && (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginTop: '1rem',
+            fontSize: '0.85rem',
+            color: 'var(--muted)',
+          }}
+        >
+          <span>{t('orgUsersPage', { page, pages: totalPages, total })}</span>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button type="button" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
+              ←
+            </button>
+            <button type="button" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
+              →
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </section>
   );
 }

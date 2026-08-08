@@ -56,8 +56,10 @@ export const CREATE_ROLES = [
   'board',
   'dispatcher',
   'crew',
+  /** Dual persona: same person as staff + resident in one org */
+  'resident',
 ] as const;
 
-export const EDIT_ROLES = [...CREATE_ROLES, 'resident'] as const;
+export const EDIT_ROLES = [...CREATE_ROLES] as const;
 
 export const PAGE_SIZE = 20;

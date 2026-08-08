@@ -36,20 +36,54 @@
 | GET /auth/pending | ❌ | ✅ | ❌ | ✅ | ❌ |
 | PATCH /auth/approve/:id | ❌ | ✅ | ❌ | ✅ | ❌ |
 
-\* `pending` / `blocked` — login відхиляється
+\* `pending` / `blocked` — login відхиляється  
+\* Користувачі з `tenantId`, де `Tenant.isActive = false` — **login / 2FA complete / SMS / refresh / JWT** відхиляються (`401`, повідомлення про деактивацію). Super-admin не прив’язаний до tenant і лишається з доступом; він головніший за голову ОСББ/керівника УК.
 
 ### Users & Organization
 
 | Ендпоінт | super_admin | chairman | інші |
 |----------|-------------|----------|------|
-| GET /users | ✅ | ✅ | ❌ |
-| POST /users | ✅ | ❌ | ❌ |
-| PATCH /users/:id | ✅ | ❌ | ❌ |
-| PATCH /users/:id/block | ✅ | ✅ | ❌ |
+| GET /users | ✅* | ✅† | ❌ |
+| POST /users | ✅* | ❌ | ❌ |
+| PATCH /users/:id | ✅* | ❌ | ❌ |
+| PATCH /users/:id/block | ✅* | ✅† | ❌ |
 | POST/DELETE /users/:id/apartments/:apartmentId | ✅ | ❌ | ❌ |
 | POST/PATCH/DELETE /building/apartments | ✅ | ✅ | ❌ |
 
-Web UI `/admin/organization` — лише `super_admin`.
+\* Super-admin: обовʼязковий `X-Tenant-Id` (контекст org); інакше `400 tenant_required`.  
+† Chairman: лише свій `JWT.tenantId`.  
+Список/роль/статус — з `TenantMembership` у межах org.  
+Один identity може мати **кілька memberships**: різні tenants і/або **кілька roles в одному tenant** (типово `board`/`chairman` + `resident`). JWT завжди з **однією** активною role; перемикач persona у web.
+
+Web UI `/admin/organization` — `super_admin` (з вибором org) / chairman у своєму tenant.  
+Додати другу роль: `POST /users` з існуючим email і іншою `role` (напр. `resident` + квартири).
+
+## Кілька ролей однієї особи
+
+| Сценарій | Як |
+|----------|-----|
+| Різні ОСББ/УК | Окремі `TenantMembership` на різні `tenantId` |
+| Правління + мешканець **в одному** ОСББ | Два рядки: `(user, tenant, board)` + `(user, tenant, resident)` |
+| Login / шапка | Список memberships `org · role`; `POST /auth/select-tenant` `{ tenantId, role }` |
+| Список users | Flatten: один рядок на membership (одна людина може 2+ рази) |
+| Голоси / poll | 1 `userId` = 1 голос (не 2 при dual role) |
+
+## Каталог ролей організації (`TenantRole`)
+
+Системні коди RBAC не змінюються (permissions у `@dah/shared`).  
+Per-tenant каталог керує **чи можна призначати** роль новим memberships і **як вона називається** в UI.
+
+| Дія | Хто | Правило |
+|-----|-----|---------|
+| GET `/roles` | super_admin, chairman | tenant scope; `?activeOnly=1` для dropdown |
+| POST / PATCH / DELETE `/roles` | **лише super_admin** | |
+| Додати / увімкнути | POST `{ code }` | upsert + `isActive=true` |
+| Редагувати | PATCH labels, sortOrder | |
+| Деактивувати | PATCH `isActive=false` | існуючі users зберігають role; dropdown нових — без цієї ролі |
+| Видалити | DELETE | лише `memberCount=0`; `chairman`/`resident` — protected (не DELETE) |
+
+`POST/PATCH /users` з inactive role → `400`.  
+Фільтр users може показувати всі коди з каталогу (включно з inactive).
 
 ### Finance
 

@@ -30,7 +30,7 @@ erDiagram
 | name | String | Назва організації |
 | slug | String | Унікальний slug |
 | orgType | `osbb` \| `management_company` | Тип: ОСББ або УК (default `osbb`) |
-| isActive | Boolean | Деактивація блокує login користувачів tenant |
+| isActive | Boolean | `false` = організація вимкнена super-admin. Блокує **login**, **refresh** і **JWT** для всіх users з цим `tenantId`; при вимкненні **відкликаються** їхні `AuthSession` (і legacy refresh). Super-admin (`tenantId=null`) не залежить від цього прапорця. Увімкнення не відновлює старі сесії — потрібен новий login. |
 | settings | Json | Розширені опції |
 
 ### Building
@@ -55,10 +55,29 @@ erDiagram
 
 Унікальність: `(buildingId, number)`.
 
-### User / UserApartment
+### User / TenantMembership / TenantRole / UserApartment
+
+**Identity** (`User`): email (global unique), пароль, 2FA, імʼя, телефон.  
+**Членство** (`TenantMembership`): один рядок на `(userId, tenantId, role)` з `status` у цій org.
+
+Один і той самий користувач може мати **різні ролі в різних org** і **кілька ролей в одній org** (напр. `board` + `resident` в тому ж ОСББ).  
+`User.tenantId` + `User.role` + `User.status` — **активний** (обраний) membership/persona для JWT/RBAC; перемикання через `POST /auth/select-tenant` `{ tenantId, role? }`.  
+Platform `super_admin`: `tenantId = null`, без memberships.
+
+**Каталог ролей org** (`TenantRole`):
+
+| Поле | Опис |
+|------|------|
+| tenantId + code | unique; `code` = system `UserRole` (не `super_admin`) |
+| isActive | `false` = не пропонувати при **новому** призначенні; існуючі memberships OK |
+| labelUk / labelRu | optional override назви |
+| sortOrder | порядок у UI |
+
+Seed: при створенні Tenant — усі org-ролі active.  
+DELETE config-row: лише якщо `memberCount=0` і роль не protected (`chairman`, `resident`).
 
 Зв'язок користувача з квартирами — **many-to-many** через `UserApartment`:
-- один мешканець може володіти кількома квартирами;
+- один мешканець може володіти кількома квартирами (у межах tenant);
 - одна квартира може мати кількох мешканців (співвласники).
 
 | Поле UserApartment | Опис |
