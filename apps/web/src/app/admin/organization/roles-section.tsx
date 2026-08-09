@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { CSSProperties, FormEvent, useState } from 'react';
 import { useI18n } from '@/components/LocaleProvider';
 import { getRoleLabel } from './constants';
 import { TenantRoleRow } from './types';
@@ -27,6 +27,19 @@ const ALL_CODES = [
   'auditor',
   'resident',
 ] as const;
+
+const labelStyle: CSSProperties = {
+  display: 'block',
+  fontSize: '0.85rem',
+  color: 'var(--muted)',
+  marginBottom: '0.25rem',
+};
+
+const fieldStyle: CSSProperties = {
+  width: '100%',
+  boxSizing: 'border-box',
+  minWidth: 0,
+};
 
 export function RolesSection({
   roles,
@@ -77,8 +90,17 @@ export function RolesSection({
 
   return (
     <section className="card" style={{ marginBottom: '1.5rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
-        <div>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '1rem',
+          flexWrap: 'wrap',
+          marginBottom: '1rem',
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
           <h2 style={{ margin: 0 }}>{t('orgRolesTitle')}</h2>
           <p style={{ margin: '0.35rem 0 0', color: 'var(--muted)', fontSize: '0.85rem' }}>
             {t('orgRolesHint')}
@@ -86,50 +108,119 @@ export function RolesSection({
         </div>
       </div>
 
-      {missingCodes.length > 0 && (
-        <form
-          onSubmit={handleAdd}
-          style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem', alignItems: 'center' }}
-        >
-          <select value={addCode} onChange={(e) => setAddCode(e.target.value)} required>
-            <option value="">{t('orgRolesAddPh')}</option>
-            {missingCodes.map((c) => (
-              <option key={c} value={c}>
-                {getRoleLabel(c, t)} ({c})
-              </option>
-            ))}
-          </select>
-          <button type="submit" disabled={saving || !addCode}>
-            {t('orgRolesAdd')}
-          </button>
-        </form>
-      )}
+      {/* Always visible: how to re-add a deleted role */}
+      <div
+        style={{
+          marginBottom: '1rem',
+          padding: '0.75rem',
+          border: '1px solid var(--border)',
+          borderRadius: 6,
+          background: 'var(--surface-2, transparent)',
+          minWidth: 0,
+        }}
+      >
+        <div style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.35rem' }}>
+          {t('orgRolesAddTitle')}
+        </div>
+        {missingCodes.length > 0 ? (
+          <form
+            onSubmit={handleAdd}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 12rem), 1fr))',
+              gap: '0.5rem',
+              alignItems: 'end',
+              minWidth: 0,
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <label htmlFor="org-roles-add-code" style={labelStyle}>
+                {t('orgRolesAddPh')}
+              </label>
+              <select
+                id="org-roles-add-code"
+                value={addCode}
+                onChange={(e) => setAddCode(e.target.value)}
+                required
+                style={fieldStyle}
+              >
+                <option value="">{t('orgRolesAddPh')}</option>
+                {missingCodes.map((c) => (
+                  <option key={c} value={c}>
+                    {getRoleLabel(c, t)} ({c})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="submit"
+              disabled={saving || !addCode}
+              style={{ minWidth: 0, width: '100%' }}
+            >
+              {t('orgRolesAdd')}
+            </button>
+          </form>
+        ) : (
+          <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--muted)' }}>
+            {t('orgRolesAddHintAllPresent')}
+          </p>
+        )}
+      </div>
 
       {editCode && (
         <form
           onSubmit={handleSaveEdit}
           className="card"
-          style={{ marginBottom: '1rem', padding: '0.75rem', border: '1px solid var(--border)' }}
+          style={{
+            marginBottom: '1rem',
+            padding: '0.75rem',
+            border: '1px solid var(--border)',
+            minWidth: 0,
+          }}
         >
-          <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>
+          <div style={{ fontWeight: 600, marginBottom: '0.5rem', wordBreak: 'break-word' }}>
             {t('orgRolesEdit')}: {editCode}
           </div>
-          <div style={{ display: 'grid', gap: '0.5rem', maxWidth: 400 }}>
-            <input
-              placeholder={t('orgRolesLabelUk')}
-              value={labelUk}
-              onChange={(e) => setLabelUk(e.target.value)}
-            />
-            <input
-              placeholder={t('orgRolesLabelRu')}
-              value={labelRu}
-              onChange={(e) => setLabelRu(e.target.value)}
-            />
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button type="submit" disabled={saving}>
+          <div
+            style={{
+              display: 'grid',
+              gap: '0.5rem',
+              maxWidth: 420,
+              width: '100%',
+            }}
+          >
+            <div>
+              <label htmlFor="org-roles-label-uk" style={labelStyle}>
+                {t('orgRolesLabelUk')}
+              </label>
+              <input
+                id="org-roles-label-uk"
+                value={labelUk}
+                onChange={(e) => setLabelUk(e.target.value)}
+                style={fieldStyle}
+              />
+            </div>
+            <div>
+              <label htmlFor="org-roles-label-ru" style={labelStyle}>
+                {t('orgRolesLabelRu')}
+              </label>
+              <input
+                id="org-roles-label-ru"
+                value={labelRu}
+                onChange={(e) => setLabelRu(e.target.value)}
+                style={fieldStyle}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <button type="submit" disabled={saving} style={{ flex: '1 1 auto', minWidth: '7rem' }}>
                 {t('save')}
               </button>
-              <button type="button" className="btn btn-ghost" onClick={() => setEditCode(null)}>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setEditCode(null)}
+                style={{ flex: '1 1 auto', minWidth: '7rem' }}
+              >
                 {t('cancel')}
               </button>
             </div>
@@ -137,8 +228,8 @@ export function RolesSection({
         </form>
       )}
 
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', fontSize: '0.9rem', minWidth: 640 }}>
+      <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        <table style={{ width: '100%', fontSize: '0.9rem', minWidth: 560 }}>
           <thead>
             <tr style={{ textAlign: 'left', color: 'var(--muted)' }}>
               <th style={{ padding: '0.35rem 0.5rem' }}>{t('orgRole')}</th>
@@ -167,7 +258,13 @@ export function RolesSection({
               roles.map((r) => (
                 <tr key={r.code} style={{ borderTop: '1px solid var(--border)' }}>
                   <td style={{ padding: '0.35rem 0.5rem' }}>{displayLabel(r)}</td>
-                  <td style={{ padding: '0.35rem 0.5rem', fontFamily: 'monospace', fontSize: '0.85rem' }}>
+                  <td
+                    style={{
+                      padding: '0.35rem 0.5rem',
+                      fontFamily: 'monospace',
+                      fontSize: '0.85rem',
+                    }}
+                  >
                     {r.code}
                   </td>
                   <td style={{ padding: '0.35rem 0.5rem' }}>{r.memberCount}</td>
@@ -181,58 +278,67 @@ export function RolesSection({
                       {r.isActive ? t('orgRolesActive') : t('orgRolesInactive')}
                     </span>
                   </td>
-                  <td style={{ padding: '0.35rem 0.5rem', whiteSpace: 'nowrap' }}>
-                    <button
-                      type="button"
-                      style={{ fontSize: '0.8rem', marginRight: '0.35rem' }}
-                      disabled={saving}
-                      onClick={() => startEdit(r)}
+                  <td style={{ padding: '0.35rem 0.5rem' }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: '0.35rem',
+                        minWidth: 0,
+                      }}
                     >
-                      {t('edit')}
-                    </button>
-                    {r.isActive ? (
                       <button
                         type="button"
-                        style={{ fontSize: '0.8rem', marginRight: '0.35rem' }}
+                        style={{ fontSize: '0.8rem' }}
                         disabled={saving}
+                        onClick={() => startEdit(r)}
+                      >
+                        {t('edit')}
+                      </button>
+                      {r.isActive ? (
+                        <button
+                          type="button"
+                          style={{ fontSize: '0.8rem' }}
+                          disabled={saving}
+                          onClick={() => {
+                            if (confirm(t('orgRolesDeactivateConfirm', { role: displayLabel(r) }))) {
+                              void onUpdate(r.code, { isActive: false });
+                            }
+                          }}
+                        >
+                          {t('orgRolesDeactivate')}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          style={{ fontSize: '0.8rem' }}
+                          disabled={saving}
+                          onClick={() => void onUpdate(r.code, { isActive: true })}
+                        >
+                          {t('orgRolesActivate')}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        style={{ fontSize: '0.8rem' }}
+                        disabled={saving || !r.canDelete}
+                        title={
+                          !r.canDelete
+                            ? r.memberCount > 0
+                              ? t('orgRolesDeleteBlockedMembers')
+                              : t('orgRolesDeleteBlockedProtected')
+                            : undefined
+                        }
                         onClick={() => {
-                          if (confirm(t('orgRolesDeactivateConfirm', { role: displayLabel(r) }))) {
-                            void onUpdate(r.code, { isActive: false });
+                          if (!r.canDelete) return;
+                          if (confirm(t('orgRolesDeleteConfirm', { role: displayLabel(r) }))) {
+                            void onDelete(r.code);
                           }
                         }}
                       >
-                        {t('orgRolesDeactivate')}
+                        {t('delete')}
                       </button>
-                    ) : (
-                      <button
-                        type="button"
-                        style={{ fontSize: '0.8rem', marginRight: '0.35rem' }}
-                        disabled={saving}
-                        onClick={() => void onUpdate(r.code, { isActive: true })}
-                      >
-                        {t('orgRolesActivate')}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      style={{ fontSize: '0.8rem' }}
-                      disabled={saving || !r.canDelete}
-                      title={
-                        !r.canDelete
-                          ? r.memberCount > 0
-                            ? t('orgRolesDeleteBlockedMembers')
-                            : t('orgRolesDeleteBlockedProtected')
-                          : undefined
-                      }
-                      onClick={() => {
-                        if (!r.canDelete) return;
-                        if (confirm(t('orgRolesDeleteConfirm', { role: displayLabel(r) }))) {
-                          void onDelete(r.code);
-                        }
-                      }}
-                    >
-                      {t('delete')}
-                    </button>
+                    </div>
                   </td>
                 </tr>
               ))}

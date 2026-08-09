@@ -125,6 +125,7 @@ Layouts: client-side auth (`getToken()` у `AppShell`). Edge middleware приб
 JWT містить `tenantId` і role з **активного** membership (denormalized `User`).  
 Не-super_admin бачить лише свої buildings/apartments. Super-admin для списку users / roles **зобовʼязаний** передати `X-Tenant-Id`.  
 `GET/POST /tenants` — лише super_admin (`/admin/tenants`).  
+`/setup/*` (super_admin) також scoped по `X-Tenant-Id`: status/complete стосуються building **вибраної** org; без header — legacy перший building (bootstrap).  
 `Tenant.isActive = false`: блокує login/refresh/JWT для users org; інші org того ж user — після `select-tenant`.  
 Призначення ролі: лише якщо `TenantRole.isActive` (існуючі memberships з деактивованою роллю працюють).
 

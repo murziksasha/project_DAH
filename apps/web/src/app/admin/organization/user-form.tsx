@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useMemo, useState } from 'react';
+import { CSSProperties, FormEvent, useMemo, useState } from 'react';
 import { useI18n } from '@/components/LocaleProvider';
 import { CREATE_ROLES, getRoleLabel } from './constants';
 import { ApartmentRow, UserFormState, UserRow } from './types';
@@ -99,55 +99,142 @@ export function UserForm({
     );
   }
 
+  const labelStyle: CSSProperties = {
+    display: 'block',
+    fontSize: '0.85rem',
+    color: 'var(--muted)',
+    marginBottom: '0.25rem',
+  };
+  const fieldStyle: CSSProperties = {
+    width: '100%',
+    boxSizing: 'border-box',
+    minWidth: 0,
+  };
+  const fieldGroupStyle: CSSProperties = {
+    display: 'flex',
+    flexDirection: 'column',
+    minWidth: 0,
+  };
+
   return (
     <section className="card" style={{ marginBottom: '1.5rem' }}>
-      <h2 style={{ marginBottom: '1rem' }}>
+      <h2 style={{ marginBottom: '1rem', wordBreak: 'break-word' }}>
         {isEdit
           ? t('orgEditUserTitle', {
               name: `${editingUser.firstName} ${editingUser.lastName}`,
             })
           : t('orgCreateUser')}
       </h2>
-      <form onSubmit={onSubmit} style={{ display: 'grid', gap: '0.75rem', maxWidth: 480 }}>
-        <input
-          placeholder={t('email')}
-          type="email"
-          value={form.email}
-          onChange={(e) => onChange({ ...form, email: e.target.value })}
-          required
-        />
-        <input
-          type="password"
-          placeholder={isEdit ? t('orgPasswordKeep') : t('orgPasswordCreateHint')}
-          value={form.password}
-          onChange={(e) => onChange({ ...form, password: e.target.value })}
-          required={false}
-          minLength={form.password ? 8 : undefined}
-        />
-        {!isEdit && (
-          <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--muted)' }}>
-            {t('orgPasswordCreateHintDetail')}
-          </p>
-        )}
-        <input
-          placeholder={t('firstName')}
-          value={form.firstName}
-          onChange={(e) => onChange({ ...form, firstName: e.target.value })}
-          required
-        />
-        <input
-          placeholder={t('lastName')}
-          value={form.lastName}
-          onChange={(e) => onChange({ ...form, lastName: e.target.value })}
-          required
-        />
-        <input
-          placeholder={t('phone')}
-          value={form.phone}
-          onChange={(e) => onChange({ ...form, phone: e.target.value })}
-        />
-        <div>
+      <form
+        onSubmit={onSubmit}
+        style={{
+          display: 'grid',
+          gap: '0.85rem',
+          maxWidth: 520,
+          width: '100%',
+          minWidth: 0,
+        }}
+      >
+        {/* Name first — always visible labels (placeholders hide when filled) */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 11rem), 1fr))',
+            gap: '0.75rem',
+            minWidth: 0,
+          }}
+        >
+          <div style={fieldGroupStyle}>
+            <label htmlFor="org-user-first-name" style={labelStyle}>
+              {t('firstName')}
+            </label>
+            <input
+              id="org-user-first-name"
+              name="firstName"
+              autoComplete="given-name"
+              value={form.firstName}
+              onChange={(e) => onChange({ ...form, firstName: e.target.value })}
+              required
+              style={fieldStyle}
+            />
+          </div>
+          <div style={fieldGroupStyle}>
+            <label htmlFor="org-user-last-name" style={labelStyle}>
+              {t('lastName')}
+            </label>
+            <input
+              id="org-user-last-name"
+              name="lastName"
+              autoComplete="family-name"
+              value={form.lastName}
+              onChange={(e) => onChange({ ...form, lastName: e.target.value })}
+              required
+              style={fieldStyle}
+            />
+          </div>
+        </div>
+
+        <div style={fieldGroupStyle}>
+          <label htmlFor="org-user-email" style={labelStyle}>
+            {t('email')}
+          </label>
+          <input
+            id="org-user-email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            value={form.email}
+            onChange={(e) => onChange({ ...form, email: e.target.value })}
+            required
+            style={fieldStyle}
+          />
+        </div>
+
+        <div style={fieldGroupStyle}>
+          <label htmlFor="org-user-phone" style={labelStyle}>
+            {t('phone')}
+          </label>
+          <input
+            id="org-user-phone"
+            name="phone"
+            type="tel"
+            autoComplete="tel"
+            inputMode="tel"
+            value={form.phone}
+            onChange={(e) => onChange({ ...form, phone: e.target.value })}
+            style={fieldStyle}
+          />
+        </div>
+
+        <div style={fieldGroupStyle}>
+          <label htmlFor="org-user-password" style={labelStyle}>
+            {t('password')}
+          </label>
+          <input
+            id="org-user-password"
+            name="password"
+            type="password"
+            autoComplete="new-password"
+            placeholder={isEdit ? t('orgPasswordKeep') : t('orgPasswordCreateHint')}
+            value={form.password}
+            onChange={(e) => onChange({ ...form, password: e.target.value })}
+            required={false}
+            minLength={form.password ? 8 : undefined}
+            style={fieldStyle}
+          />
+          {!isEdit && (
+            <p style={{ margin: '0.25rem 0 0', fontSize: '0.8rem', color: 'var(--muted)' }}>
+              {t('orgPasswordCreateHintDetail')}
+            </p>
+          )}
+        </div>
+
+        <div style={fieldGroupStyle}>
+          <label htmlFor="org-user-role" style={labelStyle}>
+            {t('orgRole')}
+          </label>
           <select
+            id="org-user-role"
             value={form.role}
             onChange={(e) =>
               onChange({
@@ -158,7 +245,7 @@ export function UserForm({
                   : {}),
               })
             }
-            style={{ width: '100%' }}
+            style={fieldStyle}
           >
             {roles.map((r) => (
               <option key={r} value={r}>
@@ -170,6 +257,7 @@ export function UserForm({
             {t('orgRoleOneMembershipHint')}
           </p>
         </div>
+
         {isEdit && canAddResidentRole && onAddResidentRole && (
           <div
             style={{
@@ -177,25 +265,50 @@ export function UserForm({
               borderRadius: 6,
               padding: '0.65rem 0.75rem',
               background: 'var(--surface-2, transparent)',
+              minWidth: 0,
             }}
           >
             <p style={{ margin: '0 0 0.5rem', fontSize: '0.85rem', color: 'var(--muted)' }}>
               {t('orgAddResidentRoleHint')}
             </p>
-            <button type="button" disabled={saving} onClick={onAddResidentRole}>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={onAddResidentRole}
+              style={{ maxWidth: '100%', whiteSpace: 'normal', textAlign: 'left' }}
+            >
               {t('orgAddResidentRole')}
             </button>
           </div>
         )}
+
         {isEdit && (
-          <select value={form.status} onChange={(e) => onChange({ ...form, status: e.target.value })}>
-            <option value="active">{t('statusActive')}</option>
-            <option value="pending">{t('statusPending')}</option>
-            <option value="blocked">{t('statusBlocked')}</option>
-          </select>
+          <div style={fieldGroupStyle}>
+            <label htmlFor="org-user-status" style={labelStyle}>
+              {t('status')}
+            </label>
+            <select
+              id="org-user-status"
+              value={form.status}
+              onChange={(e) => onChange({ ...form, status: e.target.value })}
+              style={fieldStyle}
+            >
+              <option value="active">{t('statusActive')}</option>
+              <option value="pending">{t('statusPending')}</option>
+              <option value="blocked">{t('statusBlocked')}</option>
+            </select>
+          </div>
         )}
+
         {showApartments && (
-          <div style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '0.75rem' }}>
+          <div
+            style={{
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              padding: '0.75rem',
+              minWidth: 0,
+            }}
+          >
             <div
               style={{
                 display: 'flex',
@@ -218,7 +331,7 @@ export function UserForm({
               placeholder={t('search')}
               value={aptSearch}
               onChange={(e) => setAptSearch(e.target.value)}
-              style={{ width: '100%', marginBottom: '0.5rem' }}
+              style={{ ...fieldStyle, marginBottom: '0.5rem' }}
               aria-label={t('search')}
             />
             {selectedHiddenBySearch.length > 0 && (
@@ -240,11 +353,14 @@ export function UserForm({
             </div>
             {form.apartmentIds.length > 1 && (
               <div style={{ marginTop: '0.75rem' }}>
-                <label style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>{t('orgPrimaryApt')}</label>
+                <label htmlFor="org-user-primary-apt" style={labelStyle}>
+                  {t('orgPrimaryApt')}
+                </label>
                 <select
+                  id="org-user-primary-apt"
                   value={form.primaryApartmentId}
                   onChange={(e) => onChange({ ...form, primaryApartmentId: e.target.value })}
-                  style={{ width: '100%', marginTop: '0.25rem' }}
+                  style={fieldStyle}
                 >
                   {form.apartmentIds.map((id) => {
                     const a = apartments.find((x) => x.id === id);
@@ -259,12 +375,23 @@ export function UserForm({
             )}
           </div>
         )}
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <button type="submit" disabled={saving}>
+
+        <div
+          style={{
+            display: 'flex',
+            gap: '0.5rem',
+            flexWrap: 'wrap',
+          }}
+        >
+          <button type="submit" disabled={saving} style={{ flex: '1 1 auto', minWidth: '7rem' }}>
             {saving ? t('saving') : isEdit ? t('save') : t('create')}
           </button>
           {isEdit && (
-            <button type="button" onClick={onCancel}>
+            <button
+              type="button"
+              onClick={onCancel}
+              style={{ flex: '1 1 auto', minWidth: '7rem' }}
+            >
               {t('cancel')}
             </button>
           )}

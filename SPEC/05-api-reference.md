@@ -35,12 +35,20 @@ Login / refresh: `user.tenant = { id, name, slug, orgType }`.
 
 | Method | Path | Auth | Опис |
 |--------|------|------|------|
-| GET | `/setup/status` | super_admin | Стан майстра + resume |
+| GET | `/setup/status` | super_admin | Стан майстра + resume **для tenant** |
 | POST | `/setup/building` | super_admin | Створити/оновити будинок організації (upsert) |
 | POST | `/setup/bank` | super_admin | Банк + фонди (ідемпотентно) |
 | POST | `/setup/apartments` | super_admin | Масове додавання квартир |
 | POST | `/setup/users` | super_admin | Ключові ролі (ідемпотентно) |
-| POST | `/setup/complete` | super_admin | `isInitialized = true` |
+| POST | `/setup/complete` | super_admin | `Building.isInitialized = true` |
+
+### Tenant scope
+
+- Усі `/setup/*` приймають **`X-Tenant-Id`** (або `?tenantId=`): building, users і complete застосовуються **лише** до цієї організації.
+- Web (`apiFetch`) автоматично додає header з `localStorage.dah_tenant_id` (кнопка **Обрати** на `/admin/tenants`).
+- **Без** `X-Tenant-Id`: legacy bootstrap — перший building за `createdAt` (greenfield / e2e без multi-tenant контексту).
+- `POST /tenants` створює building з **`isInitialized: false`** — для нової org потрібен майстер (або ручне доналаштування), поки `POST /setup/complete` не виставить `true`.
+- «Організації вже є» ≠ setup завершено: пункт меню «Майстер» залежить від **`isInitialized` вибраного** tenant, не від кількості rows у `/tenants`.
 
 `GET /setup/status` відповідь (додаткові поля для resume):
 
@@ -63,6 +71,8 @@ Login / refresh: `user.tenant = { id, name, slug, orgType }`.
 }
 ```
 
+- Ключові users у status / setup рахуються **в межах tenant** (primary `user.tenantId` або active `TenantMembership`).
+
 `POST /setup/users` body (додатково):
 
 ```json
@@ -82,6 +92,11 @@ Login / refresh: `user.tenant = { id, name, slug, orgType }`.
 - `POST /setup/bank` — якщо фонди вже є → `200`, `{ skipped: true, bankAccount, funds }`
 - `POST /setup/users` — якщо всі потрібні ролі активні або відкладені → `200`, `{ skipped: true, users }`; інакше створює лише відсутні ролі (існуючі пропускаються)
 - `POST /setup/apartments` — якщо квартири вже є → `400` «Квартири вже додано» (UI пропускає крок)
+
+### Web UX (майстер)
+
+- Якщо status `isInitialized: true` — клієнт **не** робить hard reload (`window.location`); лише `router.replace('/admin/organization')`, щоб не миготів AppShell.
+- Пункт drawer «Майстер налаштування» ховається, коли для вибраного tenant setup уже complete (див. SPEC/03).
 
 ---
 

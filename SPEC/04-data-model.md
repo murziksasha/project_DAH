@@ -42,6 +42,7 @@ erDiagram
 | name | String | Назва будинку / ОСББ-об’єкта |
 | address | String | Адреса |
 | edrpou | String? | ЄДРПОУ (за потреби) |
+| isInitialized | Boolean | `false` за замовчуванням; `true` після `POST /setup/complete`. Новий tenant (`POST /tenants`) створює building з `false` — потрібен майстер для **цієї** org. Seed demo — `true`. |
 | showDebtorsToResidents | Boolean | Показувати боржників мешканцям |
 | settings (JSON) | Object | `deferredSetupRoles`, **`documentTemplates`** (`forms` PDF-макети + `exports` Excel-профілі), locale, features… |
 

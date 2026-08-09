@@ -151,11 +151,12 @@ Worker (без UI): щоденна перевірка тижневої копі�
 |---------|--------|
 | `/login` | Публічний |
 | `/resident` | `resident` (та admin roles для перегляду) |
-| `/admin/setup` | `super_admin` (поки `isInitialized = false`) |
-| `/admin/organization` | `super_admin` |
+| `/admin/setup` | `super_admin` (майстер; див. нижче) |
+| `/admin/tenants` | `super_admin` |
+| `/admin/organization` | `super_admin` (потрібен контекст org) |
 | `/admin/*` (фінанси) | `chairman`, `accountant`, `board`, `auditor` |
 
-Після login admin-ролі перенаправляються на `/admin`, мешканець — на `/resident`, `super_admin` — на `/admin/setup` або `/admin/organization` (якщо `isInitialized`).
+Після login admin-ролі перенаправляються на `/admin`, мешканець — на `/resident`, `super_admin` — на `/admin/setup` або `/admin/organization` залежно від `Building.isInitialized` **у вибраному tenant** (`X-Tenant-Id` / `dah_tenant_id`).
 
 ### Глобальна навігація (AppShell)
 
@@ -167,17 +168,36 @@ Worker (без UI): щоденна перевірка тижневої копі�
 
 | Роль | Домівка | Пункти drawer |
 |------|---------|---------------|
-| `super_admin` | `/admin/setup` або `/admin/organization` | Майстер, Організація |
+| `super_admin` | `/admin/setup` (якщо org ще не ініціалізована) або `/admin/organization` | **Майстер** (лише якщо `!isInitialized` для **вибраного** tenant), Організації, Організація, Інструкція |
 | `chairman`, `accountant`, `board`, `auditor` | `/admin` | Дашборд, фінанси, комунікації, налаштування, аудит |
 | `resident` | `/resident` | Кабінет мешканця |
 
+**Видимість «Майстер налаштування» (super_admin):**
+
+1. Статус береться з `GET /setup/status` **у контексті** `X-Tenant-Id` (localStorage `dah_tenant_id`).
+2. Якщо tenant **не вибрано**, але вже є записи в `GET /tenants` — пункт **ховається** (спочатку «Обрати» org на `/admin/tenants`).
+3. Якщо tenant вибрано і `isInitialized = true` — пункт **ховається**.
+4. Якщо tenant вибрано і `isInitialized = false` (нова org з `/admin/tenants` створює building з `isInitialized: false`) — пункт **показується**.
+5. Greenfield (немає tenants) — майстер доступний без попереднього вибору org.
+6. Після SPA-навігації / зміни tenant AppShell перечитує status (без full reload).
+
 ### Майстер налаштування (`/admin/setup`)
 
-- Resume: `GET /setup/status` повертає `nextStep`, `stepDone`, prefill для building/bank
-- Завершені кроки пропускають POST — кнопка **Продовжити**
-- Повторний `POST /setup/bank` при наявних фондах — `200` з `{ skipped: true }` (не помилка)
-- Крок **Користувачі**: голова правління обов'язкова; для бухгалтера та ревізії — чекбокс **Створити пізніше**
-- Відкладені ролі (`deferredSetupRoles`) створюються в `/admin/organization` (банер + форма `POST /users`)
+- **Tenant scope:** усі `/setup/*` операції привʼязані до `X-Tenant-Id` (див. SPEC/05). Без header — legacy «перший» building (bootstrap / e2e).
+- Resume: `GET /setup/status` → `nextStep`, `stepDone`, prefill building/bank, `isInitialized`.
+- Якщо `isInitialized = true` — UI робить **soft** `router.replace('/admin/organization')` (не `window.location`, щоб не миготів увесь shell).
+- Після `POST /setup/complete` — теж soft redirect на `/admin/organization`.
+- Завершені кроки пропускають POST — кнопка **Продовжити**.
+- Повторний `POST /setup/bank` при наявних фондах — `200` з `{ skipped: true }` (не помилка).
+- Крок **Користувачі**: голова правління обов'язкова; для бухгалтера та ревізії — чекбокс **Створити пізніше**.
+- Відкладені ролі (`deferredSetupRoles`) створюються в `/admin/organization` (банер + форма `POST /users`).
+
+**Типовий multi-tenant сценарій**
+
+1. Seed / перша org: майстер → `isInitialized = true` → пункт зникає.
+2. `POST /tenants` (нова ОСББ/УК) → building з `isInitialized: false`.
+3. На `/admin/tenants` → **Обрати** нову org → у drawer зʼявляється **Майстер** → пройти кроки → complete.
+4. Інша org, уже ініціалізована → **Обрати** її → майстер знову сховано.
 
 ## Реалізація
 

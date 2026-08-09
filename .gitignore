@@ -33,6 +33,12 @@ apps/api/prisma/migrations/*_migration_lock.toml
 # Runtime data only at repo root (not apps/api/src/modules/backups/)
 /backups/
 
+# Windows native host runtime
+/tools/minio.exe
+/minio-data/
+/logs/
+infra/nginx/dah-windows.conf
+
 # TLS material (keep .gitkeep if present)
 infra/certs/*.pem
 infra/certs/*.key

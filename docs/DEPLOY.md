@@ -202,6 +202,9 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 ## 10. Native host (без Docker) — ноутбук / слабкий сервер
 
+> **Повна інструкція Linux (systemd):** [NATIVE-HOST.md](./NATIVE-HOST.md)  
+> **Хост на Windows** (без systemd-скрипта): [NATIVE-HOST-WINDOWS.md](./NATIVE-HOST-WINDOWS.md)
+
 Коли Docker недоступний: Postgres + MinIO з apt/binary, Node 20+, nginx для static web.
 
 ### 10.1. `.env` (localhost)
@@ -222,6 +225,7 @@ S3_BUCKET=dah-files
 ```bash
 cd ~/DAH   # або шлях до репо
 npm install
+npm run db:generate -w @dah/api   # обов’язково перед build (Prisma Client)
 npm run build
 npm run db:migrate
 npm run start          # = start:app → API + Worker
@@ -242,8 +246,10 @@ Web **не** входить у `npm run start` (static export). Відкрийт
 Передумови: Node ≥20, PostgreSQL service, бінарники `minio` (+ бажано `mc`), зібраний `apps/api/dist` і `apps/web/out`, файл `.env`.
 
 ```bash
-# один раз
-sudo bash infra/scripts/install-native-systemd.sh
+# один раз (після npm install у корені)
+npx dah-native install
+# або: npm run install:native
+# або: sudo bash infra/scripts/install-native-systemd.sh
 # опційно: RUN_USER=admin WEB_PORT=3000 DAH_ROOT=/home/admin/DAH
 ```
 
@@ -276,14 +282,15 @@ curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3000/
 cd ~/DAH
 npm run update:native
 # = bash infra/scripts/update-native.sh
-# pull → npm install → build → migrate → systemctl restart api/worker + nginx reload
+# pull → npm install → prisma generate → build → migrate → restart api/worker + nginx
 ```
 
 Опції (env):
 
 ```bash
-SKIP_PULL=1 npm run update:native      # уже зробили git pull
-SKIP_INSTALL=1 npm run update:native   # без npm install
+SKIP_PULL=1 npm run update:native        # уже зробили git pull
+SKIP_INSTALL=1 npm run update:native     # без npm install
+SKIP_GENERATE=1 npm run update:native    # без prisma generate (не рекомендується)
 ```
 
 Еквівалент вручну:
@@ -292,13 +299,16 @@ SKIP_INSTALL=1 npm run update:native   # без npm install
 cd ~/DAH
 git pull
 npm install
+npm run db:generate -w @dah/api   # також входить у root npm run build / update:native
 npm run build
 npm run db:migrate
 sudo systemctl restart dah-api dah-worker
 sudo systemctl reload nginx
 ```
 
-Migrate **не** виконується автоматично при boot (свідомий вибір).
+Migrate **не** виконується автоматично при boot (свідомий вибір).  
+Якщо migrate падає з `P1001` — PostgreSQL не запущений (`systemctl start postgresql`).  
+Деталі та типові збої: [NATIVE-HOST.md](./NATIVE-HOST.md).
 
 ### 10.5. KeenDNS / TLS
 

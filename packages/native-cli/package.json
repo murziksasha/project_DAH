@@ -1,0 +1,14 @@
+{
+  "name": "@dah/native-cli",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CLI wrappers for native host install/update (Linux systemd, no Docker)",
+  "type": "module",
+  "bin": {
+    "dah-native": "./bin/dah-native.mjs",
+    "dah-install-native": "./bin/dah-install-native.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -36,6 +36,7 @@ Tenant.orgType: osbb | management_company
 
 - Тексти UI / інструкцій / email
 - Підказки в майстрі setup і на `/admin/tenants`
+- Майстер setup — **per tenant** (`X-Tenant-Id`); нова org з `/tenants` стартує з `Building.isInitialized = false`
 - Заголовок кабінету: «Кабінет правління» vs «Кабінет УК»
 
 ## Рекомендації
