@@ -271,6 +271,19 @@ if (-not $SkipNginx) {
     }
   }
   $conf = Join-Path $DahRoot "infra\nginx\dah-windows.conf"
+  $tpl = Join-Path $DahRoot "infra\nginx\dah-windows.conf.in"
+  # Always render from template (UTF-8 no BOM). PS 5.1 Set-Content -Encoding UTF8 added BOM
+  # and nginx failed with unknown directive "п»ї#". Also refreshes conf/mime.types after git pull.
+  if (Test-Path -LiteralPath $tpl) {
+    $rootPosix = ($DahRoot -replace "\\", "/")
+    $body = Get-Content -LiteralPath $tpl -Raw -Encoding UTF8
+    if ($body.Length -gt 0 -and [int][char]$body[0] -eq 0xFEFF) { $body = $body.Substring(1) }
+    $body = $body.Replace("@@DAH_ROOT@@", $rootPosix).Replace("@@WEB_PORT@@", "$WebPort")
+    if (-not $body.EndsWith("`n")) { $body = $body + "`n" }
+    $enc = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($conf, $body, $enc)
+    Write-Log "Wrote nginx conf (UTF-8 no BOM): $conf"
+  }
   if ($NginxExe -and (Test-Path -LiteralPath $NginxExe) -and (Test-Path -LiteralPath $conf)) {
     if (Test-PortOpen "127.0.0.1" $WebPort) {
       Write-Log "Port $WebPort already in use - skip nginx"
@@ -287,7 +300,10 @@ Set-Location '$($nginxDir.Replace("'", "''"))'
       Write-Log "nginx start requested"
     }
   } else {
-    Write-Log "nginx skipped (install C:\nginx or -NginxExe; conf: infra\nginx\dah-windows.conf)"
+    $why = @()
+    if (-not $NginxExe -or -not (Test-Path -LiteralPath $NginxExe)) { $why += "nginx.exe (C:\nginx\nginx.exe)" }
+    if (-not (Test-Path -LiteralPath $conf)) { $why += "conf $conf" }
+    Write-Log "nginx skipped (missing: $($why -join ', '))"
   }
 }
 
