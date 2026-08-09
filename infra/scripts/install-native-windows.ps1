@@ -194,16 +194,28 @@ try {
   Pop-Location
 }
 
-# nginx config from template
+# nginx config from template (UTF-8 no BOM — PS 5.1 Set-Content -Encoding UTF8 adds BOM
+# and nginx fails: unknown directive "п»ї#")
+function Write-Utf8NoBom([string]$Path, [string]$Content) {
+  $enc = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllText($Path, $Content, $enc)
+}
+
 $tpl = Join-Path $DahRoot "infra\nginx\dah-windows.conf.in"
 $confOut = Join-Path $DahRoot "infra\nginx\dah-windows.conf"
 $rootPosix = ($DahRoot -replace "\\", "/")
 if (Test-Path -LiteralPath $tpl) {
   $conf = Get-Content -LiteralPath $tpl -Raw -Encoding UTF8
+  # Strip UTF-8 BOM if present in template / reader
+  if ($conf.Length -gt 0 -and [int][char]$conf[0] -eq 0xFEFF) {
+    $conf = $conf.Substring(1)
+  }
   $conf = $conf.Replace("@@DAH_ROOT@@", $rootPosix)
   $conf = $conf.Replace("@@WEB_PORT@@", "$WebPort")
-  Set-Content -LiteralPath $confOut -Value $conf -Encoding UTF8
-  Write-Host "==> Wrote $confOut"
+  # Ensure LF or CRLF both fine; trailing newline
+  if (-not $conf.EndsWith("`n")) { $conf = $conf + "`n" }
+  Write-Utf8NoBom -Path $confOut -Content $conf
+  Write-Host "==> Wrote $confOut (UTF-8 no BOM)"
 } else {
   Write-Warning "Template missing: $tpl"
 }
