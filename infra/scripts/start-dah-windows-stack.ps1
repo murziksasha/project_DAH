@@ -189,7 +189,7 @@ if (-not $SkipMinio) {
   if (Test-PortOpen "127.0.0.1" 9000) {
     Write-Log "MinIO already listening on :9000"
   } elseif (-not $MinioExe -or -not (Test-Path -LiteralPath $MinioExe)) {
-    Write-Log "WARNING: minio.exe not found — skip. Put tools\minio.exe or re-run install with -DownloadMinio"
+    Write-Log "WARNING: minio.exe not found - skip. Put tools\minio.exe or re-run install with -DownloadMinio"
   } else {
     $access = $envMap["S3_ACCESS_KEY"]
     if (-not $access) { $access = $envMap["MINIO_ROOT_USER"] }
@@ -215,7 +215,7 @@ if (-not $SkipMinio) {
       Start-Sleep -Seconds 1
     }
     if (Test-PortOpen "127.0.0.1" 9000) { Write-Log "MinIO is up on :9000" }
-    else { Write-Log "WARNING: MinIO :9000 not open — see logs\minio.err.log" }
+    else { Write-Log "WARNING: MinIO :9000 not open - see logs\minio.err.log" }
   }
 }
 
@@ -238,7 +238,7 @@ if (Test-PortOpen "127.0.0.1" 3001) {
     Start-Sleep -Seconds 1
   }
   if (Test-PortOpen "127.0.0.1" 3001) { Write-Log "API is up on :3001" }
-  else { Write-Log "WARNING: API :3001 not open — see logs\api.err.log" }
+  else { Write-Log "WARNING: API :3001 not open - see logs\api.err.log" }
 }
 
 # Worker
@@ -273,7 +273,7 @@ if (-not $SkipNginx) {
   $conf = Join-Path $DahRoot "infra\nginx\dah-windows.conf"
   if ($NginxExe -and (Test-Path -LiteralPath $NginxExe) -and (Test-Path -LiteralPath $conf)) {
     if (Test-PortOpen "127.0.0.1" $WebPort) {
-      Write-Log "Port $WebPort already in use — skip nginx"
+      Write-Log "Port $WebPort already in use - skip nginx"
     } else {
       $nginxDir = Split-Path -Parent $NginxExe
       $ngxEsc = $NginxExe.Replace("'", "''")

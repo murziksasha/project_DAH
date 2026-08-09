@@ -1,24 +1,22 @@
 # Install DAH as a Windows auto-start stack (no Docker, no Linux systemd).
+# ASCII-only source (PowerShell 5.1 on Windows often misreads UTF-8 without BOM).
 #
-# Prerequisites (you install once):
+# Prerequisites (install once):
 #   - Node.js >= 20
 #   - PostgreSQL listening on 127.0.0.1:5432 (user/db from .env)
 #   - .env with localhost URLs (see docs/NATIVE-HOST-WINDOWS.md)
 #   - Optional: minio.exe (script can download to tools\minio.exe)
-#   - Optional: nginx for Windows → static UI + /api proxy
+#   - Optional: nginx for Windows - static UI + /api proxy
 #
-# Usage (PowerShell as Administrator recommended for firewall + tasks):
+# Usage (Administrator recommended for firewall + tasks):
 #   cd C:\miy_dim
 #   powershell -ExecutionPolicy Bypass -File infra\scripts\install-native-windows.ps1
-#
 #   npm run install:native:win
-#   npx dah-native install          # on win32 routes here
+#   npx dah-native install
 #
 # Options:
 #   -SkipBuild -SkipMigrate -DownloadMinio -Unregister -WebPort 3000
 #   -NginxExe C:\nginx\nginx.exe -MinioExe C:\miy_dim\tools\minio.exe
-# Env overrides:
-#   DAH_ROOT, RUN_USER (informational), WEB_PORT, DAH_NGINX_EXE
 param(
   [string]$DahRoot = "",
   [int]$WebPort = 0,
@@ -46,24 +44,25 @@ function Request-Admin {
   if ($NoElevate) { return }
   if (Test-IsAdmin) { return }
   Write-Host "Re-launching elevated (Administrator) for scheduled task + firewall..."
-  $args = @(
+  $argList = @(
     "-NoProfile",
     "-ExecutionPolicy", "Bypass",
-    "-File", "`"$PSCommandPath`""
+    "-File", $PSCommandPath,
+    "-NoElevate"
   )
-  if ($DahRoot) { $args += @("-DahRoot", "`"$DahRoot`"") }
-  if ($WebPort -gt 0) { $args += @("-WebPort", "$WebPort") }
-  if ($NginxExe) { $args += @("-NginxExe", "`"$NginxExe`"") }
-  if ($MinioExe) { $args += @("-MinioExe", "`"$MinioExe`"") }
-  if ($MinioDataDir) { $args += @("-MinioDataDir", "`"$MinioDataDir`"") }
-  if ($SkipBuild) { $args += "-SkipBuild" }
-  if ($SkipMigrate) { $args += "-SkipMigrate" }
-  if ($DownloadMinio) { $args += "-DownloadMinio" }
-  if ($SkipFirewall) { $args += "-SkipFirewall" }
-  if ($Unregister) { $args += "-Unregister" }
-  $args += "-NoElevate"
-  Start-Process -FilePath "powershell.exe" -Verb RunAs -ArgumentList $args -Wait
-  exit $LASTEXITCODE
+  if ($DahRoot) { $argList += @("-DahRoot", $DahRoot) }
+  if ($WebPort -gt 0) { $argList += @("-WebPort", "$WebPort") }
+  if ($NginxExe) { $argList += @("-NginxExe", $NginxExe) }
+  if ($MinioExe) { $argList += @("-MinioExe", $MinioExe) }
+  if ($MinioDataDir) { $argList += @("-MinioDataDir", $MinioDataDir) }
+  if ($SkipBuild) { $argList += "-SkipBuild" }
+  if ($SkipMigrate) { $argList += "-SkipMigrate" }
+  if ($DownloadMinio) { $argList += "-DownloadMinio" }
+  if ($SkipFirewall) { $argList += "-SkipFirewall" }
+  if ($Unregister) { $argList += "-Unregister" }
+  $p = Start-Process -FilePath "powershell.exe" -Verb RunAs -ArgumentList $argList -Wait -PassThru
+  if ($null -eq $p) { exit 1 }
+  exit $p.ExitCode
 }
 
 if (-not $DahRoot) {
@@ -89,14 +88,14 @@ if ($Unregister) {
   Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
   Get-NetFirewallRule -DisplayName "DAH Web $WebPort" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
   Get-NetFirewallRule -DisplayName "DAH API 3001" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
-  Write-Host "Done. (Processes may still be running — stop via Task Manager or restart PC)"
+  Write-Host "Done. (Processes may still be running - stop via Task Manager or restart PC)"
   exit 0
 }
 
 # --- checks ---
 $envFile = Join-Path $DahRoot ".env"
 if (-not (Test-Path -LiteralPath $envFile)) {
-  Write-Error "Missing $envFile — copy .env.example and set 127.0.0.1 URLs (not postgres/minio hostnames)."
+  Write-Error "Missing $envFile - copy .env.example and set 127.0.0.1 URLs (not postgres/minio hostnames)."
 }
 
 $envText = Get-Content -LiteralPath $envFile -Raw
@@ -121,7 +120,7 @@ if (-not $pg.TcpTestSucceeded) {
 PostgreSQL is not listening on 127.0.0.1:5432.
 
 Install PostgreSQL for Windows (no Docker in this path), create DB/user from .env, start the service:
-  services.msc → postgresql-x64-... → Start
+  services.msc -> postgresql-x64-... -> Start
 
 Then re-run this script.
 "@
@@ -139,7 +138,7 @@ if (-not $MinioExe) {
 }
 if ($DownloadMinio -or -not $MinioExe -or -not (Test-Path -LiteralPath $MinioExe)) {
   if (-not $DownloadMinio -and -not (Test-Path -LiteralPath $defaultMinio)) {
-    Write-Host "==> minio.exe not found — downloading to tools\minio.exe"
+    Write-Host "==> minio.exe not found - downloading to tools\minio.exe"
     $DownloadMinio = $true
   }
 }
@@ -152,7 +151,7 @@ if ($DownloadMinio) {
   Write-Host "    Saved $MinioExe"
 }
 if (-not $MinioExe -or -not (Test-Path -LiteralPath $MinioExe)) {
-  Write-Warning "minio.exe still missing — stack will start API without object storage until you add tools\minio.exe"
+  Write-Warning "minio.exe still missing - stack will start API without object storage until you add tools\minio.exe"
 }
 
 if (-not $MinioDataDir) {
@@ -218,7 +217,7 @@ if ($NginxExe) {
   Write-Host "    nginx: $NginxExe"
   $env:DAH_NGINX_EXE = $NginxExe
 } else {
-  Write-Host "    nginx: not found — install nginx for Windows or set -NginxExe (API-only still works)"
+  Write-Host "    nginx: not found - install nginx for Windows or set -NginxExe (API-only still works)"
 }
 
 # Scheduled task
@@ -253,13 +252,16 @@ $settings = New-ScheduledTaskSettingsSet `
 $userId = "$env:USERDOMAIN\$env:USERNAME"
 $principal = New-ScheduledTaskPrincipal -UserId $userId -LogonType Interactive -RunLevel Highest
 
+# ASCII description only (UTF-8 without BOM breaks PS 5.1 parse of this file)
+$taskDescription = "DAH native stack: MinIO, API, Worker, optional nginx"
+
 Register-ScheduledTask `
   -TaskName $TaskName `
   -Action $action `
   -Trigger @($triggerStartup, $triggerLogon) `
   -Settings $settings `
   -Principal $principal `
-  -Description "Мій дім / DAH: MinIO + API + Worker (+ nginx if configured)" `
+  -Description $taskDescription `
   -Force | Out-Null
 
 Write-Host "    Task registered as $userId (interactive). Log in after boot so processes keep the user session."
@@ -303,7 +305,7 @@ Write-Host "==> Done."
 Write-Host "    Health:  http://127.0.0.1:3001/api/health"
 Write-Host "    Web:     http://127.0.0.1:$WebPort/   (if nginx configured)"
 Write-Host "    Logs:    $DahRoot\logs\native-windows\"
-Write-Host "    Task:    taskschd.msc → $TaskName"
+Write-Host "    Task:    taskschd.msc -> $TaskName"
 Write-Host "    Remove:  powershell -File infra\scripts\install-native-windows.ps1 -Unregister"
 Write-Host ""
 Write-Host "PostgreSQL must be set to Automatic start (services.msc)."
