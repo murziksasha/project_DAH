@@ -13,6 +13,13 @@ export interface UserApprover {
   role: string;
 }
 
+export interface UserTenantInfo {
+  id: string;
+  name: string;
+  slug: string;
+  orgType?: string;
+}
+
 export interface UserRow {
   id: string;
   email: string;
@@ -22,6 +29,8 @@ export interface UserRow {
   role: string;
   status: string;
   apartmentId: string | null;
+  tenantId?: string | null;
+  tenant?: UserTenantInfo | null;
   createdAt?: string;
   approvedAt?: string | null;
   approvedBy?: UserApprover | null;
@@ -29,11 +38,31 @@ export interface UserRow {
   apartment?: { id: string; number: string; entrance: number } | null;
 }
 
+export type UserSortField = 'name' | 'email' | 'role' | 'status' | 'createdAt';
+
+export interface TenantRoleRow {
+  code: string;
+  isActive: boolean;
+  labelUk?: string | null;
+  labelRu?: string | null;
+  labelDefault?: { uk: string; ru: string };
+  sortOrder: number;
+  memberCount: number;
+  canDelete: boolean;
+  isProtected?: boolean;
+}
+
+export interface RolesListResponse {
+  items: TenantRoleRow[];
+}
+
 export interface UsersListResponse {
   items: UserRow[];
   total: number;
   page: number;
   limit: number;
+  sortBy?: UserSortField;
+  sortDir?: 'asc' | 'desc';
 }
 
 export interface ApartmentUser {

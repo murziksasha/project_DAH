@@ -1,6 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
-import { IsEmail, IsEnum, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsEnum,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+  ValidateIf,
+} from 'class-validator';
 
 const CREATABLE_ROLES = [
   UserRole.chairman,
@@ -9,6 +17,8 @@ const CREATABLE_ROLES = [
   UserRole.dispatcher,
   UserRole.crew,
   UserRole.auditor,
+  /** Secondary persona: same person as staff + resident in one org */
+  UserRole.resident,
 ] as const;
 
 export class CreateUserDto {
@@ -16,11 +26,14 @@ export class CreateUserDto {
   @IsEmail()
   email!: string;
 
-  @ApiProperty()
+  /** Required for new identity; optional when adding membership to existing email. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @ValidateIf((o: CreateUserDto) => o.password !== undefined && o.password !== '')
   @IsString()
   @MinLength(8)
   @MaxLength(128)
-  password!: string;
+  password?: string;
 
   @ApiProperty()
   @IsString()

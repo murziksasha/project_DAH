@@ -105,8 +105,56 @@ model Tenant {
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
 
-  buildings Building[]
-  users     User[]
+  buildings   Building[]
+  users       User[]
+  memberships TenantMembership[]
+  roles       TenantRole[]
+}
+
+/**
+ * Per-tenant catalog of assignable system roles (UserRole except super_admin).
+ * isActive=false: existing memberships keep working; role hidden from new-user dropdown.
+ * DELETE config only when no memberships use the role in this tenant.
+ */
+model TenantRole {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  code      UserRole
+  isActive  Boolean  @default(true)
+  labelUk   String?
+  labelRu   String?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId, isActive])
+}
+
+/**
+ * Per-organization role/status for a user identity.
+ * Unique on (userId, tenantId, role): same person can be e.g. board + resident in one org.
+ * User.tenantId + User.role remain the active (selected) membership for JWT/RBAC.
+ * Platform super_admin has no memberships (User.tenantId = null).
+ */
+model TenantMembership {
+  id        String     @id @default(cuid())
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenantId  String
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  role      UserRole
+  status    UserStatus @default(active)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@unique([userId, tenantId, role])
+  @@index([tenantId])
+  @@index([userId])
+  @@index([tenantId, role])
+  @@index([tenantId, status])
+  @@index([userId, tenantId])
 }
 
 model User {
@@ -118,7 +166,7 @@ model User {
   phone        String?
   role         UserRole   @default(resident)
   status       UserStatus @default(pending)
-  /// null = platform super_admin (cross-tenant); otherwise organization tenant
+  /// null = platform super_admin (cross-tenant); otherwise active/selected organization tenant
   tenantId     String?
   tenant       Tenant?    @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   apartmentId  String?
@@ -142,6 +190,7 @@ model User {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
+  memberships        TenantMembership[]
   apartmentLinks     UserApartment[]
   authSessions       AuthSession[]
   auditLogs          AuditLog[]

@@ -22,6 +22,13 @@
 Login / refresh: `user.tenant = { id, name, slug, orgType }`.  
 `GET /auth/me` також повертає `tenant`.
 
+**Деактивація (`isActive: false`):**
+- Одного разу при переході active → inactive API **відкликає** refresh-сесії всіх users організації.
+- Подальші `POST /auth/login`, `POST /auth/refresh`, `POST /auth/2fa/verify` і будь-який Bearer JWT для users цього tenant → `401`  
+  (`Організацію (tenant) деактивовано…`).
+- Web: редірект на `/login?reason=tenant_inactive` без циклу «кабінет → login → кабінет».
+- `isActive: true` знову дозволяє login; старі токени не воскресають.
+
 ---
 
 ## Setup (super_admin)
@@ -164,17 +171,48 @@ Login / refresh: `user.tenant = { id, name, slug, orgType }`.
 | POST | `/users/:id/apartments/:apartmentId` | super_admin | Прив'язати квартиру (many-to-many) |
 | DELETE | `/users/:id/apartments/:apartmentId` | super_admin | Відв'язати квартиру |
 
-Query для `GET /users`: `?search=&page=1&limit=20`
+Query для `GET /users`:  
+`?search=&page=1&limit=20&role=&status=&sortBy=name|email|role|status|createdAt&sortDir=asc|desc`
+
+**Scope:** список завжди в межах однієї організації (`tenantId` з JWT для chairman, або **обовʼязковий** `X-Tenant-Id` / `?tenantId=` для super_admin). Без tenant → `400` `{ code: "tenant_required" }`.  
+Дані з `TenantMembership` (роль/статус **у цій** org); platform `super_admin` у список org не потрапляє.
 
 Відповідь `GET /users`:
 ```json
-{ "items": [...], "total": 42, "page": 1, "limit": 20 }
+{ "items": [...], "total": 42, "page": 1, "limit": 20, "sortBy": "name", "sortDir": "asc" }
 ```
 
-Кожен item містить `apartments[]` (усі прив'язані квартири, `isPrimary`) та `apartment` (основна).
+Кожен item: `apartments[]` (квартири **цієї** org), `apartment` (основна), `tenant: { id, name, slug }`, `role`/`status` з membership.
 
-`PATCH /users/:id` body (усі поля опційні):
-`firstName`, `lastName`, `phone`, `email`, `password`, `role`, `status`, `apartmentIds[]`, `primaryApartmentId`
+`POST /users` (super_admin + `X-Tenant-Id`):  
+- новий email → створює identity + membership (password обовʼязковий);  
+- існуючий email → додає membership у поточну org (password опційний), якщо ще не член.
+
+`PATCH /users/:id` body (усі поля опційні):  
+`firstName`, `lastName`, `phone`, `email`, `password`, `role`, `status`, `apartmentIds[]`, `primaryApartmentId`  
+— `role`/`status` оновлюють **membership** поточної org; профіль (імʼя, email, пароль) — identity.
+
+Auth (multi-membership / dual persona):
+| Method | Path | Опис |
+|--------|------|------|
+| POST | `/auth/login` | optional `tenantId`, `role`; відповідь містить `memberships[]` (кожна = org+role) |
+| POST | `/auth/select-tenant` | JWT; body `{ tenantId, role? }` — активна org **і** роль (board↔resident); re-issue tokens |
+| GET | `/auth/memberships` | JWT; список memberships (у т.ч. кілька ролей на один tenant) |
+
+`TenantMembership` unique: `(userId, tenantId, role)`.  
+Один email: напр. `board` + `resident` у тому ж ОСББ — два рядки membership, перемикач у login/header.
+
+## Roles catalog (per tenant)
+
+| Method | Path | Auth | Опис |
+|--------|------|------|------|
+| GET | `/roles` | super_admin, chairman | Каталог + `memberCount`; `?activeOnly=1` |
+| POST | `/roles` | super_admin | Увімкнути / додати code у каталог |
+| PATCH | `/roles/:code` | super_admin | `isActive`, `labelUk`, `labelRu`, `sortOrder` |
+| DELETE | `/roles/:code` | super_admin | Лише якщо 0 members; protected: chairman, resident |
+
+Tenant scope: `X-Tenant-Id` (super_admin) / JWT tenant.  
+Призначення users: role має бути active у каталозі.
 
 ## Building
 

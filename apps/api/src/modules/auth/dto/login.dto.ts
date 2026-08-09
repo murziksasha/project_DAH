@@ -18,4 +18,16 @@ export class LoginDto {
   @IsString()
   @Length(6, 6)
   code?: string;
+
+  /** Prefer this organization when the user has multiple memberships. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  tenantId?: string;
+
+  /** Prefer this role (with tenantId) when multiple roles exist in one org. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  role?: string;
 }

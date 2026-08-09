@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
 import { PendingApprovalCard } from '@/components/PendingApprovalCard';
 import { useI18n } from '@/components/LocaleProvider';
-import { apiFetch, LoginResponse, persistAccessToken } from '@/lib/api';
+import { apiFetch, isTenantInactiveMessage, LoginResponse, persistAccessToken } from '@/lib/api';
 import { getRoleHome } from '@/lib/auth';
 import { isPendingApprovalMessage } from '@/lib/notification-links';
 
@@ -29,34 +29,70 @@ function safeNextPath(raw: string | null): string | null {
   return raw;
 }
 
-async function finishLogin(data: LoginResponse, incompleteMsg: string) {
+function activeLoginMemberships(data: LoginResponse) {
+  const raw = data.memberships ?? data.user?.memberships ?? [];
+  return raw.filter((m) => m.status === 'active' && m.tenant?.isActive !== false);
+}
+
+async function finishLogin(
+  data: LoginResponse,
+  incompleteMsg: string,
+  opts?: { preferredTenantId?: string; preferredRole?: string },
+) {
   if (!data.accessToken) {
     throw new Error(incompleteMsg);
   }
-  persistAccessToken(data.accessToken);
-  localStorage.setItem('dah_user', JSON.stringify(data.user));
+
+  let session = data;
+  const needSwitch =
+    opts?.preferredTenantId &&
+    (opts.preferredTenantId !== data.user.tenantId ||
+      (opts.preferredRole && opts.preferredRole !== data.user.role));
+  if (needSwitch && data.accessToken) {
+    session = await apiFetch<LoginResponse>('/auth/select-tenant', {
+      method: 'POST',
+      token: data.accessToken,
+      body: JSON.stringify({
+        tenantId: opts!.preferredTenantId,
+        ...(opts?.preferredRole ? { role: opts.preferredRole } : {}),
+      }),
+    });
+    if (!session.accessToken) {
+      throw new Error(incompleteMsg);
+    }
+  }
+
+  persistAccessToken(session.accessToken!);
+  const memberships = session.memberships ?? session.user.memberships ?? data.memberships ?? [];
+  localStorage.setItem(
+    'dah_user',
+    JSON.stringify({
+      ...session.user,
+      memberships,
+    }),
+  );
   localStorage.removeItem('dah_refresh');
 
   const next = safeNextPath(new URLSearchParams(window.location.search).get('next'));
 
-  let target = getRoleHome(data.user.role);
-  if (data.user.role === 'super_admin') {
+  let target = getRoleHome(session.user.role);
+  if (session.user.role === 'super_admin') {
     const status = await apiFetch<{ isInitialized: boolean }>('/setup/status', {
-      token: data.accessToken,
+      token: session.accessToken!,
     });
     target = status.isInitialized ? '/admin/organization' : '/admin/setup';
   }
 
   if (next) {
-    if (data.user.role === 'resident' && next.startsWith('/resident')) target = next;
-    if (ADMIN_ROLES.includes(data.user.role) && next.startsWith('/admin')) target = next;
-    if (data.user.role === 'super_admin' && next.startsWith('/admin')) target = next;
+    if (session.user.role === 'resident' && next.startsWith('/resident')) target = next;
+    if (ADMIN_ROLES.includes(session.user.role) && next.startsWith('/admin')) target = next;
+    if (session.user.role === 'super_admin' && next.startsWith('/admin')) target = next;
   }
 
   window.location.href = target;
 }
 
-type Mode = 'password' | 'sms' | '2fa' | 'forgot' | 'reset' | 'pending';
+type Mode = 'password' | 'sms' | '2fa' | 'forgot' | 'reset' | 'pending' | 'select-org';
 
 export default function LoginPage() {
   const { t, locale, setLocale } = useI18n();
@@ -78,6 +114,26 @@ export default function LoginPage() {
   const [resetToken, setResetToken] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [pendingEmail, setPendingEmail] = useState('');
+  const [pendingAuth, setPendingAuth] = useState<LoginResponse | null>(null);
+  const [pickTenantId, setPickTenantId] = useState('');
+
+  function maybeFinishOrPickOrg(data: LoginResponse) {
+    const mems = activeLoginMemberships(data);
+    // Multiple memberships: different orgs and/or dual roles (board + resident) in one org
+    if (mems.length > 1 && data.user.role !== 'super_admin') {
+      setPendingAuth(data);
+      const current =
+        data.user.tenantId && data.user.role
+          ? `${data.user.tenantId}:${data.user.role}`
+          : mems[0]
+            ? `${mems[0].tenantId}:${mems[0].role}`
+            : '';
+      setPickTenantId(current);
+      setMode('select-org');
+      return;
+    }
+    return finishLogin(data, t('loginIncomplete'));
+  }
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -85,6 +141,9 @@ export default function LoginPage() {
     if (reset) {
       setResetToken(reset);
       setMode('reset');
+    }
+    if (params.get('reason') === 'tenant_inactive') {
+      setError(t('tenantInactiveLogin'));
     }
     if (params.get('pending') === '1') {
       setMode('pending');
@@ -123,7 +182,7 @@ export default function LoginPage() {
           phone: params.get('phone') ?? undefined,
         }),
       })
-        .then((data) => finishLogin(data, t('loginIncomplete')))
+        .then((data) => maybeFinishOrPickOrg(data))
         .catch((err) => {
           setError(err instanceof Error ? err.message : t('loginError'));
           setLoading(false);
@@ -184,7 +243,7 @@ export default function LoginPage() {
         setMode('2fa');
         return;
       }
-      await finishLogin(data, t('loginIncomplete'));
+      await maybeFinishOrPickOrg(data);
     } catch (err) {
       const msg = err instanceof Error ? err.message : t('loginError');
       if (isPendingApprovalMessage(msg)) {
@@ -198,8 +257,27 @@ export default function LoginPage() {
         setError('');
         return;
       }
-      setError(msg);
+      setError(isTenantInactiveMessage(msg) ? t('tenantInactiveLogin') : msg);
     } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSelectOrg(e: FormEvent) {
+    e.preventDefault();
+    if (!pendingAuth || !pickTenantId) return;
+    const colon = pickTenantId.indexOf(':');
+    const tenantId = colon > 0 ? pickTenantId.slice(0, colon) : pickTenantId;
+    const role = colon > 0 ? pickTenantId.slice(colon + 1) : undefined;
+    setError('');
+    setLoading(true);
+    try {
+      await finishLogin(pendingAuth, t('loginIncomplete'), {
+        preferredTenantId: tenantId,
+        preferredRole: role,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('loginError'));
       setLoading(false);
     }
   }
@@ -237,7 +315,7 @@ export default function LoginPage() {
         setMode('2fa');
         return;
       }
-      await finishLogin(data, t('loginIncomplete'));
+      await maybeFinishOrPickOrg(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('error'));
     } finally {
@@ -269,7 +347,7 @@ export default function LoginPage() {
         method: 'POST',
         body: JSON.stringify({ tempToken, code }),
       });
-      await finishLogin(data, t('loginIncomplete'));
+      await maybeFinishOrPickOrg(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('error'));
     } finally {
@@ -304,7 +382,44 @@ export default function LoginPage() {
         />
       )}
 
-      {mode !== '2fa' && mode !== 'pending' && smsAvailable && (
+      {mode === 'select-org' && pendingAuth && (
+        <form onSubmit={handleSelectOrg} className="card" style={{ display: 'grid', gap: '0.75rem' }}>
+          <h2 style={{ margin: 0, fontSize: '1.1rem' }}>{t('loginSelectOrgTitle')}</h2>
+          <p style={{ margin: 0, color: 'var(--muted)', fontSize: '0.9rem' }}>
+            {t('loginSelectOrgHint')}
+          </p>
+          <select
+            value={pickTenantId}
+            onChange={(e) => setPickTenantId(e.target.value)}
+            required
+            aria-label={t('loginSelectOrgTitle')}
+          >
+            {activeLoginMemberships(pendingAuth).map((m) => (
+              <option key={`${m.tenantId}:${m.role}`} value={`${m.tenantId}:${m.role}`}>
+                {m.tenant.name}
+                {m.role ? ` · ${m.role}` : ''}
+              </option>
+            ))}
+          </select>
+          {error && <p className="error">{error}</p>}
+          <button type="submit" className="btn" disabled={loading || !pickTenantId}>
+            {loading ? t('loading') : t('loginSelectOrgContinue')}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => {
+              setPendingAuth(null);
+              setMode('password');
+              setError('');
+            }}
+          >
+            {t('back')}
+          </button>
+        </form>
+      )}
+
+      {mode !== '2fa' && mode !== 'pending' && mode !== 'select-org' && smsAvailable && (
         <div style={{ display: 'flex', gap: 8, marginBottom: '1rem' }}>
           <button
             type="button"

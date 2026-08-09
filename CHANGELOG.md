@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Users — org scope, filter/sort, multi-membership, role catalog
+- Model `TenantMembership` unique `(userId, tenantId, role)`; multi-org + dual persona (board+resident)
+- Model `TenantRole`: per-tenant catalog — activate/deactivate/labels; DELETE only if 0 members
+- `GET/POST/PATCH/DELETE /roles` (manage: super_admin; list: +chairman); assignable check on create/update user
+- `GET /users`: tenant required; filters/sort/search; membership rows
+- `POST /users`: existing email → new membership (other role same org OK); inactive catalog role rejected
+- Auth: `memberships[]`, `select-tenant { tenantId, role }`, login/header persona switcher
+- Web organization: org selector, users filter/sort, **Roles** section, dropdowns from catalog
+- SPEC 02/03/04/05 + README
+
+### Security — tenant deactivation
+- Login / 2FA / SMS / refresh / JWT: відмова, якщо `Tenant.isActive = false` (голова ОСББ і всі users org)
+- `PATCH /tenants/:id` `isActive: false` відкликає `AuthSession` users організації
+- Web: `/login?reason=tenant_inactive`, без циклу «кабінет → login → кабінет»; підказка на `/admin/tenants`
+- Docs: SPEC/02, 03, 04, 05; e2e auth inactive tenant
+
 ### Native host (no Docker)
 - Root scripts: `npm run start` / `start:app` / `start:api` / `start:worker` (dotenv + API + Worker)
 - `@dah/api` script `start:worker`

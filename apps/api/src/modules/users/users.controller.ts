@@ -26,8 +26,12 @@ export class UsersController {
 
   @Roles(UserRole.super_admin)
   @Post()
-  create(@Body() dto: CreateUserDto, @CurrentUser() user: AuthUser) {
-    return this.users.createUser(dto, user.id);
+  create(
+    @Body() dto: CreateUserDto,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId?: string | null,
+  ) {
+    return this.users.createUser(dto, user.id, tenantId);
   }
 
   @Roles(UserRole.super_admin)
@@ -36,14 +40,19 @@ export class UsersController {
     @Param('id') id: string,
     @Body() dto: UpdateUserDto,
     @CurrentUser() user: AuthUser,
+    @TenantId() tenantId?: string | null,
   ) {
-    return this.users.updateUser(id, dto, user.id);
+    return this.users.updateUser(id, dto, user.id, tenantId);
   }
 
   @Roles(UserRole.super_admin, UserRole.chairman)
   @Patch(':id/block')
-  block(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.users.blockUser(id, user.id);
+  block(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId?: string | null,
+  ) {
+    return this.users.blockUser(id, user.id, tenantId);
   }
 
   @Roles(UserRole.super_admin)

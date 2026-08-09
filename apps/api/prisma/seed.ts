@@ -190,7 +190,7 @@ async function main() {
     },
   });
 
-  await prisma.user.create({
+  const chairman = await prisma.user.create({
     data: {
       email: 'chairman@osbb.local',
       passwordHash,
@@ -202,7 +202,7 @@ async function main() {
     },
   });
 
-  await prisma.user.create({
+  const accountant = await prisma.user.create({
     data: {
       email: 'accountant@osbb.local',
       passwordHash,
@@ -214,7 +214,7 @@ async function main() {
     },
   });
 
-  await prisma.user.create({
+  const auditor = await prisma.user.create({
     data: {
       email: 'auditor@osbb.local',
       passwordHash,
@@ -226,7 +226,7 @@ async function main() {
     },
   });
 
-  await prisma.user.create({
+  const resident = await prisma.user.create({
     data: {
       email: 'resident@osbb.local',
       passwordHash,
@@ -246,6 +246,15 @@ async function main() {
         ],
       },
     },
+  });
+
+  await prisma.tenantMembership.createMany({
+    data: [
+      { userId: chairman.id, tenantId: tenant.id, role: UserRole.chairman, status: UserStatus.active },
+      { userId: accountant.id, tenantId: tenant.id, role: UserRole.accountant, status: UserStatus.active },
+      { userId: auditor.id, tenantId: tenant.id, role: UserRole.auditor, status: UserStatus.active },
+      { userId: resident.id, tenantId: tenant.id, role: UserRole.resident, status: UserStatus.active },
+    ],
   });
 
   // Demo meters for primary resident apartment (batch + offline e2e)
@@ -276,8 +285,6 @@ async function main() {
     });
   }
 
-  const chairman = await prisma.user.findUnique({ where: { email: 'chairman@osbb.local' } });
-
   await prisma.expense.create({
     data: {
       fundId: funds[0].id,
@@ -286,7 +293,7 @@ async function main() {
       amount: 18450.5,
       date: new Date('2026-05-15'),
       description: 'Електроенергія за травень 2026',
-      createdById: chairman!.id,
+      createdById: chairman.id,
     },
   });
 
@@ -298,7 +305,7 @@ async function main() {
       amount: 7320,
       date: new Date('2026-05-10'),
       description: 'Водопостачання та каналізація',
-      createdById: chairman!.id,
+      createdById: chairman.id,
     },
   });
 

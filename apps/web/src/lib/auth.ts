@@ -13,6 +13,18 @@ export interface StoredUser {
     slug: string;
     orgType: 'osbb' | 'management_company' | string;
   } | null;
+  memberships?: Array<{
+    tenantId: string;
+    role: string;
+    status: string;
+    tenant: {
+      id: string;
+      name: string;
+      slug: string;
+      orgType: string;
+      isActive: boolean;
+    };
+  }>;
 }
 
 const ADMIN_ROLES = [

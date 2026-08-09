@@ -112,7 +112,7 @@
 |------|----------|
 | Production Diia/BankID | Потрібна реєстрація клієнта в IdP |
 | Subdomain per tenant / SaaS billing | Низький пріоритет (self-hosted first) |
-| Email unique per tenant | Зараз global unique email |
+| Email unique per tenant | **Не потрібно**: global unique identity + `TenantMembership` multi-org |
 | WayForPay multi-product arrays | Розширення під кошик |
 | Messenger / збори + КЕП | Після dispatcher polish |
 | Бригада (crew) role | Можна поверх dispatcher |

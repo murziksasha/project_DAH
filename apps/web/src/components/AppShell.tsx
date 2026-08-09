@@ -9,6 +9,7 @@ import { useI18n } from '@/components/LocaleProvider';
 import { NotificationBell } from '@/components/NotificationBell';
 import { OnboardingBanner } from '@/components/OnboardingBanner';
 import { MeterQueueFlusher } from '@/components/MeterQueueFlusher';
+import { OrgMembershipSwitcher } from '@/components/OrgMembershipSwitcher';
 import { ResidentApartmentSwitcher } from '@/components/ResidentApartmentSwitcher';
 import { ResidentBottomNav } from '@/components/ResidentBottomNav';
 import { ResidentTour } from '@/components/ResidentTour';
@@ -262,6 +263,7 @@ export default function AppShell({ children }: AppShellProps) {
           <span className="app-header-sub">{title || shellFallback}</span>
         </div>
         <div className="app-header-actions">
+          <OrgMembershipSwitcher />
           <BuildingSwitcher />
           {isResident && <ResidentApartmentSwitcher />}
           <HeaderSearch />

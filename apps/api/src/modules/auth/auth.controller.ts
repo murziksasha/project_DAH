@@ -24,6 +24,7 @@ import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { RegisterDto } from './dto/register.dto';
+import { SelectTenantDto } from './dto/select-tenant.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { Disable2faDto, Enable2faDto, Verify2faDto } from './dto/two-factor.dto';
@@ -87,6 +88,35 @@ export class AuthController {
       this.attachCookies(res, result);
     }
     return result;
+  }
+
+  /** Switch active organization (multi-membership). Re-issues access + refresh tokens. */
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'))
+  @Post('select-tenant')
+  async selectTenant(
+    @Body() dto: SelectTenantDto,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.auth.selectTenant(
+      user.id,
+      dto.tenantId,
+      this.sessionMeta(req),
+      dto.role,
+    );
+    if (result.refreshToken) {
+      this.attachCookies(res, result);
+    }
+    return result;
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard('jwt'))
+  @Get('memberships')
+  listMemberships(@CurrentUser() user: AuthUser) {
+    return this.auth.listMemberships(user.id);
   }
 
   @Throttle({ default: { limit: 5, ttl: 60000 } })

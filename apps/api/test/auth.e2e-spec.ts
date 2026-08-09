@@ -106,4 +106,61 @@ describe('Auth (e2e)', () => {
       .send({ refreshToken: refresh })
       .expect(401);
   });
+
+  it('deactivated tenant blocks login, refresh and JWT; re-enable restores login', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ email: 'test-chairman@osbb.local', password: 'password123' });
+    expect([200, 201]).toContain(login.status);
+    const chairmanAccess = login.body.accessToken as string;
+    const chairmanRefresh = login.body.refreshToken as string;
+
+    const sa = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ email: 'test-admin@osbb.local', password: 'password123' });
+    expect([200, 201]).toContain(sa.status);
+    const saAccess = sa.body.accessToken as string;
+
+    const tenants = await request(app.getHttpServer())
+      .get('/api/tenants')
+      .set('Authorization', `Bearer ${saAccess}`);
+    expect([200, 201]).toContain(tenants.status);
+    const tenantId = (tenants.body as { id: string }[])[0]?.id;
+    expect(tenantId).toBeTruthy();
+
+    await request(app.getHttpServer())
+      .patch(`/api/tenants/${tenantId}`)
+      .set('Authorization', `Bearer ${saAccess}`)
+      .send({ isActive: false })
+      .expect((res) => expect([200, 201]).toContain(res.status));
+
+    const blockedLogin = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ email: 'test-chairman@osbb.local', password: 'password123' });
+    expect(blockedLogin.status).toBe(401);
+    expect(blockedLogin.body.accessToken).toBeUndefined();
+    expect(String(blockedLogin.body.message ?? '')).toMatch(/деактив/i);
+
+    await request(app.getHttpServer())
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${chairmanAccess}`)
+      .expect(401);
+
+    await request(app.getHttpServer())
+      .post('/api/auth/refresh')
+      .send({ refreshToken: chairmanRefresh })
+      .expect(401);
+
+    await request(app.getHttpServer())
+      .patch(`/api/tenants/${tenantId}`)
+      .set('Authorization', `Bearer ${saAccess}`)
+      .send({ isActive: true })
+      .expect((res) => expect([200, 201]).toContain(res.status));
+
+    const restored = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ email: 'test-chairman@osbb.local', password: 'password123' });
+    expect([200, 201]).toContain(restored.status);
+    expect(restored.body.accessToken).toBeDefined();
+  });
 });

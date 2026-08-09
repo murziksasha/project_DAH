@@ -80,6 +80,23 @@ function clearSession() {
   window.dispatchEvent(new Event('dah-auth-change'));
 }
 
+/** Match API TENANT_INACTIVE_MESSAGE / JWT inactive tenant 401. */
+export function isTenantInactiveMessage(message: string | undefined | null): boolean {
+  if (!message) return false;
+  return /tenant\)\s*деактив|деактивовано|деактивирован|вимкнено адміністратором|выключена администратором/i.test(
+    message,
+  );
+}
+
+/** Clear tokens and send user to login with a clear reason (no re-entry loop). */
+export function redirectTenantInactive(): void {
+  if (typeof window === 'undefined') return;
+  clearSession();
+  const path = window.location.pathname || '';
+  if (path.startsWith('/login')) return;
+  window.location.href = '/login?reason=tenant_inactive';
+}
+
 /** @deprecated refresh is cookie-based; kept for transitional callers */
 export function getRefreshToken(): string | null {
   if (typeof window === 'undefined') return null;
@@ -182,6 +199,19 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
   }
 
   if (res.status === 401 && !skipAuth && !_retried && !scopedPath.startsWith('/auth/')) {
+    // Peek body once if clone is available; inactive tenant → hard logout (no refresh loop).
+    let inactiveHint = false;
+    try {
+      const peek = (await res.clone().json()) as { message?: string | string[] };
+      const peekMsg = Array.isArray(peek.message) ? peek.message.join(' ') : peek.message;
+      inactiveHint = isTenantInactiveMessage(peekMsg);
+    } catch {
+      // ignore
+    }
+    if (inactiveHint) {
+      redirectTenantInactive();
+      throw new Error('Організацію (tenant) деактивовано. Вхід заборонено адміністратором.');
+    }
     const newToken = await refreshAccessToken();
     if (newToken) {
       return apiFetch<T>(path, { ...options, token: newToken, _retried: true });
@@ -193,6 +223,9 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     const msg = Array.isArray(err.message)
       ? err.message.join(', ')
       : (err.message ?? `Помилка ${res.status}`);
+    if (res.status === 401 && isTenantInactiveMessage(msg) && !scopedPath.startsWith('/auth/')) {
+      redirectTenantInactive();
+    }
     const requestId = res.headers.get('x-request-id');
     const e = new Error(requestId ? `${msg} (id: ${requestId.slice(0, 8)})` : msg) as Error & {
       requestId?: string | null;
@@ -278,6 +311,20 @@ export async function downloadReceipt(lineId: string, token: string) {
   URL.revokeObjectURL(url);
 }
 
+export interface LoginMembership {
+  id?: string;
+  tenantId: string;
+  role: string;
+  status: string;
+  tenant: {
+    id: string;
+    name: string;
+    slug: string;
+    orgType: string;
+    isActive: boolean;
+  };
+}
+
 export interface LoginUser {
   id: string;
   email: string;
@@ -286,6 +333,14 @@ export interface LoginUser {
   role: string;
   status?: string;
   apartmentId?: string;
+  tenantId?: string | null;
+  tenant?: {
+    id: string;
+    name: string;
+    slug: string;
+    orgType: string;
+  } | null;
+  memberships?: LoginMembership[];
 }
 
 export interface LoginResponse {
@@ -294,6 +349,7 @@ export interface LoginResponse {
   accessToken?: string;
   refreshToken?: string;
   user: LoginUser;
+  memberships?: LoginMembership[];
 }
 
 export { persistAccessToken, clearSession as clearClientSession };

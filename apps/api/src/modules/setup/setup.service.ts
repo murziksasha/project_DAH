@@ -328,7 +328,47 @@ export class SetupService {
       }
 
       const existing = await this.prisma.user.findUnique({ where: { email: item.email } });
-      if (existing) throw new BadRequestException(`Email вже зареєстрований: ${item.email}`);
+      if (existing) {
+        // Allow attaching existing identity to this tenant (multi-membership)
+        const mem = await this.prisma.tenantMembership.findUnique({
+          where: {
+            userId_tenantId_role: {
+              userId: existing.id,
+              tenantId: building.tenantId,
+              role: item.role,
+            },
+          },
+        });
+        if (mem) throw new BadRequestException(`Email вже зареєстрований: ${item.email}`);
+        if (existing.role === UserRole.super_admin && !existing.tenantId) {
+          throw new BadRequestException(`Email вже зареєстрований: ${item.email}`);
+        }
+        await this.prisma.tenantMembership.create({
+          data: {
+            userId: existing.id,
+            tenantId: building.tenantId,
+            role: item.role,
+            status: UserStatus.active,
+          },
+        });
+        created.push({
+          id: existing.id,
+          email: existing.email,
+          role: item.role,
+          firstName: existing.firstName,
+          lastName: existing.lastName,
+        });
+        if (singleSeatRoles.includes(item.role)) {
+          existingByRole.push({
+            id: existing.id,
+            email: existing.email,
+            role: item.role,
+            firstName: existing.firstName,
+            lastName: existing.lastName,
+          });
+        }
+        continue;
+      }
 
       const passwordHash = await bcrypt.hash(item.password, 10);
       const user = await this.prisma.user.create({
@@ -340,6 +380,14 @@ export class SetupService {
           phone: item.phone,
           role: item.role,
           status: UserStatus.active,
+          tenantId: building.tenantId,
+          memberships: {
+            create: {
+              tenantId: building.tenantId,
+              role: item.role,
+              status: UserStatus.active,
+            },
+          },
         },
         select: { id: true, email: true, role: true, firstName: true, lastName: true },
       });
