@@ -4,6 +4,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { SetupApartmentsDto } from './dto/setup-apartment.dto';
 import { SetupBankDto } from './dto/setup-bank.dto';
@@ -20,32 +21,48 @@ export class SetupController {
   constructor(private setup: SetupService) {}
 
   @Get('status')
-  status() {
-    return this.setup.getStatus();
+  status(@TenantId() tenantId?: string | null) {
+    return this.setup.getStatus(tenantId);
   }
 
   @Post('building')
-  building(@Body() dto: SetupBuildingDto, @CurrentUser() user: AuthUser) {
-    return this.setup.upsertBuilding(dto, user.id);
+  building(
+    @Body() dto: SetupBuildingDto,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId?: string | null,
+  ) {
+    return this.setup.upsertBuilding(dto, user.id, tenantId);
   }
 
   @Post('bank')
-  bank(@Body() dto: SetupBankDto, @CurrentUser() user: AuthUser) {
-    return this.setup.setupBank(dto, user.id);
+  bank(
+    @Body() dto: SetupBankDto,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId?: string | null,
+  ) {
+    return this.setup.setupBank(dto, user.id, tenantId);
   }
 
   @Post('apartments')
-  apartments(@Body() dto: SetupApartmentsDto, @CurrentUser() user: AuthUser) {
-    return this.setup.setupApartments(dto, user.id);
+  apartments(
+    @Body() dto: SetupApartmentsDto,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId?: string | null,
+  ) {
+    return this.setup.setupApartments(dto, user.id, tenantId);
   }
 
   @Post('users')
-  users(@Body() dto: SetupUsersDto, @CurrentUser() user: AuthUser) {
-    return this.setup.setupUsers(dto, user.id);
+  users(
+    @Body() dto: SetupUsersDto,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId?: string | null,
+  ) {
+    return this.setup.setupUsers(dto, user.id, tenantId);
   }
 
   @Post('complete')
-  complete(@CurrentUser() user: AuthUser) {
-    return this.setup.complete(user.id);
+  complete(@CurrentUser() user: AuthUser, @TenantId() tenantId?: string | null) {
+    return this.setup.complete(user.id, tenantId);
   }
 }

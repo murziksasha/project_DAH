@@ -8,6 +8,7 @@
 # Env:
 #   SKIP_PULL=1       — do not git pull
 #   SKIP_INSTALL=1    — skip npm install
+#   SKIP_GENERATE=1   — skip prisma generate (not recommended)
 #   SKIP_BUILD=1      — skip npm run build
 #   SKIP_MIGRATE=1    — skip db:migrate
 #   SKIP_RESTART=1    — do not systemctl restart
@@ -32,6 +33,15 @@ if [[ "${SKIP_INSTALL:-0}" != "1" ]]; then
   npm install
 else
   echo "==> skip npm install"
+fi
+
+# Monorepo: @prisma/client postinstall often leaves a stub client under root
+# node_modules — nest build then fails (missing UserRole / Prisma.* types).
+if [[ "${SKIP_GENERATE:-0}" != "1" ]]; then
+  echo "==> prisma generate (db:generate)"
+  npm run db:generate -w @dah/api
+else
+  echo "==> skip prisma generate"
 fi
 
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then

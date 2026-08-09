@@ -32,17 +32,25 @@ export class RolesService {
     private audit: AuditService,
   ) {}
 
-  /** Ensure tenant has full default catalog rows (idempotent). */
+  /**
+   * Seed catalog without undoing intentional deletes of optional roles.
+   * - Empty catalog (legacy / pre-catalog tenants) → full ORG_ROLE_CODES.
+   * - Otherwise → only PROTECTED roles (chairman, resident) must always exist.
+   * Optional roles (accountant, board, …) stay absent until POST /roles.
+   */
   async ensureCatalog(tenantId: string) {
     const existing = await this.prisma.tenantRole.findMany({
       where: { tenantId },
       select: { code: true },
     });
     const have = new Set(existing.map((r) => r.code));
-    const missing = ORG_ROLE_CODES.filter((c) => !have.has(c));
-    if (!missing.length) return;
+    const toSeed =
+      existing.length === 0
+        ? ORG_ROLE_CODES
+        : PROTECTED_ORG_ROLES.filter((c) => !have.has(c));
+    if (!toSeed.length) return;
     await this.prisma.tenantRole.createMany({
-      data: missing.map((code) => ({
+      data: toSeed.map((code) => ({
         tenantId,
         code,
         isActive: true,
@@ -107,6 +115,7 @@ export class RolesService {
       throw new BadRequestException('Недозволений код ролі');
     }
 
+    // Do not full-seed optional roles here — create only the requested code.
     await this.ensureCatalog(tenantId);
 
     const existing = await this.prisma.tenantRole.findUnique({
@@ -250,8 +259,9 @@ export class RolesService {
 
   /**
    * Whether a role may be assigned to a new/changed membership.
-   * Missing catalog row → treat as allowed (ensureCatalog normally fills).
+   * Missing catalog row (optional role deleted) → reject until POST /roles.
    * isActive=false → reject.
+   * Protected roles are re-seeded by ensureCatalog if missing.
    */
   async assertRoleAssignable(tenantId: string, role: UserRole) {
     if (role === UserRole.super_admin) {
@@ -264,7 +274,12 @@ export class RolesService {
     const row = await this.prisma.tenantRole.findUnique({
       where: { tenantId_code: { tenantId, code: role } },
     });
-    if (row && !row.isActive) {
+    if (!row) {
+      throw new BadRequestException(
+        'Цієї ролі немає в каталозі організації — додайте її в «Ролі організації»',
+      );
+    }
+    if (!row.isActive) {
       throw new BadRequestException(
         'Цю роль деактивовано для організації — її не можна призначати новим користувачам',
       );

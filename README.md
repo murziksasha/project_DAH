@@ -46,19 +46,33 @@ Redis **не потрібен** за замовчуванням (worker — inli
 
 Далі: `npm run dev` (або окремо `dev:api` / `dev:web`). Документація: [SPEC/](./SPEC/).
 
-## Native (без Docker)
+## Native (без Docker) — ноутбук як хост
 
-Після `npm run build` і налаштованих Postgres + MinIO + `.env` (localhost):
+| ОС хоста | Інструкція |
+|----------|------------|
+| **Linux** (Ubuntu/Lubuntu) | [docs/NATIVE-HOST.md](./docs/NATIVE-HOST.md) — systemd: `npx dah-native install` |
+| **Windows** | [docs/NATIVE-HOST-WINDOWS.md](./docs/NATIVE-HOST-WINDOWS.md) — **без** install-скрипта (немає systemd) |
+
+**Linux** (коротко):
 
 ```bash
-npm run db:migrate
-npm run start          # API (:3001) + Worker (dotenv з .env)
+# .env: 127.0.0.1, REDIS_URL=none
+npm install && npm run build && npm run db:migrate
+npx dah-native install    # служби; Linux + sudo
+npm run update:native
 ```
 
-Web — static export (`apps/web/out`); на хості віддає **nginx** з proxy `/api` → API.  
-Автозапуск на Lubuntu/Ubuntu: `sudo bash infra/scripts/install-native-systemd.sh`  
-Оновлення з git: `npm run update:native` (pull + install + build + migrate + restart).  
-Деталі: [docs/DEPLOY.md](./docs/DEPLOY.md) § Native host.
+**Windows без Docker** (коротко):
+
+```powershell
+# .env: 127.0.0.1, REDIS_URL=none; PostgreSQL уже встановлений і запущений
+npm run install:native:win
+# = install-native-windows.ps1 → build, migrate, MinIO, API, worker, Scheduled Task
+# npx dah-native install   # на Windows теж викликає цей скрипт
+# docs/NATIVE-HOST-WINDOWS.md
+```
+
+Також: [docs/DEPLOY.md](./docs/DEPLOY.md).
 
 ## Організації
 

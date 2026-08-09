@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Setup wizard — tenant scope + nav flicker
+- `GET/POST /setup/*` привʼязані до **`X-Tenant-Id`** (building/users/complete не змішують orgs)
+- Web: soft `router.replace` замість `window.location` при already-initialized / після complete (без full-page blink)
+- Drawer: «Майстер налаштування» лише коли вибраний tenant `!isInitialized`; якщо tenants є, але контекст не обрано — пункт сховано
+- AppShell перечитує status після SPA-навігації та `dah-tenant-change`
+- Docs: SPEC/03, SPEC/05
+
 ### Users — org scope, filter/sort, multi-membership, role catalog
 - Model `TenantMembership` unique `(userId, tenantId, role)`; multi-org + dual persona (board+resident)
 - Model `TenantRole`: per-tenant catalog — activate/deactivate/labels; DELETE only if 0 members

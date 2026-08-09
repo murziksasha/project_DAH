@@ -33,6 +33,7 @@
 
 - **Продукт:** Мій дім  
 - **Код (package):** див. root `package.json`  
-- **Останнє оновлення SPEC:** 2026-08-08  
+- **Останнє оновлення SPEC:** 2026-08-09  
 - **Tenancy:** multi-tenant (`Tenant`) + multi-building; `orgType`: `osbb` \| `management_company`  
-- **Users:** `TenantMembership` multi-org / dual role; `TenantRole` catalog (assignable roles per org)
+- **Users:** `TenantMembership` multi-org / dual role; `TenantRole` catalog (assignable roles per org)  
+- **Setup:** `/setup/*` + drawer «Майстер» scoped по `X-Tenant-Id` / `Building.isInitialized` (див. SPEC/03, SPEC/05)

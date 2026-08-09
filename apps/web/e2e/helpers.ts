@@ -10,6 +10,15 @@ export async function loginAsResident(page: Page) {
   await dismissResidentTour(page);
 }
 
+/** Login as platform super admin (seed: admin@dah.local). */
+export async function loginAsSuperAdmin(page: Page) {
+  await page.goto('/login');
+  await page.getByLabel('Email').fill(process.env.SUPER_ADMIN_EMAIL ?? 'admin@dah.local');
+  await page.getByLabel('Пароль').fill(process.env.SUPER_ADMIN_PASSWORD ?? 'password123');
+  await page.getByRole('button', { name: 'Увійти' }).click();
+  await expect(page).toHaveURL(/\/admin/, { timeout: 20_000 });
+}
+
 export async function dismissResidentTour(page: Page) {
   const skip = page.getByRole('button', { name: /Пропустити|Зрозуміло|Понятно/i });
   if (await skip.first().isVisible().catch(() => false)) {
