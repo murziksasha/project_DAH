@@ -272,17 +272,24 @@ if (-not $SkipNginx) {
   }
   $conf = Join-Path $DahRoot "infra\nginx\dah-windows.conf"
   $tpl = Join-Path $DahRoot "infra\nginx\dah-windows.conf.in"
-  # Always render from template (UTF-8 no BOM). PS 5.1 Set-Content -Encoding UTF8 added BOM
-  # and nginx failed with unknown directive "п»ї#". Also refreshes conf/mime.types after git pull.
+  # Always render from template (UTF-8 no BOM). Relative include is next to THIS conf file,
+  # so mime.types must be absolute (C:/nginx/conf/mime.types), not conf/mime.types.
   if (Test-Path -LiteralPath $tpl) {
     $rootPosix = ($DahRoot -replace "\\", "/")
+    $mimePosix = "C:/nginx/conf/mime.types"
+    if ($NginxExe -and (Test-Path -LiteralPath $NginxExe)) {
+      $mimeCandidate = Join-Path (Split-Path -Parent $NginxExe) "conf\mime.types"
+      if (Test-Path -LiteralPath $mimeCandidate) {
+        $mimePosix = ($mimeCandidate -replace "\\", "/")
+      }
+    }
     $body = Get-Content -LiteralPath $tpl -Raw -Encoding UTF8
     if ($body.Length -gt 0 -and [int][char]$body[0] -eq 0xFEFF) { $body = $body.Substring(1) }
-    $body = $body.Replace("@@DAH_ROOT@@", $rootPosix).Replace("@@WEB_PORT@@", "$WebPort")
+    $body = $body.Replace("@@DAH_ROOT@@", $rootPosix).Replace("@@WEB_PORT@@", "$WebPort").Replace("@@MIMETYPES@@", $mimePosix)
     if (-not $body.EndsWith("`n")) { $body = $body + "`n" }
     $enc = New-Object System.Text.UTF8Encoding $false
     [System.IO.File]::WriteAllText($conf, $body, $enc)
-    Write-Log "Wrote nginx conf (UTF-8 no BOM): $conf"
+    Write-Log "Wrote nginx conf (no BOM, mime=$mimePosix): $conf"
   }
   if ($NginxExe -and (Test-Path -LiteralPath $NginxExe) -and (Test-Path -LiteralPath $conf)) {
     if (Test-PortOpen "127.0.0.1" $WebPort) {

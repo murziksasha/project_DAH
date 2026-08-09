@@ -201,25 +201,6 @@ function Write-Utf8NoBom([string]$Path, [string]$Content) {
   [System.IO.File]::WriteAllText($Path, $Content, $enc)
 }
 
-$tpl = Join-Path $DahRoot "infra\nginx\dah-windows.conf.in"
-$confOut = Join-Path $DahRoot "infra\nginx\dah-windows.conf"
-$rootPosix = ($DahRoot -replace "\\", "/")
-if (Test-Path -LiteralPath $tpl) {
-  $conf = Get-Content -LiteralPath $tpl -Raw -Encoding UTF8
-  # Strip UTF-8 BOM if present in template / reader
-  if ($conf.Length -gt 0 -and [int][char]$conf[0] -eq 0xFEFF) {
-    $conf = $conf.Substring(1)
-  }
-  $conf = $conf.Replace("@@DAH_ROOT@@", $rootPosix)
-  $conf = $conf.Replace("@@WEB_PORT@@", "$WebPort")
-  # Ensure LF or CRLF both fine; trailing newline
-  if (-not $conf.EndsWith("`n")) { $conf = $conf + "`n" }
-  Write-Utf8NoBom -Path $confOut -Content $conf
-  Write-Host "==> Wrote $confOut (UTF-8 no BOM)"
-} else {
-  Write-Warning "Template missing: $tpl"
-}
-
 if (-not $NginxExe) {
   foreach ($c in @("C:\nginx\nginx.exe", "C:\tools\nginx\nginx.exe")) {
     if (Test-Path -LiteralPath $c) { $NginxExe = $c; break }
@@ -230,6 +211,33 @@ if ($NginxExe) {
   $env:DAH_NGINX_EXE = $NginxExe
 } else {
   Write-Host "    nginx: not found - install nginx for Windows or set -NginxExe (API-only still works)"
+}
+
+$tpl = Join-Path $DahRoot "infra\nginx\dah-windows.conf.in"
+$confOut = Join-Path $DahRoot "infra\nginx\dah-windows.conf"
+$rootPosix = ($DahRoot -replace "\\", "/")
+# Absolute mime.types: relative includes resolve next to dah-windows.conf, not nginx -p
+$mimePosix = "C:/nginx/conf/mime.types"
+if ($NginxExe -and (Test-Path -LiteralPath $NginxExe)) {
+  $ngxHome = Split-Path -Parent $NginxExe
+  $mimeCandidate = Join-Path $ngxHome "conf\mime.types"
+  if (Test-Path -LiteralPath $mimeCandidate) {
+    $mimePosix = ($mimeCandidate -replace "\\", "/")
+  }
+}
+if (Test-Path -LiteralPath $tpl) {
+  $conf = Get-Content -LiteralPath $tpl -Raw -Encoding UTF8
+  if ($conf.Length -gt 0 -and [int][char]$conf[0] -eq 0xFEFF) {
+    $conf = $conf.Substring(1)
+  }
+  $conf = $conf.Replace("@@DAH_ROOT@@", $rootPosix)
+  $conf = $conf.Replace("@@WEB_PORT@@", "$WebPort")
+  $conf = $conf.Replace("@@MIMETYPES@@", $mimePosix)
+  if (-not $conf.EndsWith("`n")) { $conf = $conf + "`n" }
+  Write-Utf8NoBom -Path $confOut -Content $conf
+  Write-Host "==> Wrote $confOut (UTF-8 no BOM, mime=$mimePosix)"
+} else {
+  Write-Warning "Template missing: $tpl"
 }
 
 # Scheduled task
