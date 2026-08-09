@@ -227,8 +227,10 @@ if (Test-PortOpen "127.0.0.1" 3001) {
   $rootEsc = $DahRoot.Replace("'", "''")
   $nodeEsc = $node.Replace("'", "''")
   $apiEsc = $apiMain.Replace("'", "''")
+  # Do NOT pass "--" — PowerShell 5.1 treats it as an ambiguous parameter name
+  # ("Parameter name '' is ambiguous") and API never starts.
   $cmd = @"
-& '$runEsc' -DahRoot '$rootEsc' -- '$nodeEsc' '$apiEsc'
+& '$runEsc' -DahRoot '$rootEsc' '$nodeEsc' '$apiEsc'
 "@
   Start-DetachedPowerShell -Name "api" -CommandText $cmd
 
@@ -255,7 +257,7 @@ if (-not $SkipWorker) {
       $nodeEsc = $node.Replace("'", "''")
       $wEsc = $workerMain.Replace("'", "''")
       $cmd = @"
-& '$runEsc' -DahRoot '$rootEsc' -- '$nodeEsc' '$wEsc'
+& '$runEsc' -DahRoot '$rootEsc' '$nodeEsc' '$wEsc'
 "@
       Start-DetachedPowerShell -Name "worker" -CommandText $cmd
     }
