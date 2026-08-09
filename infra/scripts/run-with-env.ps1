@@ -1,7 +1,8 @@
 # Load repo-root .env into process env, then run a command.
-# Usage (from anywhere):
-#   powershell -File infra/scripts/run-with-env.ps1 -DahRoot C:\miy_dim -- node apps/api/dist/src/main.js
-#   powershell -File infra/scripts/run-with-env.ps1 -- npm run start:api
+# Usage (PowerShell 5.1 — do NOT pass bare "--"; it is parsed as a parameter name and fails with
+# "Parameter name '' is ambiguous"):
+#   powershell -File infra/scripts/run-with-env.ps1 -DahRoot C:\miy_dim node apps\api\dist\src\main.js
+#   & .\infra\scripts\run-with-env.ps1 -DahRoot C:\miy_dim node apps\api\dist\src\main.js
 param(
   [string]$DahRoot = "",
   [string]$EnvFile = "",
@@ -21,12 +22,15 @@ if (-not (Test-Path -LiteralPath $EnvFile)) {
   Write-Error "run-with-env: missing env file: $EnvFile"
 }
 if (-not $Command -or $Command.Count -eq 0) {
-  Write-Error "run-with-env: pass a command after --  e.g. -- node apps/api/dist/src/main.js"
+  Write-Error "run-with-env: pass a command after named args, e.g. ... node apps\api\dist\src\main.js"
 }
 
-# Strip a leading "--" if present (npm/npx style)
-if ($Command[0] -eq "--") {
-  $Command = $Command[1..($Command.Length - 1)]
+# Strip a leading "--" if it already arrived in remaining args (rare / other shells)
+if ($Command.Count -gt 0 -and $Command[0] -eq "--") {
+  if ($Command.Count -lt 2) {
+    Write-Error "run-with-env: empty command after --"
+  }
+  $Command = $Command[1..($Command.Count - 1)]
 }
 if (-not $Command -or $Command.Count -eq 0) {
   Write-Error "run-with-env: empty command"
