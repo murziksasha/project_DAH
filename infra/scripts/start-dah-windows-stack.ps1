@@ -88,19 +88,21 @@ function Start-DetachedPowerShell {
   $outLog = Join-Path $LogDir "$Name.out.log"
   $errLog = Join-Path $LogDir "$Name.err.log"
   $launcher = Join-Path $RunDir "launch-$Name.ps1"
-  # Launcher keeps process tree alive and appends a started marker
+  # Do NOT RedirectStandard* on outer Start-Process — that locks the same log files
+  # the child also writes to (api.err.log "being used by another process").
   $launcherBody = @"
 `$ErrorActionPreference = 'Continue'
 `$logOut = '$($outLog.Replace("'", "''"))'
 `$logErr = '$($errLog.Replace("'", "''"))'
 try {
-  $CommandText
+  $CommandText 1>> `$logOut 2>> `$logErr
 } catch {
   Add-Content -LiteralPath `$logErr -Value `$_.Exception.Message -Encoding UTF8
   exit 1
 }
 "@
-  Set-Content -LiteralPath $launcher -Value $launcherBody -Encoding UTF8
+  $enc = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllText($launcher, $launcherBody, $enc)
 
   $p = Start-Process -FilePath "powershell.exe" `
     -ArgumentList @(
@@ -110,8 +112,82 @@ try {
     ) `
     -WorkingDirectory $DahRoot `
     -WindowStyle Hidden `
-    -RedirectStandardOutput $outLog `
-    -RedirectStandardError $errLog `
+    -PassThru
+
+  Set-Content -LiteralPath $pidFile -Value $p.Id -Encoding ascii
+  Write-Log "Started $Name wrapper pid=$($p.Id) (logs: $Name.*.log)"
+}
+
+# Start node app with .env loaded in-process (avoids run-with-env.ps1 + "--" PS 5.1 bugs)
+function Start-DetachedNodeApp {
+  param(
+    [string]$Name,
+    [string]$NodeExe,
+    [string]$EntryJs,
+    [string]$EnvFilePath,
+    [string]$WorkDir
+  )
+  $pidFile = Join-Path $RunDir "$Name.pid"
+  if (Test-PidAlive $pidFile) {
+    Write-Log "$Name already running (pid file)"
+    return
+  }
+
+  $outLog = Join-Path $LogDir "$Name.out.log"
+  $errLog = Join-Path $LogDir "$Name.err.log"
+  $launcher = Join-Path $RunDir "launch-$Name.ps1"
+
+  $nodeEsc = $NodeExe.Replace("'", "''")
+  $jsEsc = $EntryJs.Replace("'", "''")
+  $envEsc = $EnvFilePath.Replace("'", "''")
+  $wdEsc = $WorkDir.Replace("'", "''")
+  $outEsc = $outLog.Replace("'", "''")
+  $errEsc = $errLog.Replace("'", "''")
+
+  $launcherBody = @"
+`$ErrorActionPreference = 'Continue'
+`$logOut = '$outEsc'
+`$logErr = '$errEsc'
+`$envFile = '$envEsc'
+`$workDir = '$wdEsc'
+`$nodeExe = '$nodeEsc'
+`$entryJs = '$jsEsc'
+try {
+  if (-not (Test-Path -LiteralPath `$envFile)) { throw "missing env: `$envFile" }
+  if (-not (Test-Path -LiteralPath `$entryJs)) { throw "missing entry: `$entryJs" }
+  Get-Content -LiteralPath `$envFile -Encoding UTF8 | ForEach-Object {
+    `$line = `$_.Trim()
+    if (`$line -eq '' -or `$line.StartsWith('#')) { return }
+    `$eq = `$line.IndexOf('=')
+    if (`$eq -lt 1) { return }
+    `$name = `$line.Substring(0, `$eq).Trim()
+    `$val = `$line.Substring(`$eq + 1).Trim()
+    if ((`$val.StartsWith('"') -and `$val.EndsWith('"')) -or (`$val.StartsWith("'") -and `$val.EndsWith("'"))) {
+      `$val = `$val.Substring(1, `$val.Length - 2)
+    }
+    [System.Environment]::SetEnvironmentVariable(`$name, `$val, 'Process')
+  }
+  if (-not `$env:NODE_ENV) { `$env:NODE_ENV = 'production' }
+  Set-Location -LiteralPath `$workDir
+  # -Wait keeps wrapper alive for Task Scheduler; logs append without outer file locks
+  `$p = Start-Process -FilePath `$nodeExe -ArgumentList @(`$entryJs) -WorkingDirectory `$workDir -NoNewWindow -Wait -PassThru -RedirectStandardOutput `$logOut -RedirectStandardError `$logErr
+  exit `$p.ExitCode
+} catch {
+  Add-Content -LiteralPath `$logErr -Value (`$_.Exception.Message) -Encoding UTF8
+  exit 1
+}
+"@
+  $enc = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllText($launcher, $launcherBody, $enc)
+
+  $p = Start-Process -FilePath "powershell.exe" `
+    -ArgumentList @(
+      "-NoProfile",
+      "-ExecutionPolicy", "Bypass",
+      "-File", $launcher
+    ) `
+    -WorkingDirectory $WorkDir `
+    -WindowStyle Hidden `
     -PassThru
 
   Set-Content -LiteralPath $pidFile -Value $p.Id -Encoding ascii
@@ -147,7 +223,6 @@ if (-not $node) {
 
 $apiMain = Join-Path $DahRoot "apps\api\dist\src\main.js"
 $workerMain = Join-Path $DahRoot "apps\api\dist\src\worker.js"
-$runWithEnv = Join-Path $PSScriptRoot "run-with-env.ps1"
 
 if (-not (Test-Path -LiteralPath $apiMain)) {
   Write-Log "ERROR: API not built ($apiMain). Run: npm run build"
@@ -219,28 +294,28 @@ if (-not $SkipMinio) {
   }
 }
 
-# API (load .env via run-with-env.ps1)
+# API — direct node + .env (no nested run-with-env; PS 5.1 "--" broke remaining args)
 if (Test-PortOpen "127.0.0.1" 3001) {
   Write-Log "API already listening on :3001"
 } else {
-  $runEsc = $runWithEnv.Replace("'", "''")
-  $rootEsc = $DahRoot.Replace("'", "''")
-  $nodeEsc = $node.Replace("'", "''")
-  $apiEsc = $apiMain.Replace("'", "''")
-  # Do NOT pass "--" — PowerShell 5.1 treats it as an ambiguous parameter name
-  # ("Parameter name '' is ambiguous") and API never starts.
-  $cmd = @"
-& '$runEsc' -DahRoot '$rootEsc' '$nodeEsc' '$apiEsc'
-"@
-  Start-DetachedPowerShell -Name "api" -CommandText $cmd
+  Remove-Item (Join-Path $RunDir "api.pid") -ErrorAction SilentlyContinue
+  Start-DetachedNodeApp -Name "api" -NodeExe $node -EntryJs $apiMain -EnvFilePath $envPath -WorkDir $DahRoot
 
-  $aDeadline = (Get-Date).AddSeconds(60)
+  $aDeadline = (Get-Date).AddSeconds(90)
   while ((Get-Date) -lt $aDeadline) {
     if (Test-PortOpen "127.0.0.1" 3001) { break }
     Start-Sleep -Seconds 1
   }
-  if (Test-PortOpen "127.0.0.1" 3001) { Write-Log "API is up on :3001" }
-  else { Write-Log "WARNING: API :3001 not open - see logs\api.err.log" }
+  if (Test-PortOpen "127.0.0.1" 3001) {
+    Write-Log "API is up on :3001"
+  } else {
+    Write-Log "WARNING: API :3001 not open - see logs\api.err.log / api.out.log"
+    $errTail = Join-Path $LogDir "api.err.log"
+    if (Test-Path -LiteralPath $errTail) {
+      $lines = Get-Content -LiteralPath $errTail -Tail 15 -ErrorAction SilentlyContinue
+      if ($lines) { Write-Log "api.err.log tail: $($lines -join ' | ')" }
+    }
+  }
 }
 
 # Worker
@@ -252,14 +327,7 @@ if (-not $SkipWorker) {
     if (Test-PidAlive $wPid) {
       Write-Log "Worker already running"
     } else {
-      $runEsc = $runWithEnv.Replace("'", "''")
-      $rootEsc = $DahRoot.Replace("'", "''")
-      $nodeEsc = $node.Replace("'", "''")
-      $wEsc = $workerMain.Replace("'", "''")
-      $cmd = @"
-& '$runEsc' -DahRoot '$rootEsc' '$nodeEsc' '$wEsc'
-"@
-      Start-DetachedPowerShell -Name "worker" -CommandText $cmd
+      Start-DetachedNodeApp -Name "worker" -NodeExe $node -EntryJs $workerMain -EnvFilePath $envPath -WorkDir $DahRoot
     }
   }
 }
