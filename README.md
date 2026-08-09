@@ -31,7 +31,8 @@ docker compose exec api npx ts-node prisma/seed.ts
 | auditor@osbb.local | password123 | Ревізійна комісія |
 | resident@osbb.local | password123 | Мешканець |
 
-Демо-організація: `orgType = osbb`. Super-admin може створити **УК** на `/admin/tenants`.
+Демо-організація: `orgType = osbb`. Super-admin може створити **УК** на `/admin/tenants`.  
+**Вимкнення організації** (`isActive`) одразу блокує вхід і сесії голови/правління/мешканців — super-admin головніший за ролі tenant.
 
 ## Локальна розробка
 
@@ -44,6 +45,34 @@ cp .env.example .env
 Redis **не потрібен** за замовчуванням (worker — inline cron). Опційно: `npm run docker:infra:redis`.
 
 Далі: `npm run dev` (або окремо `dev:api` / `dev:web`). Документація: [SPEC/](./SPEC/).
+
+## Native (без Docker) — ноутбук як хост
+
+| ОС хоста | Інструкція |
+|----------|------------|
+| **Linux** (Ubuntu/Lubuntu) | [docs/NATIVE-HOST.md](./docs/NATIVE-HOST.md) — systemd: `npx dah-native install` |
+| **Windows** | [docs/NATIVE-HOST-WINDOWS.md](./docs/NATIVE-HOST-WINDOWS.md) — **без** install-скрипта (немає systemd) |
+
+**Linux** (коротко):
+
+```bash
+# .env: 127.0.0.1, REDIS_URL=none
+npm install && npm run build && npm run db:migrate
+npx dah-native install    # служби; Linux + sudo
+npm run update:native
+```
+
+**Windows без Docker** (коротко):
+
+```powershell
+# .env: 127.0.0.1, REDIS_URL=none; PostgreSQL уже встановлений і запущений
+npm run install:native:win
+# = install-native-windows.ps1 → build, migrate, MinIO, API, worker, Scheduled Task
+# npx dah-native install   # на Windows теж викликає цей скрипт
+# docs/NATIVE-HOST-WINDOWS.md
+```
+
+Також: [docs/DEPLOY.md](./docs/DEPLOY.md).
 
 ## Організації
 

@@ -1,5 +1,39 @@
 # Changelog
 
+## Unreleased
+
+### Setup wizard — tenant scope + nav flicker
+- `GET/POST /setup/*` привʼязані до **`X-Tenant-Id`** (building/users/complete не змішують orgs)
+- Web: soft `router.replace` замість `window.location` при already-initialized / після complete (без full-page blink)
+- Drawer: «Майстер налаштування» лише коли вибраний tenant `!isInitialized`; якщо tenants є, але контекст не обрано — пункт сховано
+- AppShell перечитує status після SPA-навігації та `dah-tenant-change`
+- Docs: SPEC/03, SPEC/05
+
+### Users — org scope, filter/sort, multi-membership, role catalog
+- Model `TenantMembership` unique `(userId, tenantId, role)`; multi-org + dual persona (board+resident)
+- Model `TenantRole`: per-tenant catalog — activate/deactivate/labels; DELETE only if 0 members
+- `GET/POST/PATCH/DELETE /roles` (manage: super_admin; list: +chairman); assignable check on create/update user
+- `GET /users`: tenant required; filters/sort/search; membership rows
+- `POST /users`: existing email → new membership (other role same org OK); inactive catalog role rejected
+- Auth: `memberships[]`, `select-tenant { tenantId, role }`, login/header persona switcher
+- Web organization: org selector, users filter/sort, **Roles** section, dropdowns from catalog
+- SPEC 02/03/04/05 + README
+
+### Security — tenant deactivation
+- Login / 2FA / SMS / refresh / JWT: відмова, якщо `Tenant.isActive = false` (голова ОСББ і всі users org)
+- `PATCH /tenants/:id` `isActive: false` відкликає `AuthSession` users організації
+- Web: `/login?reason=tenant_inactive`, без циклу «кабінет → login → кабінет»; підказка на `/admin/tenants`
+- Docs: SPEC/02, 03, 04, 05; e2e auth inactive tenant
+
+### Native host (no Docker)
+- Root scripts: `npm run start` / `start:app` / `start:api` / `start:worker` (dotenv + API + Worker)
+- `@dah/api` script `start:worker`
+- `infra/scripts/run-with-env.sh`, `run-minio.sh`, `run-minio-init.sh`, `install-native-systemd.sh`
+- systemd templates `infra/systemd/dah-*.service.in`, `dah.target.in`
+- nginx native site template `infra/nginx/dah-native.conf.in` (static `out` + `/api` proxy)
+- Docs: README + DEPLOY §10 Native host
+- `npm run update:native` / `infra/scripts/update-native.sh` — one-shot pull→build→migrate→restart
+
 ## 1.14.0 — Runtime slim + performance (phases A–E)
 
 ### A — Slim worker

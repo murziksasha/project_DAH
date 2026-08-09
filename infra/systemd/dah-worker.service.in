@@ -1,0 +1,18 @@
+[Unit]
+Description=DAH Worker (reminders, SLA, weekly backups)
+After=network-online.target dah-api.service dah-minio.service
+Wants=dah-api.service
+
+[Service]
+Type=simple
+User=@@USER@@
+Group=@@GROUP@@
+WorkingDirectory=@@DAH_ROOT@@
+Environment=NODE_ENV=production
+Environment=PATH=@@PATH@@
+ExecStart=@@DAH_ROOT@@/infra/scripts/run-with-env.sh @@NODE@@ apps/api/dist/src/worker.js
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

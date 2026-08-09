@@ -1,0 +1,19 @@
+[Unit]
+Description=DAH API (NestJS)
+After=network-online.target postgresql.service dah-minio.service dah-minio-init.service
+Wants=network-online.target dah-minio.service
+# postgresql unit name may differ; do not hard-Require so install works if name varies
+
+[Service]
+Type=simple
+User=@@USER@@
+Group=@@GROUP@@
+WorkingDirectory=@@DAH_ROOT@@
+Environment=NODE_ENV=production
+Environment=PATH=@@PATH@@
+ExecStart=@@DAH_ROOT@@/infra/scripts/run-with-env.sh @@NODE@@ apps/api/dist/src/main.js
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -22,18 +22,33 @@
 Login / refresh: `user.tenant = { id, name, slug, orgType }`.  
 `GET /auth/me` також повертає `tenant`.
 
+**Деактивація (`isActive: false`):**
+- Одного разу при переході active → inactive API **відкликає** refresh-сесії всіх users організації.
+- Подальші `POST /auth/login`, `POST /auth/refresh`, `POST /auth/2fa/verify` і будь-який Bearer JWT для users цього tenant → `401`  
+  (`Організацію (tenant) деактивовано…`).
+- Web: редірект на `/login?reason=tenant_inactive` без циклу «кабінет → login → кабінет».
+- `isActive: true` знову дозволяє login; старі токени не воскресають.
+
 ---
 
 ## Setup (super_admin)
 
 | Method | Path | Auth | Опис |
 |--------|------|------|------|
-| GET | `/setup/status` | super_admin | Стан майстра + resume |
+| GET | `/setup/status` | super_admin | Стан майстра + resume **для tenant** |
 | POST | `/setup/building` | super_admin | Створити/оновити будинок організації (upsert) |
 | POST | `/setup/bank` | super_admin | Банк + фонди (ідемпотентно) |
 | POST | `/setup/apartments` | super_admin | Масове додавання квартир |
 | POST | `/setup/users` | super_admin | Ключові ролі (ідемпотентно) |
-| POST | `/setup/complete` | super_admin | `isInitialized = true` |
+| POST | `/setup/complete` | super_admin | `Building.isInitialized = true` |
+
+### Tenant scope
+
+- Усі `/setup/*` приймають **`X-Tenant-Id`** (або `?tenantId=`): building, users і complete застосовуються **лише** до цієї організації.
+- Web (`apiFetch`) автоматично додає header з `localStorage.dah_tenant_id` (кнопка **Обрати** на `/admin/tenants`).
+- **Без** `X-Tenant-Id`: legacy bootstrap — перший building за `createdAt` (greenfield / e2e без multi-tenant контексту).
+- `POST /tenants` створює building з **`isInitialized: false`** — для нової org потрібен майстер (або ручне доналаштування), поки `POST /setup/complete` не виставить `true`.
+- «Організації вже є» ≠ setup завершено: пункт меню «Майстер» залежить від **`isInitialized` вибраного** tenant, не від кількості rows у `/tenants`.
 
 `GET /setup/status` відповідь (додаткові поля для resume):
 
@@ -56,6 +71,8 @@ Login / refresh: `user.tenant = { id, name, slug, orgType }`.
 }
 ```
 
+- Ключові users у status / setup рахуються **в межах tenant** (primary `user.tenantId` або active `TenantMembership`).
+
 `POST /setup/users` body (додатково):
 
 ```json
@@ -75,6 +92,11 @@ Login / refresh: `user.tenant = { id, name, slug, orgType }`.
 - `POST /setup/bank` — якщо фонди вже є → `200`, `{ skipped: true, bankAccount, funds }`
 - `POST /setup/users` — якщо всі потрібні ролі активні або відкладені → `200`, `{ skipped: true, users }`; інакше створює лише відсутні ролі (існуючі пропускаються)
 - `POST /setup/apartments` — якщо квартири вже є → `400` «Квартири вже додано» (UI пропускає крок)
+
+### Web UX (майстер)
+
+- Якщо status `isInitialized: true` — клієнт **не** робить hard reload (`window.location`); лише `router.replace('/admin/organization')`, щоб не миготів AppShell.
+- Пункт drawer «Майстер налаштування» ховається, коли для вибраного tenant setup уже complete (див. SPEC/03).
 
 ---
 
@@ -164,17 +186,48 @@ Login / refresh: `user.tenant = { id, name, slug, orgType }`.
 | POST | `/users/:id/apartments/:apartmentId` | super_admin | Прив'язати квартиру (many-to-many) |
 | DELETE | `/users/:id/apartments/:apartmentId` | super_admin | Відв'язати квартиру |
 
-Query для `GET /users`: `?search=&page=1&limit=20`
+Query для `GET /users`:  
+`?search=&page=1&limit=20&role=&status=&sortBy=name|email|role|status|createdAt&sortDir=asc|desc`
+
+**Scope:** список завжди в межах однієї організації (`tenantId` з JWT для chairman, або **обовʼязковий** `X-Tenant-Id` / `?tenantId=` для super_admin). Без tenant → `400` `{ code: "tenant_required" }`.  
+Дані з `TenantMembership` (роль/статус **у цій** org); platform `super_admin` у список org не потрапляє.
 
 Відповідь `GET /users`:
 ```json
-{ "items": [...], "total": 42, "page": 1, "limit": 20 }
+{ "items": [...], "total": 42, "page": 1, "limit": 20, "sortBy": "name", "sortDir": "asc" }
 ```
 
-Кожен item містить `apartments[]` (усі прив'язані квартири, `isPrimary`) та `apartment` (основна).
+Кожен item: `apartments[]` (квартири **цієї** org), `apartment` (основна), `tenant: { id, name, slug }`, `role`/`status` з membership.
 
-`PATCH /users/:id` body (усі поля опційні):
-`firstName`, `lastName`, `phone`, `email`, `password`, `role`, `status`, `apartmentIds[]`, `primaryApartmentId`
+`POST /users` (super_admin + `X-Tenant-Id`):  
+- новий email → створює identity + membership (password обовʼязковий);  
+- існуючий email → додає membership у поточну org (password опційний), якщо ще не член.
+
+`PATCH /users/:id` body (усі поля опційні):  
+`firstName`, `lastName`, `phone`, `email`, `password`, `role`, `status`, `apartmentIds[]`, `primaryApartmentId`  
+— `role`/`status` оновлюють **membership** поточної org; профіль (імʼя, email, пароль) — identity.
+
+Auth (multi-membership / dual persona):
+| Method | Path | Опис |
+|--------|------|------|
+| POST | `/auth/login` | optional `tenantId`, `role`; відповідь містить `memberships[]` (кожна = org+role) |
+| POST | `/auth/select-tenant` | JWT; body `{ tenantId, role? }` — активна org **і** роль (board↔resident); re-issue tokens |
+| GET | `/auth/memberships` | JWT; список memberships (у т.ч. кілька ролей на один tenant) |
+
+`TenantMembership` unique: `(userId, tenantId, role)`.  
+Один email: напр. `board` + `resident` у тому ж ОСББ — два рядки membership, перемикач у login/header.
+
+## Roles catalog (per tenant)
+
+| Method | Path | Auth | Опис |
+|--------|------|------|------|
+| GET | `/roles` | super_admin, chairman | Каталог + `memberCount`; `?activeOnly=1` |
+| POST | `/roles` | super_admin | Увімкнути / додати code у каталог |
+| PATCH | `/roles/:code` | super_admin | `isActive`, `labelUk`, `labelRu`, `sortOrder` |
+| DELETE | `/roles/:code` | super_admin | Лише якщо 0 members; protected: chairman, resident |
+
+Tenant scope: `X-Tenant-Id` (super_admin) / JWT tenant.  
+Призначення users: role має бути active у каталозі.
 
 ## Building
 

@@ -1,18 +1,45 @@
+# Dependencies
 node_modules/
+
+# Build outputs
 dist/
+out/
 .next/
+*.tsbuildinfo
+
+# Env / secrets
 .env
 .env.local
+.env.*.local
+
+# Logs & OS
 *.log
 .DS_Store
-coverage/
-.turbo/
-apps/api/prisma/migrations/*_migration_lock.toml
-backups/
+Thumbs.db
+
+# Test / coverage
 coverage/
 playwright-report/
 test-results/
+.tmp-backup-test/
+
+# Tooling
+.turbo/
+terminals/
+
+# Prisma (keep real migrations; ignore stray lock copies)
+apps/api/prisma/migrations/*_migration_lock.toml
+
+# Runtime data only at repo root (not apps/api/src/modules/backups/)
+/backups/
+
+# Windows native host runtime
+/tools/minio.exe
+/minio-data/
+/logs/
+infra/nginx/dah-windows.conf
+
+# TLS material (keep .gitkeep if present)
 infra/certs/*.pem
 infra/certs/*.key
 !infra/certs/.gitkeep
-terminals/

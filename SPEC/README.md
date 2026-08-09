@@ -11,7 +11,7 @@
 |----------|------|
 | [01-overview.md](./01-overview.md) | Мета, scope, ОСББ і УК |
 | [02-architecture.md](./02-architecture.md) | Стек, monorepo, Docker |
-| [03-roles-and-access.md](./03-roles-and-access.md) | Ролі RBAC + labels ОСББ/УК |
+| [03-roles-and-access.md](./03-roles-and-access.md) | Ролі RBAC, multi-membership, dual persona, каталог `TenantRole` |
 | [04-data-model.md](./04-data-model.md) | Prisma: Tenant.orgType, multi-building |
 | [05-api-reference.md](./05-api-reference.md) | REST API |
 | [06-finance.md](./06-finance.md) | Фінанси |
@@ -33,5 +33,7 @@
 
 - **Продукт:** Мій дім  
 - **Код (package):** див. root `package.json`  
-- **Останнє оновлення SPEC:** 2026-08-01  
-- **Tenancy:** multi-tenant (`Tenant`) + multi-building; `orgType`: `osbb` \| `management_company`
+- **Останнє оновлення SPEC:** 2026-08-09  
+- **Tenancy:** multi-tenant (`Tenant`) + multi-building; `orgType`: `osbb` \| `management_company`  
+- **Users:** `TenantMembership` multi-org / dual role; `TenantRole` catalog (assignable roles per org)  
+- **Setup:** `/setup/*` + drawer «Майстер» scoped по `X-Tenant-Id` / `Building.isInitialized` (див. SPEC/03, SPEC/05)

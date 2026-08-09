@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useI18n } from '@/components/LocaleProvider';
 import { apiFetch, getToken } from '@/lib/api';
 import type { I18nKey } from '@/lib/i18n';
@@ -52,12 +53,14 @@ const DEFERRABLE_ROLE_KEYS: Record<DeferrableRole, I18nKey> = {
 
 export default function SetupPage() {
   const { t } = useI18n();
+  const router = useRouter();
   const [step, setStep] = useState(0);
   const [status, setStatus] = useState<SetupStatus | null>(null);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [initialized, setInitialized] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
 
   const [building, setBuilding] = useState({ name: '', address: '', edrpou: '' });
   const [bank, setBank] = useState({
@@ -130,7 +133,10 @@ export default function SetupPage() {
         auditor: s.deferredSetupRoles.includes('auditor') && !s.hasAuditor,
       });
     }
-    if (s.isInitialized) window.location.href = '/admin/organization';
+    if (s.isInitialized) {
+      setRedirecting(true);
+      router.replace('/admin/organization');
+    }
   }
 
   async function loadStatus() {
@@ -271,7 +277,8 @@ export default function SetupPage() {
         );
       } else if (step === 4) {
         await apiFetch('/setup/complete', { method: 'POST', token });
-        window.location.href = '/admin/organization';
+        setRedirecting(true);
+        router.replace('/admin/organization');
         return;
       }
 
@@ -286,6 +293,15 @@ export default function SetupPage() {
 
   const stepComplete = step < 4 && isStepDone(step);
   const readOnly = stepComplete;
+
+  if (redirecting || (!status && !error)) {
+    return (
+      <main>
+        <h1>{t('setupTitle')}</h1>
+        <p style={{ color: 'var(--muted)' }}>{t('loading')}</p>
+      </main>
+    );
+  }
 
   return (
     <main>

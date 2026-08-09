@@ -54,6 +54,15 @@ export class UpdateUserDto {
   @IsEnum(UPDATABLE_ROLES)
   role?: (typeof UPDATABLE_ROLES)[number];
 
+  /**
+   * Which membership row is being edited when the user has multiple roles in the org
+   * (e.g. board + resident). Defaults to current User.role / single membership.
+   */
+  @ApiPropertyOptional({ enum: UPDATABLE_ROLES })
+  @IsOptional()
+  @IsEnum(UPDATABLE_ROLES)
+  membershipRole?: (typeof UPDATABLE_ROLES)[number];
+
   @ApiPropertyOptional({ enum: UserStatus })
   @IsOptional()
   @IsEnum(UserStatus)

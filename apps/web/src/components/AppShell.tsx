@@ -9,12 +9,14 @@ import { useI18n } from '@/components/LocaleProvider';
 import { NotificationBell } from '@/components/NotificationBell';
 import { OnboardingBanner } from '@/components/OnboardingBanner';
 import { MeterQueueFlusher } from '@/components/MeterQueueFlusher';
+import { OrgMembershipSwitcher } from '@/components/OrgMembershipSwitcher';
 import { ResidentApartmentSwitcher } from '@/components/ResidentApartmentSwitcher';
 import { ResidentBottomNav } from '@/components/ResidentBottomNav';
 import { ResidentTour } from '@/components/ResidentTour';
 import { NavIcon } from '@/components/ui/NavIcon';
 import { apiFetch, getToken } from '@/lib/api';
 import { getRoleHome, getStoredUser, logout } from '@/lib/auth';
+import { getSelectedTenantId } from '@/lib/building-context';
 import {
   applyComfort,
   getStoredComfort,
@@ -126,6 +128,16 @@ export default function AppShell({ children }: AppShellProps) {
     const token = getToken();
     if (!token) return;
     try {
+      // Wizard is per selected tenant (X-Tenant-Id). With orgs already created but none
+      // selected, keep the master hidden — pick org first, then setup if needed.
+      const selectedTenant = getSelectedTenantId();
+      if (!selectedTenant) {
+        const tenants = await apiFetch<Array<{ id: string }>>('/tenants', { token });
+        if (Array.isArray(tenants) && tenants.length > 0) {
+          setIsInitialized(true);
+          return;
+        }
+      }
       const status = await apiFetch<{ isInitialized: boolean }>('/setup/status', { token });
       setIsInitialized(status.isInitialized);
     } catch {
@@ -171,6 +183,15 @@ export default function AppShell({ children }: AppShellProps) {
       })
       .catch(() => undefined);
   }, [loadInitStatus, setLocale]);
+
+  // Re-check setup after SPA navigations (wizard complete) and tenant switches.
+  useEffect(() => {
+    if (user?.role !== 'super_admin') return;
+    loadInitStatus();
+    const onTenant = () => loadInitStatus();
+    window.addEventListener('dah-tenant-change', onTenant);
+    return () => window.removeEventListener('dah-tenant-change', onTenant);
+  }, [pathname, loadInitStatus, user?.role]);
 
   useEffect(() => {
     setMobileOpen(false);
@@ -262,6 +283,7 @@ export default function AppShell({ children }: AppShellProps) {
           <span className="app-header-sub">{title || shellFallback}</span>
         </div>
         <div className="app-header-actions">
+          <OrgMembershipSwitcher />
           <BuildingSwitcher />
           {isResident && <ResidentApartmentSwitcher />}
           <HeaderSearch />

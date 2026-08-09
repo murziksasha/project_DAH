@@ -127,6 +127,49 @@ export async function seedTestFixtures() {
     },
   });
 
+  await prisma.tenantMembership.createMany({
+    data: [
+      {
+        userId: chairman.id,
+        tenantId: tenant.id,
+        role: UserRole.chairman,
+        status: UserStatus.active,
+      },
+      {
+        userId: accountant.id,
+        tenantId: tenant.id,
+        role: UserRole.accountant,
+        status: UserStatus.active,
+      },
+      {
+        userId: resident.id,
+        tenantId: tenant.id,
+        role: UserRole.resident,
+        status: UserStatus.active,
+      },
+    ],
+  });
+
+  // Full default catalog so roles e2e / assignable checks match production seed.
+  const orgRoleCodes: UserRole[] = [
+    UserRole.chairman,
+    UserRole.accountant,
+    UserRole.board,
+    UserRole.dispatcher,
+    UserRole.crew,
+    UserRole.auditor,
+    UserRole.resident,
+  ];
+  await prisma.tenantRole.createMany({
+    data: orgRoleCodes.map((code, i) => ({
+      tenantId: tenant.id,
+      code,
+      isActive: true,
+      sortOrder: (i + 1) * 10,
+    })),
+    skipDuplicates: true,
+  });
+
   const accrual = await prisma.accrual.create({
     data: {
       fundId: fund.id,

@@ -28,10 +28,32 @@ export class SetupService {
     private audit: AuditService,
   ) {}
 
-  async getStatus() {
-    const building = await this.prisma.building.findFirst({
+  private buildingWhere(tenantId?: string | null) {
+    return tenantId ? { tenantId } : {};
+  }
+
+  private setupUsersWhere(tenantId?: string | null) {
+    const base = {
+      role: { in: [...REQUIRED_SETUP_ROLES] as UserRole[] },
+      status: UserStatus.active,
+    };
+    if (!tenantId) return base;
+    return {
+      ...base,
+      OR: [
+        { tenantId },
+        { memberships: { some: { tenantId, status: UserStatus.active } } },
+      ],
+    };
+  }
+
+  private async findBuilding(tenantId?: string | null) {
+    return this.prisma.building.findFirst({
+      where: this.buildingWhere(tenantId),
+      orderBy: { createdAt: 'asc' },
       select: {
         id: true,
+        tenantId: true,
         name: true,
         address: true,
         edrpou: true,
@@ -40,6 +62,10 @@ export class SetupService {
         _count: { select: { apartments: true, funds: true } },
       },
     });
+  }
+
+  async getStatus(tenantId?: string | null) {
+    const building = await this.findBuilding(tenantId);
 
     const deferredSetupRoles = (parseBuildingSettings(building?.settings).deferredSetupRoles ?? []).filter(
       (r): r is DeferredSetupRole => DEFERRABLE_SETUP_ROLES.includes(r),
@@ -53,10 +79,7 @@ export class SetupService {
       : null;
 
     const existingSetupUsers = await this.prisma.user.findMany({
-      where: {
-        role: { in: [...REQUIRED_SETUP_ROLES] },
-        status: UserStatus.active,
-      },
+      where: this.setupUsersWhere(tenantId ?? building?.tenantId),
       select: { email: true, firstName: true, lastName: true, role: true },
     });
 
@@ -123,26 +146,26 @@ export class SetupService {
     };
   }
 
-  private async requireUninitializedBuilding() {
-    const building = await this.prisma.building.findFirst();
+  private async requireUninitializedBuilding(tenantId?: string | null) {
+    const building = await this.findBuilding(tenantId);
     if (building?.isInitialized) {
       throw new BadRequestException('Організацію / будинок уже налаштовано');
     }
     return building;
   }
 
-  async upsertBuilding(dto: SetupBuildingDto, actorId: string) {
-    await this.requireUninitializedBuilding();
-    const existing = await this.prisma.building.findFirst();
+  async upsertBuilding(dto: SetupBuildingDto, actorId: string, tenantId?: string | null) {
+    await this.requireUninitializedBuilding(tenantId);
+    const existing = await this.findBuilding(tenantId);
 
-    let tenantId = existing?.tenantId;
-    if (!tenantId) {
+    let resolvedTenantId = existing?.tenantId ?? tenantId ?? null;
+    if (!resolvedTenantId) {
       const tenant =
         (await this.prisma.tenant.findFirst({ orderBy: { createdAt: 'asc' } })) ??
         (await this.prisma.tenant.create({
           data: { name: dto.name, slug: 'default' },
         }));
-      tenantId = tenant.id;
+      resolvedTenantId = tenant.id;
     }
 
     const building = existing
@@ -152,7 +175,7 @@ export class SetupService {
         })
       : await this.prisma.building.create({
           data: {
-            tenantId,
+            tenantId: resolvedTenantId,
             name: dto.name,
             address: dto.address,
             edrpou: dto.edrpou,
@@ -172,10 +195,9 @@ export class SetupService {
     return building;
   }
 
-  async setupBank(dto: SetupBankDto, actorId: string) {
-    const building = await this.requireUninitializedBuilding();
+  async setupBank(dto: SetupBankDto, actorId: string, tenantId?: string | null) {
+    const building = await this.requireUninitializedBuilding(tenantId);
     if (!building) throw new BadRequestException('Спочатку створіть дані організації / будинку');
-
     const existingFunds = await this.prisma.fund.findMany({
       where: { buildingId: building.id },
       include: { bankAccount: true },
@@ -223,8 +245,8 @@ export class SetupService {
     return { skipped: false, bankAccount, funds };
   }
 
-  async setupApartments(dto: SetupApartmentsDto, actorId: string) {
-    const building = await this.requireUninitializedBuilding();
+  async setupApartments(dto: SetupApartmentsDto, actorId: string, tenantId?: string | null) {
+    const building = await this.requireUninitializedBuilding(tenantId);
     if (!building) throw new BadRequestException('Спочатку створіть дані організації / будинку');
     if (!dto.apartments.length) throw new BadRequestException('Додайте хоча б одну квартиру');
 
@@ -258,17 +280,15 @@ export class SetupService {
     return { count: created.length, apartments: created };
   }
 
-  async setupUsers(dto: SetupUsersDto, actorId: string) {
-    const building = await this.requireUninitializedBuilding();
+  async setupUsers(dto: SetupUsersDto, actorId: string, tenantId?: string | null) {
+    const building = await this.requireUninitializedBuilding(tenantId);
     if (!building) throw new BadRequestException('Спочатку створіть дані організації / будинку');
 
     const singleSeatRoles: UserRole[] = [UserRole.chairman, UserRole.accountant, UserRole.auditor];
+    const scopeTenantId = tenantId ?? building.tenantId;
 
     const existingByRole = await this.prisma.user.findMany({
-      where: {
-        role: { in: [...REQUIRED_SETUP_ROLES] },
-        status: UserStatus.active,
-      },
+      where: this.setupUsersWhere(scopeTenantId),
       select: { id: true, email: true, role: true, firstName: true, lastName: true },
     });
 
@@ -305,10 +325,7 @@ export class SetupService {
 
     if (rolesToCreate.length === 0) {
       const users = await this.prisma.user.findMany({
-        where: {
-          role: { in: [...REQUIRED_SETUP_ROLES] },
-          status: UserStatus.active,
-        },
+        where: this.setupUsersWhere(scopeTenantId),
         select: { id: true, email: true, role: true, firstName: true, lastName: true },
       });
       return { skipped: true, users, deferredSetupRoles: [...deferRoles] };
@@ -328,7 +345,47 @@ export class SetupService {
       }
 
       const existing = await this.prisma.user.findUnique({ where: { email: item.email } });
-      if (existing) throw new BadRequestException(`Email вже зареєстрований: ${item.email}`);
+      if (existing) {
+        // Allow attaching existing identity to this tenant (multi-membership)
+        const mem = await this.prisma.tenantMembership.findUnique({
+          where: {
+            userId_tenantId_role: {
+              userId: existing.id,
+              tenantId: building.tenantId,
+              role: item.role,
+            },
+          },
+        });
+        if (mem) throw new BadRequestException(`Email вже зареєстрований: ${item.email}`);
+        if (existing.role === UserRole.super_admin && !existing.tenantId) {
+          throw new BadRequestException(`Email вже зареєстрований: ${item.email}`);
+        }
+        await this.prisma.tenantMembership.create({
+          data: {
+            userId: existing.id,
+            tenantId: building.tenantId,
+            role: item.role,
+            status: UserStatus.active,
+          },
+        });
+        created.push({
+          id: existing.id,
+          email: existing.email,
+          role: item.role,
+          firstName: existing.firstName,
+          lastName: existing.lastName,
+        });
+        if (singleSeatRoles.includes(item.role)) {
+          existingByRole.push({
+            id: existing.id,
+            email: existing.email,
+            role: item.role,
+            firstName: existing.firstName,
+            lastName: existing.lastName,
+          });
+        }
+        continue;
+      }
 
       const passwordHash = await bcrypt.hash(item.password, 10);
       const user = await this.prisma.user.create({
@@ -340,6 +397,14 @@ export class SetupService {
           phone: item.phone,
           role: item.role,
           status: UserStatus.active,
+          tenantId: building.tenantId,
+          memberships: {
+            create: {
+              tenantId: building.tenantId,
+              role: item.role,
+              status: UserStatus.active,
+            },
+          },
         },
         select: { id: true, email: true, role: true, firstName: true, lastName: true },
       });
@@ -358,22 +423,19 @@ export class SetupService {
     });
 
     const users = await this.prisma.user.findMany({
-      where: {
-        role: { in: [...REQUIRED_SETUP_ROLES] },
-        status: UserStatus.active,
-      },
+      where: this.setupUsersWhere(scopeTenantId),
       select: { id: true, email: true, role: true, firstName: true, lastName: true },
     });
 
     return { skipped: created.length === 0, users, deferredSetupRoles: [...deferRoles] };
   }
 
-  async complete(actorId: string) {
-    const building = await this.prisma.building.findFirst();
+  async complete(actorId: string, tenantId?: string | null) {
+    const building = await this.findBuilding(tenantId);
     if (!building) throw new NotFoundException('Будинок / організацію не знайдено');
     if (building.isInitialized) throw new BadRequestException('Організацію / будинок уже налаштовано');
 
-    const status = await this.getStatus();
+    const status = await this.getStatus(tenantId ?? building.tenantId);
     if (!status.canComplete) {
       throw new BadRequestException('Завершіть усі кроки налаштування перед підтвердженням');
     }

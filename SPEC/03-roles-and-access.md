@@ -36,20 +36,54 @@
 | GET /auth/pending | ❌ | ✅ | ❌ | ✅ | ❌ |
 | PATCH /auth/approve/:id | ❌ | ✅ | ❌ | ✅ | ❌ |
 
-\* `pending` / `blocked` — login відхиляється
+\* `pending` / `blocked` — login відхиляється  
+\* Користувачі з `tenantId`, де `Tenant.isActive = false` — **login / 2FA complete / SMS / refresh / JWT** відхиляються (`401`, повідомлення про деактивацію). Super-admin не прив’язаний до tenant і лишається з доступом; він головніший за голову ОСББ/керівника УК.
 
 ### Users & Organization
 
 | Ендпоінт | super_admin | chairman | інші |
 |----------|-------------|----------|------|
-| GET /users | ✅ | ✅ | ❌ |
-| POST /users | ✅ | ❌ | ❌ |
-| PATCH /users/:id | ✅ | ❌ | ❌ |
-| PATCH /users/:id/block | ✅ | ✅ | ❌ |
+| GET /users | ✅* | ✅† | ❌ |
+| POST /users | ✅* | ❌ | ❌ |
+| PATCH /users/:id | ✅* | ❌ | ❌ |
+| PATCH /users/:id/block | ✅* | ✅† | ❌ |
 | POST/DELETE /users/:id/apartments/:apartmentId | ✅ | ❌ | ❌ |
 | POST/PATCH/DELETE /building/apartments | ✅ | ✅ | ❌ |
 
-Web UI `/admin/organization` — лише `super_admin`.
+\* Super-admin: обовʼязковий `X-Tenant-Id` (контекст org); інакше `400 tenant_required`.  
+† Chairman: лише свій `JWT.tenantId`.  
+Список/роль/статус — з `TenantMembership` у межах org.  
+Один identity може мати **кілька memberships**: різні tenants і/або **кілька roles в одному tenant** (типово `board`/`chairman` + `resident`). JWT завжди з **однією** активною role; перемикач persona у web.
+
+Web UI `/admin/organization` — `super_admin` (з вибором org) / chairman у своєму tenant.  
+Додати другу роль: `POST /users` з існуючим email і іншою `role` (напр. `resident` + квартири).
+
+## Кілька ролей однієї особи
+
+| Сценарій | Як |
+|----------|-----|
+| Різні ОСББ/УК | Окремі `TenantMembership` на різні `tenantId` |
+| Правління + мешканець **в одному** ОСББ | Два рядки: `(user, tenant, board)` + `(user, tenant, resident)` |
+| Login / шапка | Список memberships `org · role`; `POST /auth/select-tenant` `{ tenantId, role }` |
+| Список users | Flatten: один рядок на membership (одна людина може 2+ рази) |
+| Голоси / poll | 1 `userId` = 1 голос (не 2 при dual role) |
+
+## Каталог ролей організації (`TenantRole`)
+
+Системні коди RBAC не змінюються (permissions у `@dah/shared`).  
+Per-tenant каталог керує **чи можна призначати** роль новим memberships і **як вона називається** в UI.
+
+| Дія | Хто | Правило |
+|-----|-----|---------|
+| GET `/roles` | super_admin, chairman | tenant scope; `?activeOnly=1` для dropdown |
+| POST / PATCH / DELETE `/roles` | **лише super_admin** | |
+| Додати / увімкнути | POST `{ code }` | upsert + `isActive=true` |
+| Редагувати | PATCH labels, sortOrder | |
+| Деактивувати | PATCH `isActive=false` | існуючі users зберігають role; dropdown нових — без цієї ролі |
+| Видалити | DELETE | лише `memberCount=0`; `chairman`/`resident` — protected (не DELETE) |
+
+`POST/PATCH /users` з inactive role → `400`.  
+Фільтр users може показувати всі коди з каталогу (включно з inactive).
 
 ### Finance
 
@@ -117,11 +151,12 @@ Worker (без UI): щоденна перевірка тижневої копі�
 |---------|--------|
 | `/login` | Публічний |
 | `/resident` | `resident` (та admin roles для перегляду) |
-| `/admin/setup` | `super_admin` (поки `isInitialized = false`) |
-| `/admin/organization` | `super_admin` |
+| `/admin/setup` | `super_admin` (майстер; див. нижче) |
+| `/admin/tenants` | `super_admin` |
+| `/admin/organization` | `super_admin` (потрібен контекст org) |
 | `/admin/*` (фінанси) | `chairman`, `accountant`, `board`, `auditor` |
 
-Після login admin-ролі перенаправляються на `/admin`, мешканець — на `/resident`, `super_admin` — на `/admin/setup` або `/admin/organization` (якщо `isInitialized`).
+Після login admin-ролі перенаправляються на `/admin`, мешканець — на `/resident`, `super_admin` — на `/admin/setup` або `/admin/organization` залежно від `Building.isInitialized` **у вибраному tenant** (`X-Tenant-Id` / `dah_tenant_id`).
 
 ### Глобальна навігація (AppShell)
 
@@ -133,17 +168,36 @@ Worker (без UI): щоденна перевірка тижневої копі�
 
 | Роль | Домівка | Пункти drawer |
 |------|---------|---------------|
-| `super_admin` | `/admin/setup` або `/admin/organization` | Майстер, Організація |
+| `super_admin` | `/admin/setup` (якщо org ще не ініціалізована) або `/admin/organization` | **Майстер** (лише якщо `!isInitialized` для **вибраного** tenant), Організації, Організація, Інструкція |
 | `chairman`, `accountant`, `board`, `auditor` | `/admin` | Дашборд, фінанси, комунікації, налаштування, аудит |
 | `resident` | `/resident` | Кабінет мешканця |
 
+**Видимість «Майстер налаштування» (super_admin):**
+
+1. Статус береться з `GET /setup/status` **у контексті** `X-Tenant-Id` (localStorage `dah_tenant_id`).
+2. Якщо tenant **не вибрано**, але вже є записи в `GET /tenants` — пункт **ховається** (спочатку «Обрати» org на `/admin/tenants`).
+3. Якщо tenant вибрано і `isInitialized = true` — пункт **ховається**.
+4. Якщо tenant вибрано і `isInitialized = false` (нова org з `/admin/tenants` створює building з `isInitialized: false`) — пункт **показується**.
+5. Greenfield (немає tenants) — майстер доступний без попереднього вибору org.
+6. Після SPA-навігації / зміни tenant AppShell перечитує status (без full reload).
+
 ### Майстер налаштування (`/admin/setup`)
 
-- Resume: `GET /setup/status` повертає `nextStep`, `stepDone`, prefill для building/bank
-- Завершені кроки пропускають POST — кнопка **Продовжити**
-- Повторний `POST /setup/bank` при наявних фондах — `200` з `{ skipped: true }` (не помилка)
-- Крок **Користувачі**: голова правління обов'язкова; для бухгалтера та ревізії — чекбокс **Створити пізніше**
-- Відкладені ролі (`deferredSetupRoles`) створюються в `/admin/organization` (банер + форма `POST /users`)
+- **Tenant scope:** усі `/setup/*` операції привʼязані до `X-Tenant-Id` (див. SPEC/05). Без header — legacy «перший» building (bootstrap / e2e).
+- Resume: `GET /setup/status` → `nextStep`, `stepDone`, prefill building/bank, `isInitialized`.
+- Якщо `isInitialized = true` — UI робить **soft** `router.replace('/admin/organization')` (не `window.location`, щоб не миготів увесь shell).
+- Після `POST /setup/complete` — теж soft redirect на `/admin/organization`.
+- Завершені кроки пропускають POST — кнопка **Продовжити**.
+- Повторний `POST /setup/bank` при наявних фондах — `200` з `{ skipped: true }` (не помилка).
+- Крок **Користувачі**: голова правління обов'язкова; для бухгалтера та ревізії — чекбокс **Створити пізніше**.
+- Відкладені ролі (`deferredSetupRoles`) створюються в `/admin/organization` (банер + форма `POST /users`).
+
+**Типовий multi-tenant сценарій**
+
+1. Seed / перша org: майстер → `isInitialized = true` → пункт зникає.
+2. `POST /tenants` (нова ОСББ/УК) → building з `isInitialized: false`.
+3. На `/admin/tenants` → **Обрати** нову org → у drawer зʼявляється **Майстер** → пройти кроки → complete.
+4. Інша org, уже ініціалізована → **Обрати** її → майстер знову сховано.
 
 ## Реалізація
 

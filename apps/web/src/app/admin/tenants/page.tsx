@@ -133,6 +133,9 @@ export default function TenantsPage() {
         title={t('tenantsTitle')}
         description={t('tenantsDesc')}
       />
+      <p className="muted" style={{ marginTop: '-0.5rem', marginBottom: '1rem', maxWidth: '52rem' }}>
+        {t('tenantsDisableHint')}
+      </p>
       {error && <p className="error">{error}</p>}
       {message && <p className="success-banner">{message}</p>}
 

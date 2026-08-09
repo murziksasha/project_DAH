@@ -36,12 +36,16 @@ export function getNavItems(role: string, isInitialized = true): NavItem[] {
 /** Grouped navigation for drawer / sidebar, filtered by RBAC. */
 export function getNavGroups(role: string, isInitialized = true): NavGroup[] {
   if (role === 'super_admin') {
-    const items: NavItem[] = [
-      { href: '/admin/setup', label: 'Майстер налаштування', icon: 'wizard' },
+    const items: NavItem[] = [];
+    // Wizard only until first-time setup completes (avoids bounce to organization).
+    if (!isInitialized) {
+      items.push({ href: '/admin/setup', label: 'Майстер налаштування', icon: 'wizard' });
+    }
+    items.push(
       { href: '/admin/tenants', label: 'Організації', icon: 'building' },
       { href: '/admin/organization', label: 'Організація', icon: 'org' },
       instructionsItem(role),
-    ];
+    );
     return [{ id: 'setup', label: 'Система', items }];
   }
 
