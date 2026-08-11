@@ -1,12 +1,14 @@
 # One-shot update on Windows native host (no Docker, no systemd):
-#   pull -> install -> prisma generate -> build -> migrate -> restart stack
+#   install -> prisma generate -> build -> migrate -> restart stack
+#
+# Does NOT run git pull — update the tree yourself first (git pull / copy / rsync),
+# then: npm run update:native:win
 #
 # Usage (from repo root):
 #   npm run update:native:win
 #   powershell -ExecutionPolicy Bypass -File infra/scripts/update-native-windows.ps1
 #
 # Env / switches (any of these skip a step):
-#   -SkipPull / SKIP_PULL=1
 #   -SkipInstall / SKIP_INSTALL=1
 #   -SkipGenerate / SKIP_GENERATE=1
 #   -SkipBuild / SKIP_BUILD=1
@@ -16,7 +18,6 @@
 param(
   [string]$DahRoot = "",
   [int]$WebPort = 0,
-  [switch]$SkipPull,
   [switch]$SkipInstall,
   [switch]$SkipGenerate,
   [switch]$SkipBuild,
@@ -33,7 +34,6 @@ function EnvFlag([string]$Name) {
   return ($v -eq "1" -or $v -eq "true" -or $v -eq "TRUE" -or $v -eq "yes")
 }
 
-if (EnvFlag "SKIP_PULL") { $SkipPull = $true }
 if (EnvFlag "SKIP_INSTALL") { $SkipInstall = $true }
 if (EnvFlag "SKIP_GENERATE") { $SkipGenerate = $true }
 if (EnvFlag "SKIP_BUILD") { $SkipBuild = $true }
@@ -202,17 +202,7 @@ if (-not $SkipPreBackup) {
   Write-Step "skip pre-update dump"
 }
 
-if (-not $SkipPull) {
-  Write-Step "git pull --ff-only"
-  if (Test-Path -LiteralPath (Join-Path $DahRoot ".git")) {
-    git pull --ff-only
-    if ($LASTEXITCODE -ne 0) { throw "git pull failed (ff-only). Resolve conflicts or use -SkipPull" }
-  } else {
-    Write-Host "    no .git - skip pull"
-  }
-} else {
-  Write-Step "skip git pull"
-}
+Write-Step "git pull skipped (update code manually before this script)"
 
 if (-not $SkipInstall) {
   Write-Step "npm install"

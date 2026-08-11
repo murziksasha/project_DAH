@@ -71,7 +71,7 @@ npm run install:native:win
 # npx dah-native install   # на Windows теж викликає цей скрипт
 
 npm run start:native:win     # ручний старт стеку
-npm run update:native:win    # pull → build → migrate → restart
+npm run update:native:win    # install → build → migrate → restart (git pull — вручну)
 npm run status:native:win    # порти / health / Task
 npm run backup:native        # pg_dump без Docker
 npm run smoke:native:win

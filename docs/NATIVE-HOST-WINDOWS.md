@@ -497,10 +497,14 @@ pm2 save
 
 ```powershell
 cd C:\miy_dim
+# 1) оновіть код вручну (git pull / copy / rsync)
+git pull   # або інший спосіб
+
+# 2) install → generate → build → migrate → stop → start
 npm run update:native:win
 # = infra/scripts/update-native-windows.ps1
-# pull → install → prisma generate → build → migrate → stop → start
 # pre-update dump: backups\pre-update\ (якщо є pg_dump)
+# git pull у скрипті НЕ викликається
 ```
 
 Або: `npx dah-native update` / `npm run update:native` на Windows також викликає **той самий** `.ps1`.
@@ -508,7 +512,6 @@ npm run update:native:win
 Прапорці (env або параметри скрипта):
 
 ```powershell
-$env:SKIP_PULL = "1"        # код уже оновлений
 $env:SKIP_INSTALL = "1"
 $env:SKIP_BUILD = "1"
 $env:SKIP_MIGRATE = "1"
@@ -524,10 +527,10 @@ npm run status:native:win
 npm run smoke:native:win
 ```
 
-Ручний еквівалент (якщо потрібно):
+Ручний еквівалент:
 
 ```powershell
-git pull
+git pull   # окремо, за вашим процесом
 npm install
 npm run build
 npm run db:migrate

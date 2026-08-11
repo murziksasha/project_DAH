@@ -14,7 +14,8 @@
 - Security link respects resident vs staff (`/resident/security` vs `/admin/security`)
 
 ### Native Windows host ops (KeenDNS-ready)
-- `npm run update:native:win` — pull → install → generate → build → migrate → restart (`update-native-windows.ps1`)
+- `npm run update:native:win` — install → generate → build → migrate → restart (`update-native-windows.ps1`)
+- **No git pull** in Windows update script (operator updates tree manually)
 - Fix: pre-update dump no longer assigns `$host` (PowerShell read-only automatic variable → `$pgHost`)
 - `stop:native:win` / `restart:native:win` / `status:native:win` / `smoke:native:win`
 - `npx dah-native update` on win32 → PowerShell update (not bash/`systemctl`)

@@ -81,15 +81,12 @@ npm run update:native:win
 ```powershell
 cd C:\path\to\DAH
 
-# повне оновлення (pull → install → generate → build → migrate → restart)
+# 1) git pull / copy коду — вручну
+# 2) install → generate → build → migrate → restart
 npm run update:native:win
 
-# код уже оновлений вручну
-$env:SKIP_PULL = "1"
-npm run update:native:win
-
-# лише rebuild + migrate + restart
-$env:SKIP_PULL = "1"; $env:SKIP_INSTALL = "1"
+# лише rebuild + migrate + restart (без npm install)
+$env:SKIP_INSTALL = "1"
 npm run update:native:win
 ```
 
