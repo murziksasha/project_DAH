@@ -15,6 +15,7 @@
 
 ### Native Windows host ops (KeenDNS-ready)
 - `npm run update:native:win` — pull → install → generate → build → migrate → restart (`update-native-windows.ps1`)
+- Fix: pre-update dump no longer assigns `$host` (PowerShell read-only automatic variable → `$pgHost`)
 - `stop:native:win` / `restart:native:win` / `status:native:win` / `smoke:native:win`
 - `npx dah-native update` on win32 → PowerShell update (not bash/`systemctl`)
 - `backup.ps1` native fallback: `pg_dump` + optional `mc`; `npm run backup:native` / `backup:win`

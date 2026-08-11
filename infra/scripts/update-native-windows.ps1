@@ -114,14 +114,15 @@ function Invoke-PreUpdateDump {
   $user = $EnvMap["POSTGRES_USER"]
   $db = $EnvMap["POSTGRES_DB"]
   $pass = $EnvMap["POSTGRES_PASSWORD"]
-  $host = "127.0.0.1"
+  # Note: $Host is a read-only automatic variable in PowerShell — never use it as a name
+  $pgHost = "127.0.0.1"
   $port = "5432"
 
   $url = $EnvMap["DATABASE_URL"]
   if ($url -and $url -match '^postgres(?:ql)?://([^:]+):([^@]*)@([^:/]+):?(\d+)?/([^?]+)') {
     if (-not $user) { $user = $Matches[1] }
     if (-not $pass) { $pass = [Uri]::UnescapeDataString($Matches[2]) }
-    $host = $Matches[3]
+    $pgHost = $Matches[3]
     if ($Matches[4]) { $port = $Matches[4] }
     if (-not $db) { $db = $Matches[5] }
   }
@@ -138,7 +139,7 @@ function Invoke-PreUpdateDump {
   $prevPass = $env:PGPASSWORD
   try {
     if ($pass) { $env:PGPASSWORD = $pass }
-    & $pgDump -h $host -p $port -U $user -d $db -F p -f $sqlPath
+    & $pgDump -h $pgHost -p $port -U $user -d $db -F p -f $sqlPath
     if ($LASTEXITCODE -ne 0) {
       Write-Host "    WARN: pg_dump exit $LASTEXITCODE - continue update"
       return
