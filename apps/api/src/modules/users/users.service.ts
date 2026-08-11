@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, UserRole, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { assertPasswordStrength } from '../../common/utils/password-policy';
 import { clearDeferredSetupRole, parseBuildingSettings } from '../building/building-settings';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -243,7 +244,8 @@ export class UsersService {
 
     await this.roles.assertRoleAssignable(tenantId, dto.role);
 
-    const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    const email = dto.email.trim().toLowerCase();
+    const existing = await this.prisma.user.findUnique({ where: { email } });
 
     if (existing) {
       if (existing.role === UserRole.super_admin) {
@@ -274,6 +276,14 @@ export class UsersService {
         },
       });
 
+      // Optional password reset when re-linking existing identity
+      let passwordHash: string | undefined;
+      if (dto.password?.trim()) {
+        const plain = dto.password.trim();
+        assertPasswordStrength(plain);
+        passwordHash = await bcrypt.hash(plain, 10);
+      }
+
       // Refresh identity profile fields if provided
       await this.prisma.user.update({
         where: { id: existing.id },
@@ -281,6 +291,14 @@ export class UsersService {
           firstName: dto.firstName || existing.firstName,
           lastName: dto.lastName || existing.lastName,
           phone: dto.phone !== undefined ? dto.phone || null : existing.phone,
+          ...(passwordHash
+            ? {
+                passwordHash,
+                refreshToken: null,
+                failedLoginCount: 0,
+                lockedUntil: null,
+              }
+            : {}),
           // If user has no active tenant, point at this one
           ...(existing.tenantId
             ? {}
@@ -321,15 +339,17 @@ export class UsersService {
       });
     }
 
-    if (!dto.password) {
+    if (!dto.password?.trim()) {
       throw new BadRequestException('Пароль обовʼязковий для нового користувача');
     }
+    const plainPassword = dto.password.trim();
+    assertPasswordStrength(plainPassword);
 
-    const passwordHash = await bcrypt.hash(dto.password, 10);
+    const passwordHash = await bcrypt.hash(plainPassword, 10);
     const user = await this.prisma.$transaction(async (tx) => {
       const created = await tx.user.create({
         data: {
-          email: dto.email,
+          email,
           passwordHash,
           firstName: dto.firstName,
           lastName: dto.lastName,
@@ -433,6 +453,9 @@ export class UsersService {
       throw new NotFoundException('Користувача не знайдено в цій організації');
     }
 
+    if (dto.email !== undefined) {
+      dto.email = dto.email.trim().toLowerCase();
+    }
     if (dto.email && dto.email !== user.email) {
       const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
       if (existing) throw new BadRequestException('Email вже зареєстрований');
@@ -461,11 +484,18 @@ export class UsersService {
     if (dto.phone !== undefined) data.phone = dto.phone || null;
     if (dto.email !== undefined) data.email = dto.email;
 
-    // Sync denormalized active context when editing the active membership
+    // Sync denormalized User row when editing the active membership, or when
+    // activating a still-pending identity (self-registration) so login can proceed.
     const isActiveContext = user.tenantId === tenantId && user.role === membership.role;
     if (isActiveContext) {
       if (dto.status !== undefined) data.status = dto.status;
       if (dto.role !== undefined) data.role = dto.role;
+    } else if (
+      dto.status === UserStatus.active &&
+      user.status === UserStatus.pending &&
+      (dto.role === undefined || dto.role === user.role || membership.role === user.role)
+    ) {
+      data.status = UserStatus.active;
     }
 
     if (
@@ -478,8 +508,16 @@ export class UsersService {
     }
 
     if (dto.password) {
-      data.passwordHash = await bcrypt.hash(dto.password, 10);
+      const plain = dto.password.trim();
+      if (!plain) {
+        throw new BadRequestException('Пароль не може бути порожнім');
+      }
+      assertPasswordStrength(plain);
+      data.passwordHash = await bcrypt.hash(plain, 10);
       data.refreshToken = null;
+      // Admin-set password must unlock failed-login lockout immediately
+      data.failedLoginCount = 0;
+      data.lockedUntil = null;
     } else if (dto.email !== undefined && dto.email !== user.email) {
       data.refreshToken = null;
     }

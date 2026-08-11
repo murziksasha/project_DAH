@@ -63,13 +63,21 @@ function Get-EnvMap([string]$EnvPath) {
 function Test-PidAlive([string]$PidFile) {
   if (-not (Test-Path -LiteralPath $PidFile)) { return $false }
   $raw = (Get-Content -LiteralPath $PidFile -ErrorAction SilentlyContinue | Select-Object -First 1)
-  if (-not $raw) { return $false }
+  if (-not $raw) {
+    Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue
+    return $false
+  }
   $procId = 0
-  if (-not [int]::TryParse($raw.Trim(), [ref]$procId)) { return $false }
+  if (-not [int]::TryParse($raw.Trim(), [ref]$procId)) {
+    Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue
+    return $false
+  }
   try {
     $null = Get-Process -Id $procId -ErrorAction Stop
     return $true
   } catch {
+    # Stale pid file after crash/kill — clear so start can relaunch
+    Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue
     return $false
   }
 }
@@ -356,10 +364,64 @@ if (-not $SkipNginx) {
     $body = Get-Content -LiteralPath $tpl -Raw -Encoding UTF8
     if ($body.Length -gt 0 -and [int][char]$body[0] -eq 0xFEFF) { $body = $body.Substring(1) }
     $body = $body.Replace("@@DAH_ROOT@@", $rootPosix).Replace("@@WEB_PORT@@", "$WebPort").Replace("@@MIMETYPES@@", $mimePosix)
+    # Keep existing TLS block if conf already has ssl and template placeholder empty-default.
+    # Default: empty @@TLS_SERVER_BLOCK@@ (HTTP-only). Opt-in: DAH_ENABLE_TLS=1 + certs.
+    $tlsBlock = ""
+    $enableTls = ($env:DAH_ENABLE_TLS -eq "1") -or ($envMap["DAH_ENABLE_TLS"] -eq "1")
+    $certPath = Join-Path $DahRoot "infra\certs\fullchain.pem"
+    $keyPath = Join-Path $DahRoot "infra\certs\privkey.pem"
+    if ($envMap["SSL_CERT_DIR"]) {
+      $certDir = $envMap["SSL_CERT_DIR"]
+      if (-not [System.IO.Path]::IsPathRooted($certDir)) { $certDir = Join-Path $DahRoot $certDir }
+      $certPath = Join-Path $certDir "fullchain.pem"
+      $keyPath = Join-Path $certDir "privkey.pem"
+    }
+    if ($enableTls -and (Test-Path -LiteralPath $certPath) -and (Test-Path -LiteralPath $keyPath)) {
+      $certPosix = ($certPath -replace "\\", "/")
+      $keyPosix = ($keyPath -replace "\\", "/")
+      $serverName = if ($envMap["DOMAIN"]) { $envMap["DOMAIN"] } else { "_" }
+      $tlsBlock = @"
+
+    server {
+        listen       443 ssl;
+        server_name  $serverName;
+        root         $rootPosix/apps/web/out;
+        index        index.html;
+        client_max_body_size 100m;
+        ssl_certificate     $certPosix;
+        ssl_certificate_key $keyPosix;
+        ssl_protocols       TLSv1.2 TLSv1.3;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        location /api/ {
+            proxy_pass http://127.0.0.1:3001/api/;
+            proxy_http_version 1.1;
+            proxy_set_header Host `$host;
+            proxy_set_header X-Real-IP `$remote_addr;
+            proxy_set_header X-Forwarded-For `$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto https;
+            proxy_read_timeout 120s;
+        }
+        location /_next/static/ {
+            expires 30d;
+            add_header Cache-Control "public, immutable";
+            try_files `$uri =404;
+        }
+        location = /sw.js {
+            add_header Cache-Control "no-cache";
+            try_files `$uri =404;
+        }
+        location / {
+            try_files `$uri `$uri/ `$uri/index.html /index.html;
+        }
+    }
+"@
+      Write-Log "TLS server block enabled (443)"
+    }
+    $body = $body.Replace("@@TLS_SERVER_BLOCK@@", $tlsBlock)
     if (-not $body.EndsWith("`n")) { $body = $body + "`n" }
     $enc = New-Object System.Text.UTF8Encoding $false
     [System.IO.File]::WriteAllText($conf, $body, $enc)
-    Write-Log "Wrote nginx conf (no BOM, mime=$mimePosix): $conf"
+    Write-Log "Wrote nginx conf (no BOM, mime=$mimePosix, tls=$enableTls): $conf"
   }
   if ($NginxExe -and (Test-Path -LiteralPath $NginxExe) -and (Test-Path -LiteralPath $conf)) {
     if (Test-PortOpen "127.0.0.1" $WebPort) {

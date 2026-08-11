@@ -31,6 +31,20 @@ const DICT = {
     loginSelectOrgHint:
       'Оберіть організацію та роль (наприклад «правління» або «мешканець»). Перемикати можна в шапці.',
     loginSelectOrgContinue: 'Увійти',
+    passwordShow: 'Показати пароль',
+    passwordHide: 'Сховати пароль',
+    orgPasswordChangedHint: 'Новий пароль збережено. Користувач може увійти з ним (після підтвердження, якщо статус «очікує»).',
+    signedInAs: 'У кабінеті',
+    securityBannerAria: 'Нагадування про безпеку',
+    securityBannerBody: 'для фінансових операцій потрібна 2FA.',
+    securityBannerEnable: 'Увімкнути зараз',
+    securityBannerHide: 'Сховати',
+    securityBannerDontShow: 'Більше не показувати',
+    onboardingBannerAria: 'Підказка для старту',
+    onboardingWelcome:
+      'Ласкаво просимо! Перегляньте рахунок, увімкніть сповіщення та змініть пароль за потреби.',
+    onboardingNext: 'Далі',
+    onboardingGotIt: 'Зрозуміло',
 
     // —— nav groups ——
     overview: 'Огляд',
@@ -1310,6 +1324,20 @@ const DICT = {
     loginSelectOrgHint:
       'Выберите организацию и роль (например «правление» или «жилец»). Переключать можно в шапке.',
     loginSelectOrgContinue: 'Войти',
+    passwordShow: 'Показать пароль',
+    passwordHide: 'Скрыть пароль',
+    orgPasswordChangedHint: 'Новый пароль сохранён. Пользователь может войти с ним (после подтверждения, если статус «ожидает»).',
+    signedInAs: 'В кабинете',
+    securityBannerAria: 'Напоминание о безопасности',
+    securityBannerBody: 'для финансовых операций нужна 2FA.',
+    securityBannerEnable: 'Включить сейчас',
+    securityBannerHide: 'Скрыть',
+    securityBannerDontShow: 'Больше не показывать',
+    onboardingBannerAria: 'Подсказка для старта',
+    onboardingWelcome:
+      'Добро пожаловать! Просмотрите счёт, включите уведомления и смените пароль при необходимости.',
+    onboardingNext: 'Далее',
+    onboardingGotIt: 'Понятно',
 
     overview: 'Обзор',
     finance: 'Финансы',
