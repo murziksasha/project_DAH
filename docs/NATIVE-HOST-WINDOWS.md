@@ -500,11 +500,12 @@ cd C:\miy_dim
 # 1) оновіть код вручну (git pull / copy / rsync)
 git pull   # або інший спосіб
 
-# 2) install → generate → build → migrate → stop → start
+# 2) stop → install → generate → build → migrate → start
 npm run update:native:win
 # = infra/scripts/update-native-windows.ps1
 # pre-update dump: backups\pre-update\ (якщо є pg_dump)
 # git pull у скрипті НЕ викликається
+# стек зупиняється ДО prisma generate (інакше EPERM на .dll.node)
 ```
 
 Або: `npx dah-native update` / `npm run update:native` на Windows також викликає **той самий** `.ps1`.
