@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Login / admin password
+- Password field **eye toggle** (show/hide) on login, reset, register, org user form
+- Login + register + admin user: email **normalized** (trim + lower)
+- Admin set password: `assertPasswordStrength`, clear lockout counters, explicit success hint
+- Create-user for existing email can also reset password when provided
+
+### UX — who is signed in + dismissable security banner
+- Header always shows **name + role** (drawer also shows role under name)
+- Onboarding «Безпека» 2FA nag: **Сховати** (session) / **Більше не показувати** (localStorage per user)
+- Security link respects resident vs staff (`/resident/security` vs `/admin/security`)
+
+### Native Windows host ops (KeenDNS-ready)
+- `npm run update:native:win` — pull → install → generate → build → migrate → restart (`update-native-windows.ps1`)
+- `stop:native:win` / `restart:native:win` / `status:native:win` / `smoke:native:win`
+- `npx dah-native update` on win32 → PowerShell update (not bash/`systemctl`)
+- `backup.ps1` native fallback: `pg_dump` + optional `mc`; `npm run backup:native` / `backup:win`
+- Pre-update DB dump under `backups/pre-update/` when `pg_dump` available
+- nginx `dah-windows.conf.in`: `@@TLS_SERVER_BLOCK@@` opt-in (`DAH_ENABLE_TLS=1` / `-EnableTls`); default remains HTTP-only
+- Docs: `docs/KEENDNS-WINDOWS.md`, NATIVE-HOST-WINDOWS update section, SECURITY perimeter note, README scripts
+- Firewall install rules **unchanged** (docs-only guidance)
+
 ### Setup wizard — tenant scope + nav flicker
 - `GET/POST /setup/*` привʼязані до **`X-Tenant-Id`** (building/users/complete не змішують orgs)
 - Web: soft `router.replace` замість `window.location` при already-initialized / після complete (без full-page blink)

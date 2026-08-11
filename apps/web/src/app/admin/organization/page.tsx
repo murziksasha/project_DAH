@@ -279,25 +279,31 @@ export default function OrganizationPage() {
           membershipRole: editingUser.role,
           status: userForm.status,
         };
-        if (userForm.password) body.password = userForm.password;
+        const newPassword = userForm.password.trim();
+        if (newPassword) body.password = newPassword;
         if (userForm.role === 'resident') {
           body.apartmentIds = userForm.apartmentIds;
           body.primaryApartmentId = userForm.primaryApartmentId || userForm.apartmentIds[0] || null;
         }
+        body.email = userForm.email.trim().toLowerCase();
         await apiFetch(`/users/${editingUser.id}`, {
           method: 'PATCH',
           token,
           body: JSON.stringify(body),
         });
-        setMessage(t('orgUserUpdated'));
+        setMessage(
+          newPassword
+            ? `${t('orgUserUpdated')} ${t('orgPasswordChangedHint')}`
+            : t('orgUserUpdated'),
+        );
         cancelEditUser();
       } else {
         const created = await apiFetch<UserRow>('/users', {
           method: 'POST',
           token,
           body: JSON.stringify({
-            email: userForm.email,
-            password: userForm.password || undefined,
+            email: userForm.email.trim().toLowerCase(),
+            password: userForm.password.trim() || undefined,
             firstName: userForm.firstName,
             lastName: userForm.lastName,
             phone: userForm.phone || undefined,

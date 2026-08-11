@@ -17,6 +17,8 @@
 # Options:
 #   -SkipBuild -SkipMigrate -DownloadMinio -Unregister -WebPort 3000
 #   -NginxExe C:\nginx\nginx.exe -MinioExe C:\miy_dim\tools\minio.exe
+#   -EnableTls -TlsCertPath ... -TlsKeyPath ... -Domain example.keenetic.pro
+#   (TLS is opt-in; default nginx conf stays HTTP-only on WEB_PORT)
 param(
   [string]$DahRoot = "",
   [int]$WebPort = 0,
@@ -28,7 +30,11 @@ param(
   [switch]$DownloadMinio,
   [switch]$SkipFirewall,
   [switch]$Unregister,
-  [switch]$NoElevate
+  [switch]$NoElevate,
+  [switch]$EnableTls,
+  [string]$TlsCertPath = "",
+  [string]$TlsKeyPath = "",
+  [string]$Domain = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -60,6 +66,10 @@ function Request-Admin {
   if ($DownloadMinio) { $argList += "-DownloadMinio" }
   if ($SkipFirewall) { $argList += "-SkipFirewall" }
   if ($Unregister) { $argList += "-Unregister" }
+  if ($EnableTls) { $argList += "-EnableTls" }
+  if ($TlsCertPath) { $argList += @("-TlsCertPath", $TlsCertPath) }
+  if ($TlsKeyPath) { $argList += @("-TlsKeyPath", $TlsKeyPath) }
+  if ($Domain) { $argList += @("-Domain", $Domain) }
   $p = Start-Process -FilePath "powershell.exe" -Verb RunAs -ArgumentList $argList -Wait -PassThru
   if ($null -eq $p) { exit 1 }
   exit $p.ExitCode
@@ -225,6 +235,19 @@ if ($NginxExe -and (Test-Path -LiteralPath $NginxExe)) {
     $mimePosix = ($mimeCandidate -replace "\\", "/")
   }
 }
+# TLS: opt-in only (DAH_ENABLE_TLS=1 or -EnableTls). Default HTTP-only.
+if (-not $EnableTls -and $env:DAH_ENABLE_TLS -eq "1") { $EnableTls = $true }
+if (-not $TlsCertPath) {
+  $TlsCertPath = Join-Path $DahRoot "infra\certs\fullchain.pem"
+}
+if (-not $TlsKeyPath) {
+  $TlsKeyPath = Join-Path $DahRoot "infra\certs\privkey.pem"
+}
+if (-not $Domain) {
+  # may be filled from .env DOMAIN later when rendering
+  $Domain = "_"
+}
+
 if (Test-Path -LiteralPath $tpl) {
   $conf = Get-Content -LiteralPath $tpl -Raw -Encoding UTF8
   if ($conf.Length -gt 0 -and [int][char]$conf[0] -eq 0xFEFF) {
@@ -233,9 +256,73 @@ if (Test-Path -LiteralPath $tpl) {
   $conf = $conf.Replace("@@DAH_ROOT@@", $rootPosix)
   $conf = $conf.Replace("@@WEB_PORT@@", "$WebPort")
   $conf = $conf.Replace("@@MIMETYPES@@", $mimePosix)
+
+  $tlsBlock = ""
+  if ($EnableTls) {
+    if (-not (Test-Path -LiteralPath $TlsCertPath) -or -not (Test-Path -LiteralPath $TlsKeyPath)) {
+      Write-Warning "EnableTls set but cert/key missing:`n  $TlsCertPath`n  $TlsKeyPath`n  Rendering HTTP-only. See docs/KEENDNS-WINDOWS.md"
+    } else {
+      $certPosix = ($TlsCertPath -replace "\\", "/")
+      $keyPosix = ($TlsKeyPath -replace "\\", "/")
+      $serverName = if ($Domain -and $Domain -ne "_") { $Domain } else { "_" }
+      # Read DOMAIN from .env if still default
+      if ($serverName -eq "_") {
+        $envTxt = Get-Content -LiteralPath $envFile -Raw -ErrorAction SilentlyContinue
+        if ($envTxt -match '(?m)^DOMAIN=(.+)$') {
+          $serverName = $Matches[1].Trim().Trim('"').Trim("'")
+        }
+      }
+      $tlsBlock = @"
+
+    # TLS server (opt-in via -EnableTls). Forward Keenetic 443 -> this host :443
+    server {
+        listen       443 ssl;
+        server_name  $serverName;
+        root         $rootPosix/apps/web/out;
+        index        index.html;
+        client_max_body_size 100m;
+
+        ssl_certificate     $certPosix;
+        ssl_certificate_key $keyPosix;
+        ssl_protocols       TLSv1.2 TLSv1.3;
+
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+
+        location /api/ {
+            proxy_pass http://127.0.0.1:3001/api/;
+            proxy_http_version 1.1;
+            proxy_set_header Host `$host;
+            proxy_set_header X-Real-IP `$remote_addr;
+            proxy_set_header X-Forwarded-For `$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto https;
+            proxy_read_timeout 120s;
+        }
+
+        location /_next/static/ {
+            expires 30d;
+            add_header Cache-Control "public, immutable";
+            try_files `$uri =404;
+        }
+
+        location = /sw.js {
+            add_header Cache-Control "no-cache";
+            try_files `$uri =404;
+        }
+
+        location / {
+            try_files `$uri `$uri/ `$uri/index.html /index.html;
+        }
+    }
+"@
+      Write-Host "==> TLS server block enabled (443) cert=$TlsCertPath"
+    }
+  }
+  $conf = $conf.Replace("@@TLS_SERVER_BLOCK@@", $tlsBlock)
   if (-not $conf.EndsWith("`n")) { $conf = $conf + "`n" }
   Write-Utf8NoBom -Path $confOut -Content $conf
-  Write-Host "==> Wrote $confOut (UTF-8 no BOM, mime=$mimePosix)"
+  Write-Host "==> Wrote $confOut (UTF-8 no BOM, mime=$mimePosix, tls=$EnableTls)"
 } else {
   Write-Warning "Template missing: $tpl"
 }

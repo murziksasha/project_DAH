@@ -2,6 +2,7 @@
 
 import { CSSProperties, FormEvent, useMemo, useState } from 'react';
 import { useI18n } from '@/components/LocaleProvider';
+import { PasswordField } from '@/components/ui/PasswordField';
 import { CREATE_ROLES, getRoleLabel } from './constants';
 import { ApartmentRow, UserFormState, UserRow } from './types';
 
@@ -210,21 +211,25 @@ export function UserForm({
           <label htmlFor="org-user-password" style={labelStyle}>
             {t('password')}
           </label>
-          <input
+          <PasswordField
             id="org-user-password"
             name="password"
-            type="password"
             autoComplete="new-password"
             placeholder={isEdit ? t('orgPasswordKeep') : t('orgPasswordCreateHint')}
             value={form.password}
             onChange={(e) => onChange({ ...form, password: e.target.value })}
-            required={false}
+            required={!isEdit}
             minLength={form.password ? 8 : undefined}
             style={fieldStyle}
           />
           {!isEdit && (
             <p style={{ margin: '0.25rem 0 0', fontSize: '0.8rem', color: 'var(--muted)' }}>
               {t('orgPasswordCreateHintDetail')}
+            </p>
+          )}
+          {isEdit && (
+            <p style={{ margin: '0.25rem 0 0', fontSize: '0.8rem', color: 'var(--muted)' }}>
+              {t('orgPasswordKeep')}
             </p>
           )}
         </div>

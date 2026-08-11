@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { PendingApprovalCard } from '@/components/PendingApprovalCard';
 import { useI18n } from '@/components/LocaleProvider';
+import { PasswordField } from '@/components/ui/PasswordField';
 import { apiFetch } from '@/lib/api';
 
 interface Apartment {
@@ -89,7 +90,7 @@ export default function RegisterPage() {
       const data = await apiFetch<RegisterResponse>('/auth/register', {
         method: 'POST',
         body: JSON.stringify({
-          email,
+          email: email.trim().toLowerCase(),
           password,
           firstName,
           lastName,
@@ -207,18 +208,15 @@ export default function RegisterPage() {
               autoComplete="tel"
             />
           </div>
-          <div>
-            <label htmlFor="password">{t('registerPasswordHint')}</label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              minLength={8}
-              required
-              autoComplete="new-password"
-            />
-          </div>
+          <PasswordField
+            id="password"
+            label={t('registerPasswordHint')}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            minLength={8}
+            required
+            autoComplete="new-password"
+          />
           <div>
             <label htmlFor="apt-q">{t('registerApartmentSearch')}</label>
             <input

@@ -7,7 +7,11 @@
 | Linux `install-native-systemd.sh` на Windows? | **Ні** — немає systemd. |
 | Аналог на Windows (без Docker) | **`infra/scripts/install-native-windows.ps1`** |
 | Команди | `npm run install:native:win` · `npx dah-native install` (на win32 → цей .ps1) |
+| Оновлення | **`npm run update:native:win`** (або `npx dah-native update` на win32 → `.ps1`) |
+| Статус / stop | `npm run status:native:win` · `stop:native:win` · `restart:native:win` · `smoke:native:win` |
+| Backup без Docker | `npm run backup:native` |
 | Автозапуск | Scheduled Task **`DAH-Native-Stack`** (At startup + At logon) |
+| KeenDNS | [KEENDNS-WINDOWS.md](./KEENDNS-WINDOWS.md) |
 | Linux | [NATIVE-HOST.md](./NATIVE-HOST.md) |
 
 ```
@@ -120,7 +124,8 @@ PostgreSQL  MinIO :9000
 | API | `dah-api.service` | `node …\main.js` + NSSM/pm2/Task Scheduler |
 | Worker | `dah-worker.service` | `node …\worker.js` + окрема служба |
 | Web | nginx site `dah` | nginx для Windows / Caddy / IIS reverse proxy |
-| Install-скрипт | `npx dah-native install` | **не використовується** |
+| Install-скрипт | `npx dah-native install` (systemd) | `npm run install:native:win` (Scheduled Task) |
+| Update | `npm run update:native` | `npm run update:native:win` |
 
 **Рекомендований простий варіант для ОСББ-ноутбука на Windows:**
 
@@ -488,44 +493,70 @@ pm2 save
 
 ## 9. Оновлення версії на Windows-хості
 
-На Linux: `npm run update:native`.  
-На Windows **частково** той самий flow, **без** `systemctl`:
+**Рекомендовано (офіційний one-shot):**
 
 ```powershell
 cd C:\miy_dim
-git pull
-npm install
-npm run build          # вже містить db:generate
-npm run db:migrate     # Postgres має бути up
-
-# перезапуск процесів:
-# Task Scheduler / nssm restart DAH-API DAH-Worker
-# або: pm2 restart all
-# або: зупинити npm run start і запустити знову
-# nginx: C:\nginx\nginx.exe -s reload
+npm run update:native:win
+# = infra/scripts/update-native-windows.ps1
+# pull → install → prisma generate → build → migrate → stop → start
+# pre-update dump: backups\pre-update\ (якщо є pg_dump)
 ```
 
-Або:
+Або: `npx dah-native update` / `npm run update:native` на Windows також викликає **той самий** `.ps1`.
+
+Прапорці (env або параметри скрипта):
 
 ```powershell
-# update CLI спробує bash update-native.sh (Git Bash) —
-# migrate/build відпрацюють; restart systemd пропустить, якщо units немає
-$env:SKIP_RESTART = "1"
-npm run update:native
+$env:SKIP_PULL = "1"        # код уже оновлений
+$env:SKIP_INSTALL = "1"
+$env:SKIP_BUILD = "1"
+$env:SKIP_MIGRATE = "1"
+$env:SKIP_RESTART = "1"     # без stop/start
+$env:SKIP_PRE_BACKUP = "1"  # без pre-update pg_dump
+npm run update:native:win
 ```
 
-Потім **вручну** перезапустіть API/worker/nginx.
+Після оновлення:
+
+```powershell
+npm run status:native:win
+npm run smoke:native:win
+```
+
+Ручний еквівалент (якщо потрібно):
+
+```powershell
+git pull
+npm install
+npm run build
+npm run db:migrate
+npm run restart:native:win
+```
 
 ---
 
 ## 10. KeenDNS / доступ з інтернету
 
-Те саме, що [DEPLOY.md](./DEPLOY.md) §6:
+Повний runbook: **[KEENDNS-WINDOWS.md](./KEENDNS-WINDOWS.md)**.
 
-- На Keenetic: KeenDNS + port forward **80/443** (або ваш зовнішній порт) на IP ноутбука.
-- На ноуті: TLS (Caddy auto HTTPS, або nginx + cert) **або** HTTPS на роутері.
-- Не пробрасувати **5432**, **9000**, **3001** назовні — лише фронт (80/443 → nginx/Caddy).
-- У `.env`: `APP_URL`, `CORS_ORIGIN`, `NEXT_PUBLIC_API_URL`, за HTTPS — `COOKIE_SECURE=true`.
+Коротко (як [DEPLOY.md](./DEPLOY.md) §6):
+
+- На Keenetic: KeenDNS + port forward на IP ноутбука (**лише** порт nginx / 80 / 443).
+- **Не** пробрасувати **5432**, **9000**, **9001**, **3001**.
+- У `.env`: `APP_URL`, `CORS_ORIGIN`, `NEXT_PUBLIC_API_URL` = публічний URL + rebuild web.
+- HTTP зараз ок для старту; для PWA/secure cookies — TLS (opt-in: `DAH_ENABLE_TLS=1` + certs, див. KEENDNS).
+- Firewall install-скрипта **не** змінюємо автоматично; закрийте зайві порти на Keenetic.
+
+## 10.1. Backup без Docker
+
+```powershell
+npm run backup:native
+# = backup.ps1 -NativeOnly → pg_dump + optional mc mirror
+# потрібен pg_dump.exe (PostgreSQL bin у PATH)
+```
+
+Також: `npm run backup:win` (Docker якщо є, інакше native). Marker: `backups\last-backup.json`.
 
 ---
 
@@ -559,10 +590,12 @@ npm run update:native
 [ ] Автозапуск: Task Scheduler / NSSM / pm2
 [ ] Firewall: 3000 (і 80/443), не 5432/9000
 [ ] (опційно) KeenDNS + TLS
-[ ] Оновлення: git pull → npm install → build → migrate → restart процесів
+[ ] Оновлення: npm run update:native:win
+[ ] Backup: npm run backup:native
+[ ] (опційно) KeenDNS: docs/KEENDNS-WINDOWS.md
 ```
 
-**Чого немає в чеклісті:** `install-native-systemd.sh` — він для Linux.
+**Linux-only:** `install-native-systemd.sh` / systemd units — не для Windows.
 
 ---
 
@@ -570,11 +603,14 @@ npm run update:native
 
 | Дія | Linux | Windows |
 |-----|-------|---------|
-| Поставити «служби ОС» | `npx dah-native install` | NSSM / Task Scheduler / pm2 (вручну) |
-| Оновлення | `npm run update:native` | `git pull` + `npm install` + `npm run build` + `db:migrate` + restart |
-| Інфра БД/S3 | apt + minio binary | `npm run docker:infra` або native installers |
-| Web proxy | nginx unit з install-скрипта | nginx/Caddy config вручну (§7) |
-| Логи API | `journalctl -u dah-api -f` | консоль NSSM / pm2 logs / файл |
+| Поставити «служби ОС» | `npx dah-native install` | `npm run install:native:win` (Task **DAH-Native-Stack**) |
+| Оновлення | `npm run update:native` | **`npm run update:native:win`** |
+| Статус / stop | systemctl status/stop | `status:native:win` / `stop:native:win` |
+| Backup | `backup.sh` | **`npm run backup:native`** (або Docker `npm run backup`) |
+| Інфра БД/S3 | apt + minio binary | PostgreSQL service + `tools\minio.exe` (або `docker:infra`) |
+| Web proxy | nginx unit з install-скрипта | nginx + `dah-windows.conf` (з template) |
+| Логи | `journalctl -u dah-api -f` | `logs\native-windows\` |
+| KeenDNS | DEPLOY §6 | [KEENDNS-WINDOWS.md](./KEENDNS-WINDOWS.md) |
 
 ---
 
@@ -584,4 +620,4 @@ npm run update:native
 - [DEPLOY.md](./DEPLOY.md) — Docker prod, KeenDNS, backup
 - [README.md](../README.md) — огляд
 
-Якщо з’явиться окремий Windows installer у репо — його буде згадано тут; зараз **офіційний** one-shot install-скрипт лише Linux.
+Windows: **`install-native-windows.ps1`** + **`update-native-windows.ps1`** (офіційний one-shot). Linux: systemd install + `update-native.sh`.
