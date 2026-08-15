@@ -75,6 +75,14 @@ export enum JournalEntryType {
   VOID_PAYMENT = 'void_payment',
   VOID_EXPENSE = 'void_expense',
   OPENING = 'opening',
+  FUND_TRANSFER = 'fund_transfer',
+  PENALTY = 'penalty',
+  ACCRUAL_REVERSE = 'accrual_reverse',
+  ADJUSTMENT = 'adjustment',
+  WRITE_OFF = 'write_off',
+  SUPPLIER_INVOICE = 'supplier_invoice',
+  SUPPLIER_PAYMENT = 'supplier_payment',
+  BANK_FEE = 'bank_fee',
 }
 
 export const FUND_LABELS: Record<FundType, { uk: string; ru: string }> = {

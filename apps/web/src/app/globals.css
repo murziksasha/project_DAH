@@ -1988,6 +1988,91 @@ label {
   margin-bottom: 0.25rem;
 }
 
+.transparency-story-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+}
+
+@media (max-width: 720px) {
+  .transparency-story-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.transparency-story-card {
+  background: var(--surface-2);
+  border-radius: var(--radius, 12px);
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border, transparent);
+}
+
+.transparency-story-label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 0.25rem;
+}
+
+.transparency-story-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.transparency-story-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.transparency-rank-list {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.transparency-rank-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.crew-job-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.crew-job-card {
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  background: var(--surface-2, #f8fafc);
+}
+
+.crew-job-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.crew-btn {
+  min-height: 48px;
+  min-width: 44%;
+  flex: 1;
+  font-size: 1rem;
+}
+
+.crew-btn-done {
+  background: var(--success, #16a34a);
+  border-color: var(--success, #16a34a);
+  color: #fff;
+}
+
 .pending-approval-card {
   display: grid;
   gap: 0.75rem;

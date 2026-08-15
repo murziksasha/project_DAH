@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsBoolean, IsOptional, IsString } from 'class-validator';
 
 export class CreateAnnouncementDto {
   @ApiProperty()
@@ -14,4 +14,14 @@ export class CreateAnnouncementDto {
   @IsOptional()
   @IsBoolean()
   isPinned?: boolean;
+
+  /**
+   * Multi-building (УК): if set, only residents linked to these buildings get push/email.
+   * Empty / omitted = all active residents (legacy).
+   */
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  buildingIds?: string[];
 }

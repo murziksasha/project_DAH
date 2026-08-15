@@ -8,6 +8,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { SkeletonCards } from '@/components/ui/Skeleton';
 import { StatCard } from '@/components/ui/StatCard';
 import { apiFetch, getToken } from '@/lib/api';
+import { getSelectedBuildingId } from '@/lib/building-context';
 import { formatDateUk, formatMoney } from '@/lib/money';
 import { useDebtorsQuery, useOpsSummaryQuery } from '@/lib/queries';
 
@@ -34,6 +35,18 @@ interface Debtor {
   isOverdue: boolean;
 }
 
+interface GlOverview {
+  readyForSot: boolean;
+  reconcileOk: boolean;
+  mismatchCount: number;
+  arTotalDebt: number;
+  unmatchedBankLines: number;
+  openSupplierInvoices: number;
+  pendingWriteOffs: number;
+  pendingExpenses: number;
+  trialBalance?: { balanced: boolean; totalDebit: number; totalCredit: number };
+}
+
 function monthStart() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
@@ -48,6 +61,7 @@ export function AccountantDashboard() {
   const [report, setReport] = useState<CashFlowReport | null>(null);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [pending, setPending] = useState<Expense[]>([]);
+  const [gl, setGl] = useState<GlOverview | null>(null);
   const [from, setFrom] = useState(monthStart());
   const [to, setTo] = useState(today());
   const [error, setError] = useState('');
@@ -77,17 +91,25 @@ export function AccountantDashboard() {
       expQs.set('page', '1');
       expQs.set('limit', '5');
 
-      const [r, e, p] = await Promise.all([
+      const buildingId = getSelectedBuildingId();
+      const [r, e, p, overview] = await Promise.all([
         apiFetch<CashFlowReport>(`/finance/reports/cash-flow${q ? `?${q}` : ''}`, { token }),
         apiFetch<{ items: Expense[] }>(`/finance/expenses?${expQs}`, { token }),
         apiFetch<{ items: Expense[] }>(
           `/finance/expenses?approvalStatus=pending&page=1&limit=5`,
           { token },
         ).catch(() => ({ items: [] as Expense[] })),
+        buildingId
+          ? apiFetch<GlOverview>(
+              `/accounting/overview?buildingId=${encodeURIComponent(buildingId)}`,
+              { token },
+            ).catch(() => null)
+          : Promise.resolve(null),
       ]);
       setReport(r);
       setExpenses(e.items ?? []);
       setPending(p.items ?? []);
+      setGl(overview);
       await Promise.all([debtorsQuery.refetch(), opsQuery.refetch()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('error'));
@@ -107,7 +129,46 @@ export function AccountantDashboard() {
     <main>
       <PageHeader title={t('dashAccountantTitle')} description={t('dashAccountantDesc')} />
 
+      {gl && (
+        <div className="grid-2" style={{ marginBottom: '1rem' }}>
+          <StatCard
+            label="Journal reconcile"
+            value={gl.reconcileOk ? 'OK' : `${gl.mismatchCount} diff`}
+            tone={gl.reconcileOk ? 'success' : 'danger'}
+          />
+          <StatCard
+            label="AR борг"
+            value={formatMoney(gl.arTotalDebt)}
+            tone={gl.arTotalDebt > 0 ? 'danger' : 'default'}
+          />
+          <StatCard
+            label="Нерознесений банк"
+            value={String(gl.unmatchedBankLines)}
+            tone={gl.unmatchedBankLines > 0 ? 'danger' : 'success'}
+          />
+          <StatCard
+            label="AP / write-off / dual"
+            value={`${gl.openSupplierInvoices} / ${gl.pendingWriteOffs} / ${gl.pendingExpenses}`}
+            tone={
+              gl.pendingWriteOffs + gl.pendingExpenses > 0 ? 'danger' : 'default'
+            }
+          />
+        </div>
+      )}
+
       <div className="quick-actions">
+        <Link href="/admin/journal" className="quick-action">
+          Журнал / ОСВ
+        </Link>
+        <Link href="/admin/ar" className="quick-action">
+          Дебіторка
+        </Link>
+        <Link href="/admin/ap" className="quick-action">
+          Кредиторка
+        </Link>
+        <Link href="/admin/bank-rec" className="quick-action">
+          Звірка банку
+        </Link>
         <Link href="/admin/payments" className="quick-action">
           {t('qaRecordPayment')}
         </Link>

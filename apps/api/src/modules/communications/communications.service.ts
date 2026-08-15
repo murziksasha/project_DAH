@@ -151,12 +151,32 @@ export class CommunicationsService {
       action: 'announcement.created',
       entityType: 'Announcement',
       entityId: announcement.id,
-      payload: { title: dto.title, isPinned: dto.isPinned ?? false },
+      payload: {
+        title: dto.title,
+        isPinned: dto.isPinned ?? false,
+        buildingIds: dto.buildingIds ?? [],
+      },
     });
 
+    const buildingIds = dto.buildingIds?.filter(Boolean) ?? [];
     void this.prisma.user
       .findMany({
-        where: { status: 'active', role: 'resident' },
+        where: {
+          status: 'active',
+          role: 'resident',
+          ...(buildingIds.length
+            ? {
+                OR: [
+                  { primaryApartment: { buildingId: { in: buildingIds } } },
+                  {
+                    apartmentLinks: {
+                      some: { apartment: { buildingId: { in: buildingIds } } },
+                    },
+                  },
+                ],
+              }
+            : {}),
+        },
         select: {
           id: true,
           email: true,

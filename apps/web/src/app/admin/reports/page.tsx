@@ -31,7 +31,20 @@ interface CashFlowReport {
   totalIncome: number;
   totalExpenses: number;
   netFlow: number;
+  source?: string;
+  match?: boolean;
   fundBalances: Array<{ fundName: string; balance: number; income: number; expenses: number }>;
+  journal?: {
+    totalIncome: number;
+    totalExpenses: number;
+    netFlow: number;
+    fundBalances: Array<{ fundName: string; balance: number; income: number; expenses: number }>;
+  };
+  legacy?: {
+    totalIncome: number;
+    totalExpenses: number;
+    netFlow: number;
+  };
 }
 
 function monthStart() {
@@ -53,6 +66,14 @@ export default function ReportsPage() {
   const [exportConfig, setExportConfig] = useState<DocumentTemplatesConfig | null>(null);
   const [from, setFrom] = useState(monthStart());
   const [to, setTo] = useState(today());
+  const [cashSource, setCashSource] = useState<'legacy' | 'journal' | 'both' | 'auto'>(
+    'auto',
+  );
+  const [sotStatus, setSotStatus] = useState<{
+    journalSot: boolean;
+    readyForSot: boolean | null;
+    mismatchCount: number | null;
+  } | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [busyPdf, setBusyPdf] = useState(false);
@@ -72,23 +93,30 @@ export default function ReportsPage() {
       const qs = new URLSearchParams();
       if (from) qs.set('from', from);
       if (to) qs.set('to', to);
+      if (cashSource !== 'auto') qs.set('source', cashSource);
       const q = qs.toString();
-      const [d, c, templates] = await Promise.all([
+      const [d, c, templates, sot] = await Promise.all([
         apiFetch<Debtor[]>('/payments/reports/debtors', { token }),
         apiFetch<CashFlowReport>(`/finance/reports/cash-flow${q ? `?${q}` : ''}`, { token }),
         apiFetch<DocumentTemplatesConfig>('/building/document-templates', { token }).catch(
           () => null,
         ),
+        apiFetch<{
+          journalSot: boolean;
+          readyForSot: boolean | null;
+          mismatchCount: number | null;
+        }>('/finance/sot-status', { token }).catch(() => null),
       ]);
       setDebtors(d);
       setCashFlow(c);
+      setSotStatus(sot);
       if (templates) setExportConfig(normalizeDocumentTemplatesConfig(templates));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Помилка');
     } finally {
       setLoading(false);
     }
-  }, [from, to]);
+  }, [from, to, cashSource]);
 
   useEffect(() => {
     load().catch(() => undefined);
@@ -322,6 +350,21 @@ export default function ReportsPage() {
           <label htmlFor="to">До</label>
           <input id="to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </div>
+        <div>
+          <label htmlFor="cf-src">Cash-flow джерело</label>
+          <select
+            id="cf-src"
+            value={cashSource}
+            onChange={(e) =>
+              setCashSource(e.target.value as 'legacy' | 'journal' | 'both' | 'auto')
+            }
+          >
+            <option value="auto">auto (з settings)</option>
+            <option value="legacy">legacy</option>
+            <option value="journal">journal</option>
+            <option value="both">both (порівняння)</option>
+          </select>
+        </div>
         <button type="button" onClick={() => load()}>
           Застосувати
         </button>
@@ -329,6 +372,19 @@ export default function ReportsPage() {
 
       {error && <p className="error">{error}</p>}
       {message && <p className="success-banner">{message}</p>}
+      {sotStatus && (
+        <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+          Journal SoT: {sotStatus.journalSot ? 'ON' : 'OFF'}
+          {sotStatus.readyForSot != null &&
+            ` · readyForSot: ${sotStatus.readyForSot ? 'yes' : 'no'}`}
+          {sotStatus.mismatchCount != null &&
+            !sotStatus.readyForSot &&
+            ` · mismatches: ${sotStatus.mismatchCount}`}
+          {cashFlow?.source && ` · report source: ${cashFlow.source}`}
+          {cashFlow?.source === 'both' &&
+            ` · match: ${cashFlow.match ? 'OK' : 'DIFF'}`}
+        </p>
+      )}
       {loading && <SkeletonCards count={4} />}
 
       {!loading && cashFlow && (
@@ -338,6 +394,39 @@ export default function ReportsPage() {
           <StatCard label="Чистий рух" value={formatMoney(cashFlow.netFlow, { signed: true })} />
           <StatCard label="Загальна дебіторка" value={formatMoney(totalDebt)} tone="danger" />
         </div>
+      )}
+      {!loading && cashFlow?.source === 'both' && cashFlow.journal && cashFlow.legacy && (
+        <section className="card" style={{ marginBottom: '1.5rem' }}>
+          <h2 style={{ fontSize: '1.05rem', marginBottom: '0.75rem' }}>
+            Legacy vs Journal
+          </h2>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Метрика</th>
+                <th>Legacy</th>
+                <th>Journal</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Надходження</td>
+                <td>{formatMoney(cashFlow.legacy.totalIncome)}</td>
+                <td>{formatMoney(cashFlow.journal.totalIncome)}</td>
+              </tr>
+              <tr>
+                <td>Витрати</td>
+                <td>{formatMoney(cashFlow.legacy.totalExpenses)}</td>
+                <td>{formatMoney(cashFlow.journal.totalExpenses)}</td>
+              </tr>
+              <tr>
+                <td>Чистий рух</td>
+                <td>{formatMoney(cashFlow.legacy.netFlow, { signed: true })}</td>
+                <td>{formatMoney(cashFlow.journal.netFlow, { signed: true })}</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
       )}
 
       {!loading && cashFlow?.fundBalances && cashFlow.fundBalances.length > 0 && (

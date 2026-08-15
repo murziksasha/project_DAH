@@ -24,6 +24,13 @@ import { CreateAccrualDto } from './dto/create-accrual.dto';
 import { CreateAccrualTemplateDto } from './dto/create-accrual-template.dto';
 
 const WRITE_ROLES = [UserRole.chairman, UserRole.accountant, UserRole.board];
+const READ_ROLES: UserRole[] = [
+  UserRole.chairman,
+  UserRole.accountant,
+  UserRole.board,
+  UserRole.auditor,
+  UserRole.super_admin,
+];
 const ADMIN_ROLES: UserRole[] = [
   UserRole.chairman,
   UserRole.accountant,
@@ -38,6 +45,8 @@ const ADMIN_ROLES: UserRole[] = [
 export class AccrualsController {
   constructor(private accruals: AccrualsService) {}
 
+  @UseGuards(RolesGuard)
+  @Roles(...READ_ROLES)
   @Get('templates')
   listTemplates(
     @Query('buildingId') buildingId?: string,
@@ -60,6 +69,8 @@ export class AccrualsController {
     return this.accruals.deleteTemplate(id);
   }
 
+  @UseGuards(RolesGuard)
+  @Roles(...READ_ROLES)
   @Get()
   listAccruals(
     @Query('period') period?: string,
@@ -136,6 +147,33 @@ export class AccrualsController {
   @Post()
   create(@Body() dto: CreateAccrualDto, @CurrentUser() user: AuthUser) {
     return this.accruals.createAccrual(dto, user.id);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(...WRITE_ROLES)
+  @Post(':id/reverse')
+  reverse(
+    @Param('id') id: string,
+    @Body() body: { reason?: string },
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.accruals.reverseAccrual(id, user.id, body?.reason);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(...WRITE_ROLES)
+  @Post('lines/:lineId/credit-note')
+  creditNote(
+    @Param('lineId') lineId: string,
+    @Body() body: { amount: number; reason?: string },
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.accruals.creditNoteLine(
+      lineId,
+      Number(body.amount),
+      user.id,
+      body?.reason,
+    );
   }
 
   @Get('lines/:lineId/receipt')

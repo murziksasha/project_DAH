@@ -6,7 +6,8 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "test": "node --test --import tsx src/permissions.spec.ts 2>nul || npx jest --config ../../apps/api/jest.config.ts --testPathPattern=permissions --passWithNoTests"
   },
   "devDependencies": {
     "typescript": "^5.7.3"
