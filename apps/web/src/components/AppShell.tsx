@@ -9,6 +9,7 @@ import { useI18n } from '@/components/LocaleProvider';
 import { NotificationBell } from '@/components/NotificationBell';
 import { OnboardingBanner } from '@/components/OnboardingBanner';
 import { MeterQueueFlusher } from '@/components/MeterQueueFlusher';
+import { RequestQueueFlusher } from '@/components/RequestQueueFlusher';
 import { OrgMembershipSwitcher } from '@/components/OrgMembershipSwitcher';
 import { ResidentApartmentSwitcher } from '@/components/ResidentApartmentSwitcher';
 import { ResidentBottomNav } from '@/components/ResidentBottomNav';
@@ -393,6 +394,7 @@ export default function AppShell({ children }: AppShellProps) {
       {isResident && (
         <>
           <MeterQueueFlusher />
+          <RequestQueueFlusher />
           <ResidentTour />
           <Suspense fallback={null}>
             <ResidentBottomNav />

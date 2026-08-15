@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '@/components/LocaleProvider';
 import { getToken } from '@/lib/api';
 import { canUsePush, isPushConfigured, registerServiceWorker, subscribeToPush } from '@/lib/push';
+import { isInQuietHours } from '@/lib/push-quiet-hours';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
@@ -28,7 +29,8 @@ export function PwaPrompt() {
       !canUsePush() ||
       Notification.permission !== 'default' ||
       !getToken() ||
-      sessionStorage.getItem(PUSH_DISMISSED_KEY)
+      sessionStorage.getItem(PUSH_DISMISSED_KEY) ||
+      isInQuietHours()
     ) {
       setShowPush(false);
       return;

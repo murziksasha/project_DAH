@@ -33,6 +33,11 @@ export class ImportPreviewDto {
   @IsOptional()
   @IsString()
   buildingId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  sourceFileName?: string;
 }
 
 export class ImportPaymentRowDto {
@@ -54,6 +59,11 @@ export class ImportPaymentRowDto {
   @IsOptional()
   @IsString()
   reference?: string;
+
+  @ApiPropertyOptional({ description: 'BankStatementLine id from preview' })
+  @IsOptional()
+  @IsString()
+  lineId?: string;
 }
 
 export class ImportPaymentsDto {
@@ -68,4 +78,15 @@ export class ImportPaymentsDto {
   @IsOptional()
   @IsEnum(PaymentSource)
   source?: PaymentSource;
+
+  @ApiPropertyOptional({ description: 'BankStatement id from preview' })
+  @IsOptional()
+  @IsString()
+  statementId?: string;
+}
+
+export class AssignStatementLineDto {
+  @ApiProperty()
+  @IsString()
+  apartmentId!: string;
 }

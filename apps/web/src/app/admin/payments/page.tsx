@@ -37,11 +37,22 @@ interface ImportRow {
   extractedApartment: string | null;
   apartmentId: string | null;
   apartmentNumber: string | null;
-  status: 'matched' | 'unmatched' | 'skipped' | 'invalid';
+  status:
+    | 'matched'
+    | 'unmatched'
+    | 'skipped'
+    | 'invalid'
+    | 'manual'
+    | 'imported'
+    | 'ignored';
   message?: string;
+  lineId?: string;
+  confidence?: number | null;
+  matchMethod?: string | null;
 }
 
 interface ImportPreview {
+  statementId?: string;
   rows: ImportRow[];
   summary: {
     total: number;
@@ -83,6 +94,9 @@ export default function PaymentsPage() {
   const [source, setSource] = useState<'bank' | 'cash' | 'transfer'>('bank');
   const [reference, setReference] = useState('');
   const [preview, setPreview] = useState<AllocationPreview | null>(null);
+  /** Editable amounts per accrualLineId when manual mode on */
+  const [manualAmounts, setManualAmounts] = useState<Record<string, string>>({});
+  const [useManualAlloc, setUseManualAlloc] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -91,6 +105,7 @@ export default function PaymentsPage() {
   const [statementFormat, setStatementFormat] = useState('auto');
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [importLoading, setImportLoading] = useState(false);
+  const [statementId, setStatementId] = useState<string | null>(null);
 
   const [history, setHistory] = useState<PaymentRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -171,11 +186,38 @@ export default function PaymentsPage() {
         { token },
       );
       setPreview(data);
+      const init: Record<string, string> = {};
+      for (const a of data.allocations) {
+        init[a.accrualLineId] = String(a.amount);
+      }
+      setManualAmounts(init);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('error'));
       setPreview(null);
     }
   }
+
+  const manualAllocList = useMemo(() => {
+    if (!preview || !useManualAlloc) return null;
+    return preview.allocations
+      .map((a) => ({
+        accrualLineId: a.accrualLineId,
+        amount: Number(manualAmounts[a.accrualLineId] ?? 0),
+        period: a.period,
+        title: a.title,
+        lineBalance: a.lineBalance,
+      }))
+      .filter((a) => a.amount > 0);
+  }, [preview, useManualAlloc, manualAmounts]);
+
+  const manualSum = useMemo(
+    () => (manualAllocList ?? []).reduce((s, a) => s + a.amount, 0),
+    [manualAllocList],
+  );
+  const manualAdvance = useMemo(() => {
+    const pay = Number(amount) || 0;
+    return Math.max(0, Math.round((pay - manualSum) * 100) / 100);
+  }, [amount, manualSum]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -185,21 +227,34 @@ export default function PaymentsPage() {
     setError('');
     setMessage('');
     try {
+      const body: Record<string, unknown> = {
+        apartmentId,
+        amount: Number(amount),
+        date,
+        source,
+        reference: reference || undefined,
+      };
+      if (useManualAlloc && manualAllocList?.length) {
+        body.allocations = manualAllocList.map((a) => ({
+          accrualLineId: a.accrualLineId,
+          amount: a.amount,
+        }));
+      }
       await apiFetch('/payments', {
         method: 'POST',
         token,
-        body: JSON.stringify({
-          apartmentId,
-          amount: Number(amount),
-          date,
-          source,
-          reference: reference || undefined,
-        }),
+        body: JSON.stringify(body),
       });
-      setMessage(t('paymentsSavedLong'));
+      setMessage(
+        useManualAlloc
+          ? 'Платіж збережено (ручна розноска)'
+          : t('paymentsSavedLong'),
+      );
       setAmount('');
       setReference('');
       setPreview(null);
+      setUseManualAlloc(false);
+      setManualAmounts({});
       if (tab === 'history') await loadHistory();
     } catch (err) {
       setError(err instanceof Error ? err.message : t('error'));
@@ -261,9 +316,87 @@ export default function PaymentsPage() {
         body: JSON.stringify({ csv: csvText, format: statementFormat }),
       });
       setImportPreview(data);
+      setStatementId(data.statementId ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('paymentsCsvParseError'));
       setImportPreview(null);
+      setStatementId(null);
+    } finally {
+      setImportLoading(false);
+    }
+  }
+
+  async function assignLineApartment(lineId: string, apartmentId: string) {
+    const token = getToken();
+    if (!token || !lineId || !apartmentId || !importPreview) return;
+    setImportLoading(true);
+    setError('');
+    try {
+      await apiFetch(`/payments/import/lines/${lineId}`, {
+        method: 'PATCH',
+        token,
+        body: JSON.stringify({ apartmentId }),
+      });
+      const apt = apartments.find((a) => a.id === apartmentId);
+      setImportPreview({
+        ...importPreview,
+        rows: importPreview.rows.map((r) =>
+          r.lineId === lineId
+            ? {
+                ...r,
+                status: 'matched',
+                apartmentId,
+                apartmentNumber: apt?.number ?? r.apartmentNumber,
+                confidence: 1,
+                matchMethod: 'manual',
+                message: 'Призначено вручну',
+              }
+            : r,
+        ),
+        summary: {
+          ...importPreview.summary,
+          matched: importPreview.summary.matched + 1,
+          unmatched: Math.max(0, importPreview.summary.unmatched - 1),
+        },
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('paymentsImportError'));
+    } finally {
+      setImportLoading(false);
+    }
+  }
+
+  async function ignoreLine(lineId: string) {
+    const token = getToken();
+    if (!token || !lineId || !importPreview) return;
+    setImportLoading(true);
+    setError('');
+    try {
+      await apiFetch(`/payments/import/lines/${lineId}/ignore`, {
+        method: 'PATCH',
+        token,
+        body: '{}',
+      });
+      setImportPreview({
+        ...importPreview,
+        rows: importPreview.rows.map((r) =>
+          r.lineId === lineId
+            ? {
+                ...r,
+                status: 'skipped',
+                apartmentId: null,
+                message: 'Проігноровано',
+              }
+            : r,
+        ),
+        summary: {
+          ...importPreview.summary,
+          unmatched: Math.max(0, importPreview.summary.unmatched - 1),
+          skipped: importPreview.summary.skipped + 1,
+        },
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('paymentsImportError'));
     } finally {
       setImportLoading(false);
     }
@@ -273,12 +406,19 @@ export default function PaymentsPage() {
     const token = getToken();
     if (!token || !importPreview) return;
     const rows = importPreview.rows
-      .filter((r) => r.status === 'matched' && r.apartmentId && r.amount && r.date)
+      .filter(
+        (r) =>
+          (r.status === 'matched' || r.status === 'manual') &&
+          r.apartmentId &&
+          r.amount &&
+          r.date,
+      )
       .map((r) => ({
         apartmentId: r.apartmentId as string,
         amount: r.amount as number,
         date: r.date as string,
         reference: r.reference || undefined,
+        lineId: r.lineId,
       }));
     if (!rows.length) {
       setError(t('paymentsNoMatched'));
@@ -295,7 +435,11 @@ export default function PaymentsPage() {
       }>('/payments/import', {
         method: 'POST',
         token,
-        body: JSON.stringify({ rows, source: 'bank' }),
+        body: JSON.stringify({
+          rows,
+          source: 'bank',
+          statementId: statementId ?? importPreview.statementId,
+        }),
       });
       setMessage(
         t('paymentsImported', { created: result.created }) +
@@ -305,6 +449,7 @@ export default function PaymentsPage() {
         setError(result.errors.map((e) => e.message).join('; '));
       }
       setImportPreview(null);
+      setStatementId(null);
       setCsvText('');
     } catch (err) {
       setError(err instanceof Error ? err.message : t('paymentsImportError'));
@@ -444,17 +589,77 @@ export default function PaymentsPage() {
 
           {preview && (
             <section className="card">
-              <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>{t('paymentsFifoTitle')}</h2>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '0.75rem',
+                  marginBottom: '1rem',
+                  alignItems: 'center',
+                }}
+              >
+                <h2 style={{ margin: 0, fontSize: '1.1rem' }}>{t('paymentsFifoTitle')}</h2>
+                <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: '0.9rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={useManualAlloc}
+                    onChange={(e) => setUseManualAlloc(e.target.checked)}
+                  />
+                  Ручна розноска (override FIFO)
+                </label>
+              </div>
               <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginBottom: '1rem' }}>
-                {t('paymentsFifoSummary', {
-                  number: preview.apartment.number,
-                  allocated: formatMoney(preview.totalAllocated),
-                })}
-                {preview.advance > 0 &&
+                {useManualAlloc
+                  ? `кв. ${preview.apartment.number}: рознесено ${formatMoney(manualSum)}, аванс ${formatMoney(manualAdvance)}`
+                  : t('paymentsFifoSummary', {
+                      number: preview.apartment.number,
+                      allocated: formatMoney(preview.totalAllocated),
+                    })}
+                {!useManualAlloc &&
+                  preview.advance > 0 &&
                   t('paymentsAdvance', { amount: formatMoney(preview.advance) })}
               </p>
               {preview.allocations.length === 0 ? (
                 <p style={{ color: 'var(--muted)' }}>{t('paymentsNoOpenAccruals')}</p>
+              ) : useManualAlloc ? (
+                <div className="table-scroll">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Період / нарахування</th>
+                        <th>Залишок</th>
+                        <th>Рознести</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {preview.allocations.map((a) => (
+                        <tr key={a.accrualLineId}>
+                          <td>
+                            {a.period} — {a.title}
+                          </td>
+                          <td>{formatMoney(a.lineBalance)}</td>
+                          <td>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min={0}
+                              max={a.lineBalance}
+                              style={{ width: 110 }}
+                              value={manualAmounts[a.accrualLineId] ?? ''}
+                              onChange={(e) =>
+                                setManualAmounts((prev) => ({
+                                  ...prev,
+                                  [a.accrualLineId]: e.target.value,
+                                }))
+                              }
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               ) : (
                 <ul style={{ listStyle: 'none', display: 'grid', gap: '0.5rem' }}>
                   {preview.allocations.map((a) => (
@@ -538,9 +743,22 @@ export default function PaymentsPage() {
             <button
               type="button"
               onClick={commitImport}
-              disabled={importLoading || !importPreview || importPreview.summary.matched === 0}
+              disabled={
+                importLoading ||
+                !importPreview ||
+                importPreview.rows.filter(
+                  (r) =>
+                    (r.status === 'matched' || r.status === 'manual') &&
+                    r.apartmentId &&
+                    r.amount,
+                ).length === 0
+              }
             >
-              {t('paymentsImportMatched', { count: importPreview?.summary.matched ?? 0 })}
+              {t('paymentsImportMatched', {
+                count: importPreview?.rows.filter(
+                  (r) => r.status === 'matched' || r.status === 'manual',
+                ).length ?? 0,
+              })}
             </button>
           </div>
 
@@ -551,13 +769,19 @@ export default function PaymentsPage() {
                   {t('paymentsDetectedFormat', {
                     format: importPreview.format ?? importPreview.detectedFormat ?? '',
                   })}
+                  {statementId ? ` · id ${statementId.slice(0, 8)}…` : ''}
                 </p>
               )}
               <div className="grid-2">
                 <div className="card" style={{ boxShadow: 'none', background: 'var(--surface-2)' }}>
                   <div className="stat-label">{t('paymentsMatched')}</div>
                   <div className="stat-value" style={{ fontSize: '1.25rem' }}>
-                    {importPreview.summary.matched} / {importPreview.summary.total}
+                    {
+                      importPreview.rows.filter(
+                        (r) => r.status === 'matched' || r.status === 'manual',
+                      ).length
+                    }{' '}
+                    / {importPreview.summary.total}
                   </div>
                 </div>
                 <div className="card" style={{ boxShadow: 'none', background: 'var(--surface-2)' }}>
@@ -576,21 +800,61 @@ export default function PaymentsPage() {
                       <th>{t('date')}</th>
                       <th>{t('amount')}</th>
                       <th>{t('metersColApt')}</th>
+                      <th>%</th>
                       <th>{t('status')}</th>
                       <th>{t('paymentsPurpose')}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {importPreview.rows.map((r) => (
-                      <tr key={r.line}>
+                      <tr key={r.lineId ?? r.line}>
                         <td>{r.line}</td>
                         <td>{r.date ?? '—'}</td>
                         <td>{r.amount != null ? formatMoney(r.amount) : '—'}</td>
-                        <td>{r.apartmentNumber ?? r.extractedApartment ?? '—'}</td>
+                        <td>
+                          {r.status === 'unmatched' && r.lineId ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              <select
+                                aria-label="Assign apartment"
+                                defaultValue=""
+                                onChange={(e) => {
+                                  if (e.target.value) {
+                                    void assignLineApartment(r.lineId!, e.target.value);
+                                  }
+                                }}
+                                style={{ maxWidth: 120 }}
+                              >
+                                <option value="">
+                                  {r.apartmentNumber ?? r.extractedApartment ?? '—'}
+                                </option>
+                                {apartments.map((a) => (
+                                  <option key={a.id} value={a.id}>
+                                    {a.number}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                className="btn btn-ghost"
+                                style={{ fontSize: '0.75rem', padding: '0.2rem 0.4rem' }}
+                                onClick={() => void ignoreLine(r.lineId!)}
+                              >
+                                Ігнорувати
+                              </button>
+                            </div>
+                          ) : (
+                            (r.apartmentNumber ?? r.extractedApartment ?? '—')
+                          )}
+                        </td>
+                        <td>
+                          {r.confidence != null
+                            ? `${Math.round(r.confidence * 100)}%`
+                            : '—'}
+                        </td>
                         <td>
                           <span
                             className={`badge badge-${
-                              r.status === 'matched'
+                              r.status === 'matched' || r.status === 'manual'
                                 ? 'success'
                                 : r.status === 'unmatched'
                                   ? 'warning'
@@ -599,7 +863,7 @@ export default function PaymentsPage() {
                                     : 'muted'
                             }`}
                           >
-                            {r.status === 'matched'
+                            {r.status === 'matched' || r.status === 'manual'
                               ? t('paymentsStatusOk')
                               : r.status === 'unmatched'
                                 ? t('paymentsStatusNoApt')

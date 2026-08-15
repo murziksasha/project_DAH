@@ -15,10 +15,12 @@ import {
   subscribeToPush,
   unsubscribeFromPush,
 } from '@/lib/push';
+import { getQuietHours, setQuietHours, type QuietHours } from '@/lib/push-quiet-hours';
 
 export default function ResidentSecurityPage() {
   const { t } = useI18n();
   const [emailNotify, setEmailNotify] = useState(true);
+  const [quiet, setQuiet] = useState<QuietHours>({ enabled: false, startHour: 22, endHour: 8 });
   const [phone, setPhone] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -56,6 +58,7 @@ export default function ResidentSecurityPage() {
       ]);
       setEmailNotify(s.emailNotifyEnabled);
       setPushStatus(p);
+      setQuiet(getQuietHours());
       setPhone(profile.phone ?? '');
       setFirstName(profile.firstName);
       setLastName(profile.lastName);
@@ -327,6 +330,60 @@ export default function ResidentSecurityPage() {
                 {pushStatus.subscribed ? t('securityPushDisable') : t('securityPushEnable')}
               </button>
             )}
+            <div style={{ marginTop: '1rem', display: 'grid', gap: '0.5rem' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <input
+                  type="checkbox"
+                  checked={quiet.enabled}
+                  onChange={(e) => {
+                    const next = { ...quiet, enabled: e.target.checked };
+                    setQuiet(next);
+                    setQuietHours(next);
+                  }}
+                />
+                Тихий режим push (локально, {quiet.startHour}:00–{quiet.endHour}:00)
+              </label>
+              {quiet.enabled && (
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <label>
+                    З
+                    <input
+                      type="number"
+                      min={0}
+                      max={23}
+                      value={quiet.startHour}
+                      onChange={(e) => {
+                        const next = {
+                          ...quiet,
+                          startHour: Math.min(23, Math.max(0, Number(e.target.value) || 0)),
+                        };
+                        setQuiet(next);
+                        setQuietHours(next);
+                      }}
+                      style={{ width: 64, marginLeft: 6 }}
+                    />
+                  </label>
+                  <label>
+                    До
+                    <input
+                      type="number"
+                      min={0}
+                      max={23}
+                      value={quiet.endHour}
+                      onChange={(e) => {
+                        const next = {
+                          ...quiet,
+                          endHour: Math.min(23, Math.max(0, Number(e.target.value) || 0)),
+                        };
+                        setQuiet(next);
+                        setQuietHours(next);
+                      }}
+                      style={{ width: 64, marginLeft: 6 }}
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
           </section>
         </>
       )}

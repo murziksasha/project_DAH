@@ -2,6 +2,103 @@
 
 ## Unreleased
 
+### Journal SoT cutover path
+- `settings.finance.journalSot` + env `JOURNAL_SOT` override
+- `GET /finance/sot-status`; funds/account/cash-flow read projectors when ON
+- Reports UI: cash-flow source auto|legacy|journal|both + SoT badge
+- Settings UI: journalSot / strictBankRec / defaultCashFlowSource
+- E2E `finance-deep.e2e-spec.ts` (month-close happy path, skips without DB)
+
+### Deep accounting max-pack
+- Payments UI: manual allocation override FIFO with editable amounts
+- Accruals list: per-line Credit note
+- PostingService wired for expenses, accruals, penalties, fund transfers
+- Cash-flow `?source=legacy|journal|both` dual projector
+- Year-end soft_close + snapshot; period reopen requires reason
+- Manual GL adjustment UI on journal Shadow tab
+- Owner-change policy API (balance stays on apartment)
+
+### Deep accounting follow-up (posting engine + AR/AP depth)
+- `PostingService` — central balanced postings (payment, expense, AP, write-off, credit note, transfer, penalty)
+- Manual payment allocation override FIFO: `CreatePaymentDto.allocations[]`
+- Credit note: `POST /accruals/lines/:lineId/credit-note` (open balance only)
+- Mass tariff run: `POST /accounting/tariffs/run` (dryRun + create) + UI on `/admin/ar`
+- Journal projectors: `GET /journal/fund-balances`, `GET /journal/shadow-compare` (readyForSot)
+- Accountant dashboard GL strip + deep-accounting overview API
+- `planManualAllocation` unit tests
+
+### Deep accounting (GL-0 … GL-6)
+- Journal invariants: D=C validation, idempotencyKey, valueDate/period/entryNo, reverse link
+- Entry types: fund_transfer, penalty, accrual_reverse, write_off, supplier_*, bank_fee, adjustment
+- CoA `LedgerAccount` + trial balance + account card + reconcile v2 (entry balance, orphans, TB)
+- AP: SupplierInvoice / SupplierPayment + aging; UI `/admin/ap`
+- AR: aging, apartment statement, write-off maker-checker, service tariffs; UI `/admin/ar`
+- Bank reconciliation + cash book; UI `/admin/bank-rec`
+- Journal / ОСВ UI `/admin/journal`
+- Period close snapshot + checklist (bank rec, write-offs, draft invoices)
+- Budget plan/fact with AP encumbrance; CoA→external (1C) export map
+- Migration `20260815200000_deep_accounting_gl`
+
+### Copilot (heuristic, opt-in)
+- Module `/api/copilot`: classify-request, match-hint, draft-note (no external LLM by default)
+- Dispatch UI: button «AI пріоритет» applies classify → PATCH request
+- `COPILOT_ENABLED=false` to disable
+
+### Worker markers + ops
+- Worker writes `backups/worker-last.json` after reminders/SLA/reconcile
+- `GET /health/details` includes `worker` status; ops page uses details + stale alerts
+
+### Budget plan/fact + fund transfers
+- Models `BudgetLine`, `FundTransfer` + migration `20260815140000_budget_fund_transfer`
+- API: `GET/POST/PATCH/DELETE /finance/budget`, `GET /finance/budget/plan-fact`
+- API: `GET/POST /finance/transfers`, `PATCH /finance/transfers/:id/void`
+- UI: `/admin/budget`, `/admin/transfers` + nav
+- Resident account: shows principal vs пеня when penalty debt present
+- Hardened `finance-policy.e2e-spec.ts` matrix
+
+### Deep follow-up (finance engine + bank + ops + meetings)
+- Resident push **quiet hours** (localStorage) + hide install/push prompt during quiet window
+- Accruals list **Сторно** button
+- **Пеня**: `Building.settings.penalty` + daily worker job (`processDailyPenalties`); account summary `debtPrincipal` / `debtPenalty`
+- **Сторно нарахування**: `POST /accruals/:id/reverse` + journal reverse
+- **Close-month checklist**: `GET /finance/periods/checklist` + UI on `/admin/periods`
+- Bank: ignore line, `GET /payments/import/unmatched`, golden Privat/Mono fixtures
+- Multi-building announcements: `buildingIds[]` on create
+- `PermissionsGuard` + `@RequirePermissions` on finance funds/expenses write
+- Ops: backup stale alert (>8 days); prod compose `KEP_ALLOW_MOCK=false`
+- Meetings: quorum stats UI, **PDF протоколу** download
+- Unit: `penalty.spec.ts`
+
+### Package E — «Платформа на 2–3 роки»
+- Building settings **schemaVersion 2** + migrate/validate helpers + unit tests
+- In-process **domain events** bus (`domain-events.ts`); payment.allocated emit
+- Worker daily **journal.reconcile** (~04:00 UTC) + mismatch domain event
+- Structured HTTP logs: tenantId / userId / role when present
+- `docs/OPENAPI-CODEGEN.md` for Swagger → api-client flow
+
+### Package D — «Юридична вага»
+- Meeting lifecycle transitions (draft→scheduled→open→closed); auto protocol on close
+- Live quorum stats on meeting detail (`participationPercent`, `quorumMet`, `eligibleWeight`)
+- `GET /meetings/:id/protocol.pdf` — PDF протоколу; KEP production checklist in `docs/KEP.md`
+
+### Package C — «УК як бізнес»
+- `GET /building/portfolio` — KPI по будинках (борг, збір %, SLA-заявки)
+- Admin home для `management_company` chairman/board → **PortfolioDashboard**
+- Crew mobile: великі кнопки «В роботі» / «Виконано» на домівці
+
+### Package B — «Мешканець щодня відкриває»
+- Offline **request drafts** queue + auto-flush (`RequestQueueFlusher`); Action Home card
+- Pay deep-link `/resident?pay=1` opens PaySheet
+- Transparency **«Куди пішли гроші»** story cards (income / expenses / net + top categories/funds)
+
+### Package A — «Довіра бухгалтера»
+- **Matching engine v2**: confidence scores, multi-candidate conflict demotion, IBAN alias learning; name-only matches require manual confirm
+- **BankStatement / BankStatementLine** persisted on import preview; `PATCH /payments/import/lines/:id` manual assign; commit links `paymentId` + statement status
+- **AccountingPeriod** (`open` | `soft_closed` | `locked`) per building/YYYY-MM; gates payments/expenses/accruals/voids; UI `/admin/periods`; API `GET|PATCH /finance/periods`
+- **Finance RBAC**: GET funds/expenses/reports/accruals templates require READ_FINANCE roles (resident/dispatcher/crew → 403)
+- **Unified backup pack**: optional MinIO `files/` mirror in API dump (manifest schemaVersion 2); `infra/scripts/restore.ps1` + `npm run restore:native:win`
+- **Policy tests**: `packages/shared` permissions matrix unit; `finance-policy.e2e-spec.ts`; period service unit tests
+
 ### Login / admin password
 - Password field **eye toggle** (show/hide) on login, reset, register, org user form
 - Login + register + admin user: email **normalized** (trim + lower)
@@ -17,6 +114,7 @@
 - `npm run update:native:win` — install → generate → build → migrate → restart (`update-native-windows.ps1`)
 - **No git pull** in Windows update script (operator updates tree manually)
 - Fix: pre-update dump no longer assigns `$host` (PowerShell read-only automatic variable → `$pgHost`)
+- Fix: stop stack **before** `prisma generate` (Windows EPERM on `query_engine-windows.dll.node`)
 - `stop:native:win` / `restart:native:win` / `status:native:win` / `smoke:native:win`
 - `npx dah-native update` on win32 → PowerShell update (not bash/`systemctl`)
 - `backup.ps1` native fallback: `pg_dump` + optional `mc`; `npm run backup:native` / `backup:win`

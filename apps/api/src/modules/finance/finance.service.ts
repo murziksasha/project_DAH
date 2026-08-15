@@ -12,8 +12,10 @@ import {
 } from '../../common/utils/tenant-scope';
 import { createZipStore } from '../../common/utils/zip-store';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AccountingPeriodsService } from '../accounting-periods/accounting-periods.service';
 import { AuditService } from '../audit/audit.service';
 import { JournalService } from '../journal/journal.service';
+import { PostingService } from '../journal/posting.service';
 import { StorageService } from '../files/storage.service';
 import { PaymentsService } from '../payments/payments.service';
 import {
@@ -26,8 +28,17 @@ import {
   BoardReportPdfService,
   resolveBoardReportTemplate,
 } from './board-report-pdf.service';
+import { CreateBudgetLineDto, UpdateBudgetLineDto } from './dto/budget.dto';
 import { CreateExpenseDto } from './dto/create-expense.dto';
+import { CreateFundTransferDto } from './dto/fund-transfer.dto';
 import { CreateSupplierDto } from './dto/create-supplier.dto';
+import { roundMoney } from '../../common/utils/money';
+import { domainEvents } from '../../common/utils/domain-events';
+import {
+  defaultCashFlowSource,
+  financeFlags,
+  isJournalSotEnabled,
+} from '../../common/utils/finance-sot';
 
 @Injectable()
 export class FinanceService {
@@ -38,16 +49,83 @@ export class FinanceService {
     private payments: PaymentsService,
     private boardPdf: BoardReportPdfService,
     private journal: JournalService,
+    private posting: PostingService,
+    private periods: AccountingPeriodsService,
   ) {}
 
-  listFunds(buildingId?: string, tenantId?: string | null) {
-    return this.prisma.fund.findMany({
+  async listFunds(buildingId?: string, tenantId?: string | null) {
+    const funds = await this.prisma.fund.findMany({
       where: buildingId
         ? { buildingId, ...viaBuildingTenant(tenantId) }
         : viaBuildingTenant(tenantId),
-      include: { bankAccount: true },
+      include: {
+        bankAccount: true,
+        expenses: { where: { isVoided: false }, select: { amount: true } },
+        accruals: {
+          include: { lines: { select: { paidAmount: true } } },
+        },
+      },
       orderBy: { name: 'asc' },
     });
+
+    let sot = isJournalSotEnabled(null);
+    if (buildingId) {
+      const b = await this.prisma.building.findUnique({
+        where: { id: buildingId },
+        select: { settings: true },
+      });
+      sot = isJournalSotEnabled(b?.settings);
+    }
+
+    return Promise.all(
+      funds.map(async (fund) => {
+        const totalExpenses = fund.expenses.reduce((s, e) => s + Number(e.amount), 0);
+        const totalIncome = fund.accruals
+          .flatMap((a) => a.lines)
+          .reduce((s, l) => s + Number(l.paidAmount), 0);
+        const balanceLegacy = roundMoney(
+          Number(fund.openingBalance) + totalIncome - totalExpenses,
+        );
+        const balanceJournal = await this.journal.fundCashFromJournal(fund.id);
+        const { expenses: _e, accruals: _a, ...rest } = fund;
+        return {
+          ...rest,
+          balanceLegacy,
+          balanceJournal,
+          balance: sot ? balanceJournal : balanceLegacy,
+          balanceSource: sot ? ('journal' as const) : ('legacy' as const),
+          journalSot: sot,
+        };
+      }),
+    );
+  }
+
+  async getSotStatus(buildingId?: string) {
+    let settings: unknown = null;
+    if (buildingId) {
+      const b = await this.prisma.building.findUnique({
+        where: { id: buildingId },
+        select: { settings: true },
+      });
+      settings = b?.settings;
+    } else {
+      const b = await this.prisma.building.findFirst({ select: { settings: true } });
+      settings = b?.settings;
+    }
+    const flags = financeFlags(settings);
+    const shadow = buildingId
+      ? await this.journal.shadowCompare(buildingId)
+      : null;
+    return {
+      buildingId: buildingId ?? null,
+      ...flags,
+      readyForSot: shadow?.readyForSot ?? null,
+      reconcileOk: shadow?.reconcileOk ?? null,
+      mismatchCount: shadow?.mismatchCount ?? null,
+      hint: flags.journalSot
+        ? 'Reads use journal projectors; writes still dual-run (legacy + journal).'
+        : 'Enable settings.finance.journalSot or JOURNAL_SOT=true after shadow-compare readyForSot.',
+    };
   }
 
   async createFund(
@@ -427,6 +505,8 @@ export class FinanceService {
     });
     if (!fund) throw new NotFoundException('Фонд не знайдено');
 
+    await this.periods.assertAllowsMutation(fund.buildingId, dto.date, 'expense');
+
     const settings = parseBuildingSettings(fund.building.settings);
     const threshold = settings.expenseDualApprovalThreshold;
     const needsApproval =
@@ -453,19 +533,17 @@ export class FinanceService {
       });
 
       if (!needsApproval) {
-        await this.journal.write(
+        await this.posting.postCashExpense(
+          created.id,
+          dto.amount,
           {
-            type: JournalEntryType.expense,
-            refType: 'Expense',
-            refId: created.id,
-            description: dto.description ?? `Витрата ${dto.amount}`,
             buildingId: fund.buildingId,
             fundId: dto.fundId,
+            supplierId: dto.supplierId,
+            categoryId: dto.categoryId,
             createdById: userId,
-            lines: [
-              { account: 'expense', debit: dto.amount, fundId: dto.fundId },
-              { account: 'cash', credit: dto.amount, fundId: dto.fundId },
-            ],
+            valueDate: dto.date,
+            description: dto.description ?? `Витрата ${dto.amount}`,
           },
           tx,
         );
@@ -523,19 +601,17 @@ export class FinanceService {
         include: { fund: true, category: true, supplier: true },
       });
 
-      await this.journal.write(
+      await this.posting.postCashExpense(
+        id,
+        Number(expense.amount),
         {
-          type: JournalEntryType.expense,
-          refType: 'Expense',
-          refId: id,
-          description: expense.description ?? `Витрата ${expense.amount}`,
           buildingId: expense.fund.buildingId,
           fundId: expense.fundId,
+          supplierId: expense.supplierId,
+          categoryId: expense.categoryId,
           createdById: userId,
-          lines: [
-            { account: 'expense', debit: Number(expense.amount), fundId: expense.fundId },
-            { account: 'cash', credit: Number(expense.amount), fundId: expense.fundId },
-          ],
+          valueDate: expense.date,
+          description: expense.description ?? `Витрата ${expense.amount}`,
         },
         tx,
       );
@@ -555,6 +631,7 @@ export class FinanceService {
   }
 
   async voidExpense(id: string, reason: string, userId: string) {
+    // period check after load
     await this.assertFinance2fa(userId);
     const expense = await this.prisma.expense.findUnique({
       where: { id },
@@ -562,6 +639,11 @@ export class FinanceService {
     });
     if (!expense) throw new NotFoundException('Витрату не знайдено');
     if (expense.isVoided) throw new BadRequestException('Витрату вже анульовано');
+    await this.periods.assertAllowsMutation(
+      expense.fund.buildingId,
+      expense.date,
+      'void_expense',
+    );
     // Pending dual-control: just cancel without journal reverse
     if (expense.approvalStatus === 'pending') {
       const row = await this.prisma.expense.update({
@@ -613,12 +695,373 @@ export class FinanceService {
     return updated;
   }
 
+  // ── Budget plan / fact ──────────────────────────────────────────
+
+  listBudgetLines(buildingId: string, year: number) {
+    return this.prisma.budgetLine.findMany({
+      where: { buildingId, year },
+      include: {
+        fund: { select: { id: true, name: true } },
+        category: { select: { id: true, name: true, code: true } },
+      },
+      orderBy: [{ month: 'asc' }, { createdAt: 'asc' }],
+    });
+  }
+
+  async createBudgetLine(dto: CreateBudgetLineDto, userId: string) {
+    const building = await this.prisma.building.findUnique({ where: { id: dto.buildingId } });
+    if (!building) throw new NotFoundException('Будинок не знайдено');
+    if (dto.fundId) {
+      const f = await this.prisma.fund.findFirst({
+        where: { id: dto.fundId, buildingId: dto.buildingId },
+      });
+      if (!f) throw new BadRequestException('Фонд не належить цьому будинку');
+    }
+    const row = await this.prisma.budgetLine.create({
+      data: {
+        buildingId: dto.buildingId,
+        fundId: dto.fundId,
+        categoryId: dto.categoryId,
+        year: dto.year,
+        month: dto.month ?? null,
+        plannedAmount: dto.plannedAmount,
+        notes: dto.notes,
+      },
+      include: {
+        fund: { select: { id: true, name: true } },
+        category: { select: { id: true, name: true } },
+      },
+    });
+    await this.audit.log({
+      userId,
+      action: 'budget.created',
+      entityType: 'BudgetLine',
+      entityId: row.id,
+      payload: { year: dto.year, plannedAmount: dto.plannedAmount },
+    });
+    return row;
+  }
+
+  async updateBudgetLine(id: string, dto: UpdateBudgetLineDto, userId: string) {
+    const existing = await this.prisma.budgetLine.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Рядок бюджету не знайдено');
+    const row = await this.prisma.budgetLine.update({
+      where: { id },
+      data: {
+        ...(dto.plannedAmount != null ? { plannedAmount: dto.plannedAmount } : {}),
+        ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+        ...(dto.fundId !== undefined ? { fundId: dto.fundId } : {}),
+        ...(dto.categoryId !== undefined ? { categoryId: dto.categoryId } : {}),
+      },
+      include: {
+        fund: { select: { id: true, name: true } },
+        category: { select: { id: true, name: true } },
+      },
+    });
+    await this.audit.log({
+      userId,
+      action: 'budget.updated',
+      entityType: 'BudgetLine',
+      entityId: id,
+      payload: { ...dto },
+    });
+    return row;
+  }
+
+  async deleteBudgetLine(id: string, userId: string) {
+    const existing = await this.prisma.budgetLine.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Рядок бюджету не знайдено');
+    await this.prisma.budgetLine.delete({ where: { id } });
+    await this.audit.log({
+      userId,
+      action: 'budget.deleted',
+      entityType: 'BudgetLine',
+      entityId: id,
+      payload: {},
+    });
+    return { id, deleted: true };
+  }
+
+  /**
+   * Plan vs actual for a year: planned from BudgetLine; actual = expenses by fund/category.
+   */
+  async budgetPlanFact(buildingId: string, year: number) {
+    const from = new Date(Date.UTC(year, 0, 1));
+    const to = new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
+    const lines = await this.listBudgetLines(buildingId, year);
+
+    const [expenses, funds, categories] = await Promise.all([
+      this.prisma.expense.findMany({
+        where: {
+          isVoided: false,
+          approvalStatus: 'approved',
+          fund: { buildingId },
+          date: { gte: from, lte: to },
+        },
+        select: {
+          amount: true,
+          fundId: true,
+          categoryId: true,
+          date: true,
+        },
+      }),
+      this.prisma.fund.findMany({
+        where: { buildingId },
+        select: { id: true, name: true },
+      }),
+      this.prisma.expenseCategory.findMany({
+        select: { id: true, name: true },
+      }),
+    ]);
+    const fundName = new Map(funds.map((f) => [f.id, f.name]));
+    const catName = new Map(categories.map((c) => [c.id, c.name]));
+
+    const plannedTotal = roundMoney(
+      lines.reduce((s, l) => s + Number(l.plannedAmount), 0),
+    );
+    const actualTotal = roundMoney(
+      expenses.reduce((s, e) => s + Number(e.amount), 0),
+    );
+
+    // Group by fund
+    const byFund = new Map<
+      string,
+      { fundId: string | null; fundName: string; planned: number; actual: number }
+    >();
+    for (const l of lines) {
+      const key = l.fundId ?? '_none';
+      const cur = byFund.get(key) ?? {
+        fundId: l.fundId,
+        fundName: l.fund?.name ?? 'Без фонду',
+        planned: 0,
+        actual: 0,
+      };
+      cur.planned = roundMoney(cur.planned + Number(l.plannedAmount));
+      byFund.set(key, cur);
+    }
+    for (const e of expenses) {
+      const key = e.fundId;
+      const cur = byFund.get(key) ?? {
+        fundId: e.fundId,
+        fundName: fundName.get(e.fundId) ?? e.fundId,
+        planned: 0,
+        actual: 0,
+      };
+      cur.actual = roundMoney(cur.actual + Number(e.amount));
+      byFund.set(key, cur);
+    }
+
+    // Group by category
+    const byCategory = new Map<
+      string,
+      { categoryId: string | null; categoryName: string; planned: number; actual: number }
+    >();
+    for (const l of lines) {
+      const key = l.categoryId ?? '_none';
+      const cur = byCategory.get(key) ?? {
+        categoryId: l.categoryId,
+        categoryName: l.category?.name ?? 'Без категорії',
+        planned: 0,
+        actual: 0,
+      };
+      cur.planned = roundMoney(cur.planned + Number(l.plannedAmount));
+      byCategory.set(key, cur);
+    }
+    for (const e of expenses) {
+      const key = e.categoryId ?? '_none';
+      const cur = byCategory.get(key) ?? {
+        categoryId: e.categoryId,
+        categoryName: e.categoryId
+          ? (catName.get(e.categoryId) ?? e.categoryId)
+          : 'Без категорії',
+        planned: 0,
+        actual: 0,
+      };
+      cur.actual = roundMoney(cur.actual + Number(e.amount));
+      byCategory.set(key, cur);
+    }
+
+    return {
+      buildingId,
+      year,
+      plannedTotal,
+      actualTotal,
+      variance: roundMoney(plannedTotal - actualTotal),
+      variancePercent:
+        plannedTotal > 0
+          ? Math.round(((plannedTotal - actualTotal) / plannedTotal) * 1000) / 10
+          : null,
+      byFund: [...byFund.values()].map((r) => ({
+        ...r,
+        variance: roundMoney(r.planned - r.actual),
+      })),
+      byCategory: [...byCategory.values()].map((r) => ({
+        ...r,
+        variance: roundMoney(r.planned - r.actual),
+      })),
+      lines,
+    };
+  }
+
+  // ── Fund transfers ──────────────────────────────────────────────
+
+  listFundTransfers(buildingId?: string) {
+    return this.prisma.fundTransfer.findMany({
+      where: {
+        isVoided: false,
+        ...(buildingId
+          ? { OR: [{ fromFund: { buildingId } }, { toFund: { buildingId } }] }
+          : {}),
+      },
+      include: {
+        fromFund: { select: { id: true, name: true, buildingId: true } },
+        toFund: { select: { id: true, name: true, buildingId: true } },
+      },
+      orderBy: { date: 'desc' },
+      take: 100,
+    });
+  }
+
+  async createFundTransfer(dto: CreateFundTransferDto, userId: string) {
+    await this.assertFinance2fa(userId);
+    if (dto.fromFundId === dto.toFundId) {
+      throw new BadRequestException('Фонди мають бути різними');
+    }
+    const [from, to] = await Promise.all([
+      this.prisma.fund.findUnique({ where: { id: dto.fromFundId } }),
+      this.prisma.fund.findUnique({ where: { id: dto.toFundId } }),
+    ]);
+    if (!from || !to) throw new NotFoundException('Фонд не знайдено');
+    if (from.buildingId !== to.buildingId) {
+      throw new BadRequestException('Переказ лише між фондами одного будинку');
+    }
+
+    await this.periods.assertAllowsMutation(from.buildingId, dto.date, 'expense');
+
+    const transfer = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.fundTransfer.create({
+        data: {
+          fromFundId: dto.fromFundId,
+          toFundId: dto.toFundId,
+          amount: dto.amount,
+          date: new Date(dto.date),
+          description: dto.description,
+          createdById: userId,
+        },
+      });
+      await this.posting.postFundTransfer(
+        row.id,
+        dto.amount,
+        dto.fromFundId,
+        dto.toFundId,
+        {
+          buildingId: from.buildingId,
+          createdById: userId,
+          valueDate: dto.date,
+          description: dto.description ?? `Переказ ${from.name} → ${to.name}`,
+        },
+        tx,
+      );
+      return row;
+    });
+
+    await this.audit.log({
+      userId,
+      action: 'fund_transfer.created',
+      entityType: 'FundTransfer',
+      entityId: transfer.id,
+      payload: {
+        fromFundId: dto.fromFundId,
+        toFundId: dto.toFundId,
+        amount: dto.amount,
+      },
+    });
+    void domainEvents.emit('fund_transfer.created', {
+      transferId: transfer.id,
+      fromFundId: dto.fromFundId,
+      toFundId: dto.toFundId,
+      amount: dto.amount,
+    });
+
+    return this.prisma.fundTransfer.findUnique({
+      where: { id: transfer.id },
+      include: {
+        fromFund: { select: { id: true, name: true } },
+        toFund: { select: { id: true, name: true } },
+      },
+    });
+  }
+
+  async voidFundTransfer(id: string, reason: string, userId: string) {
+    await this.assertFinance2fa(userId);
+    const row = await this.prisma.fundTransfer.findUnique({
+      where: { id },
+      include: { fromFund: true, toFund: true },
+    });
+    if (!row) throw new NotFoundException('Переказ не знайдено');
+    if (row.isVoided) throw new BadRequestException('Вже анульовано');
+
+    await this.periods.assertAllowsMutation(
+      row.fromFund.buildingId,
+      row.date,
+      'void_expense',
+    );
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.fundTransfer.update({
+        where: { id },
+        data: { isVoided: true, voidReason: reason },
+      });
+      await this.journal.write(
+        {
+          type: JournalEntryType.void_expense,
+          refType: 'FundTransfer',
+          refId: id,
+          idempotencyKey: `FundTransfer:${id}:void`,
+          description: `Анулювання переказу: ${reason}`,
+          buildingId: row.fromFund.buildingId,
+          createdById: userId,
+          valueDate: row.date,
+          lines: [
+            { account: 'fund_balance', credit: Number(row.amount), fundId: row.fromFundId },
+            { account: 'fund_balance', debit: Number(row.amount), fundId: row.toFundId },
+          ],
+        },
+        tx,
+      );
+      return u;
+    });
+
+    await this.audit.log({
+      userId,
+      action: 'fund_transfer.voided',
+      entityType: 'FundTransfer',
+      entityId: id,
+      payload: { reason },
+    });
+    return updated;
+  }
+
   async getCashFlowReport(
     from?: string,
     to?: string,
     buildingId?: string,
     tenantId?: string | null,
+    source?: 'legacy' | 'journal' | 'both',
   ) {
+    let resolvedSource = source;
+    if (!resolvedSource && buildingId) {
+      const b = await this.prisma.building.findUnique({
+        where: { id: buildingId },
+        select: { settings: true },
+      });
+      resolvedSource = defaultCashFlowSource(b?.settings);
+    }
+    if (!resolvedSource) {
+      resolvedSource = isJournalSotEnabled(null) ? 'journal' : 'legacy';
+    }
+    source = resolvedSource;
+
     const dateFilter: Prisma.DateTimeFilter = {};
     if (from) dateFilter.gte = new Date(from);
     if (to) dateFilter.lte = new Date(to);
@@ -668,12 +1111,87 @@ export class FinanceService {
       };
     });
 
-    return {
+    const legacy = {
       period: { from, to },
+      source: 'legacy' as const,
       totalIncome: Number(payments._sum.amount ?? 0),
       totalExpenses: Number(expenses._sum.amount ?? 0),
       netFlow: Number(payments._sum.amount ?? 0) - Number(expenses._sum.amount ?? 0),
       fundBalances,
+    };
+
+    if (source === 'legacy' || !buildingId) {
+      return legacy;
+    }
+
+    // Journal projector path: cash in (payments) / cash out (expenses) by period on valueDate
+    const entryWhere: Prisma.JournalEntryWhereInput = {
+      buildingId,
+      ...(from || to
+        ? {
+            valueDate: {
+              ...(from ? { gte: new Date(from) } : {}),
+              ...(to ? { lte: new Date(to) } : {}),
+            },
+          }
+        : {}),
+    };
+    const cashLines = await this.prisma.journalLine.findMany({
+      where: { account: 'cash', entry: entryWhere },
+      select: { debit: true, credit: true, fundId: true },
+    });
+    let jIncome = 0;
+    let jExpense = 0;
+    const byFund = new Map<string, { income: number; expenses: number }>();
+    for (const l of cashLines) {
+      const d = Number(l.debit);
+      const c = Number(l.credit);
+      jIncome = roundMoney(jIncome + d);
+      jExpense = roundMoney(jExpense + c);
+      if (l.fundId) {
+        const row = byFund.get(l.fundId) ?? { income: 0, expenses: 0 };
+        row.income = roundMoney(row.income + d);
+        row.expenses = roundMoney(row.expenses + c);
+        byFund.set(l.fundId, row);
+      }
+    }
+
+    const jFundBalances = await Promise.all(
+      funds.map(async (fund) => {
+        const m = byFund.get(fund.id) ?? { income: 0, expenses: 0 };
+        const cash = await this.journal.fundCashFromJournal(fund.id);
+        return {
+          fundId: fund.id,
+          fundName: fund.name,
+          fundType: fund.type,
+          openingBalance: Number(fund.openingBalance),
+          income: m.income,
+          expenses: m.expenses,
+          balance: cash,
+          cashFromJournal: cash,
+        };
+      }),
+    );
+
+    const journal = {
+      period: { from, to },
+      source: 'journal' as const,
+      totalIncome: jIncome,
+      totalExpenses: jExpense,
+      netFlow: roundMoney(jIncome - jExpense),
+      fundBalances: jFundBalances,
+    };
+
+    if (source === 'journal') return journal;
+
+    return {
+      ...legacy,
+      source: 'both' as const,
+      journal,
+      legacy,
+      match:
+        Math.abs(legacy.totalIncome - journal.totalIncome) <= 0.01 &&
+        Math.abs(legacy.totalExpenses - journal.totalExpenses) <= 0.01,
     };
   }
 

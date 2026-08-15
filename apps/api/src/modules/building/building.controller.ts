@@ -104,6 +104,23 @@ export class BuildingController {
     return this.building.getOpsSummary(buildingId);
   }
 
+  /** УК portfolio: per-building debt / SLA / collection snapshot. */
+  @UseGuards(RolesGuard)
+  @Roles(
+    UserRole.super_admin,
+    UserRole.chairman,
+    UserRole.accountant,
+    UserRole.board,
+    UserRole.auditor,
+    UserRole.dispatcher,
+  )
+  @Get('portfolio')
+  portfolio(@CurrentUser() user: AuthUser) {
+    return this.building.getPortfolioSummary(
+      user.role === 'super_admin' ? null : user.tenantId,
+    );
+  }
+
   @UseGuards(RolesGuard)
   @Roles(UserRole.super_admin, UserRole.chairman, UserRole.board)
   @Patch('settings')

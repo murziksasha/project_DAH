@@ -33,6 +33,8 @@
     "smoke:native:win": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/smoke-native-windows.ps1",
     "backup:native": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/backup.ps1 -NativeOnly",
     "backup:win": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/backup.ps1",
+    "restore:native:win": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/restore.ps1 -NativeOnly",
+    "restore:win": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/restore.ps1",
     "db:migrate": "npm run db:migrate -w @dah/api",
     "db:seed": "npm run db:seed -w @dah/api",
     "backup": "docker compose --profile backup run --rm backup",

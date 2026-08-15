@@ -29,7 +29,13 @@ interface MeetingDetail {
   description?: string | null;
   protocolText?: string | null;
   agendaItems: AgendaView[];
-  stats: { participants: number; signedCount: number };
+  stats: {
+    participants: number;
+    signedCount: number;
+    participationPercent?: number;
+    quorumPercent?: number | null;
+    quorumMet?: boolean;
+  };
 }
 
 export default function MeetingsPage() {
@@ -190,6 +196,30 @@ export default function MeetingsPage() {
     await openMeeting(selected.id);
   }
 
+  async function downloadProtocolPdf() {
+    if (!selected) return;
+    const token = getToken();
+    if (!token) return;
+    setError('');
+    try {
+      const base = process.env.NEXT_PUBLIC_API_URL || '/api';
+      const res = await fetch(`${base}/meetings/${selected.id}/protocol.pdf`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `protocol-${selected.id.slice(0, 8)}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setMessage('PDF протоколу завантажено');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'PDF error');
+    }
+  }
+
   return (
     <div style={{ display: 'grid', gap: '1rem' }}>
       <PageHeader
@@ -245,6 +275,15 @@ export default function MeetingsPage() {
             <div style={{ color: 'var(--muted)' }}>
               Статус: <strong>{selected.status}</strong> · учасників{' '}
               {selected.stats.participants} · підписів {selected.stats.signedCount}
+              {selected.stats.participationPercent != null && (
+                <>
+                  {' '}
+                  · явка {selected.stats.participationPercent}%
+                  {selected.stats.quorumPercent != null
+                    ? ` / кворум ${selected.stats.quorumPercent}% (${selected.stats.quorumMet ? 'є' : 'немає'})`
+                    : ''}
+                </>
+              )}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
               <button type="button" onClick={() => setStatus('scheduled')}>
@@ -273,6 +312,9 @@ export default function MeetingsPage() {
               </button>
               <button type="button" className="btn btn-ghost" onClick={() => protocol()}>
                 Протокол
+              </button>
+              <button type="button" className="btn btn-ghost" onClick={() => void downloadProtocolPdf()}>
+                PDF протоколу
               </button>
             </div>
 

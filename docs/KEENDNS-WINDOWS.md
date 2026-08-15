@@ -200,6 +200,7 @@ Self-signed на телефонах часто **ламає PWA і Web Push** �
 | UI є, API 502 | `npm run start:native:win`; логи `logs\native-windows\api.err.log` |
 | Login / CORS з телефону | `NEXT_PUBLIC_API_URL` і `CORS_ORIGIN` = публічний host + rebuild |
 | Після update 502 | `npm run restart:native:win` або `update:native:win` ще раз |
+| `EPERM` … `query_engine-windows.dll.node` | API/worker тримають DLL: `npm run stop:native:win`, потім знову generate/update |
 | backup:native fail | `pg_dump` у PATH; Postgres running |
 | PWA не ставиться | Потрібен валідний HTTPS (не self-signed) |
 

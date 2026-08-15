@@ -128,8 +128,11 @@ describe('bank-statement-import', () => {
       );
       expect(byIban[0].status).toBe('matched');
       expect(byIban[0].apartmentId).toBe('a1');
+      expect(byIban[0].confidence).toBeGreaterThanOrEqual(0.9);
+      expect(byIban[0].matchMethod).toBe('iban');
       expect(byIban[0].message).toMatch(/IBAN/i);
 
+      // Name-only is below auto-threshold → unmatched with candidates for review
       const byName = matchStatementRows(
         [
           {
@@ -155,8 +158,56 @@ describe('bank-statement-import', () => {
           ],
         },
       );
-      expect(byName[0].status).toBe('matched');
-      expect(byName[0].message).toMatch(/ПІБ/i);
+      expect(byName[0].status).toBe('unmatched');
+      expect(byName[0].candidates?.[0]?.method).toBe('name');
+      expect(byName[0].message).toMatch(/впевненість|ПІБ/i);
+    });
+
+    it('matches learned IBAN alias', () => {
+      const iban = 'UA999999999999999999999999999';
+      const rows = matchStatementRows(
+        [
+          {
+            line: 1,
+            raw: '',
+            date: '2026-03-01',
+            amount: 10,
+            reference: 'Оплата',
+            counterpartyIban: iban,
+            extractedApartment: null,
+            status: 'unmatched',
+          },
+        ],
+        {
+          apartments: [{ id: 'a1', number: '3' }],
+          ibanAliases: [{ iban, apartmentId: 'a1', apartmentNumber: '3' }],
+        },
+      );
+      expect(rows[0].status).toBe('matched');
+      expect(rows[0].matchMethod).toBe('iban_alias');
+    });
+  });
+
+  describe('golden bank fixtures', () => {
+    it('privatbank-like CSV', () => {
+      const csv = [
+        'Дата операції;Сума;Призначення платежу;Рахунок контрагента',
+        '15.04.2026;1250,00;Оплата кв. 12;UA213223130000026007233566001',
+      ].join('\n');
+      const r = parseBankStatement(csv, { format: 'privatbank' });
+      expect(r.rows).toHaveLength(1);
+      expect(r.rows[0].amount).toBe(1250);
+      expect(r.rows[0].extractedApartment).toBe('12');
+    });
+
+    it('monobank-like CSV', () => {
+      const csv = [
+        'Date;Amount;Description',
+        '2026-04-15;99.50;Оплата за послуги квартира 7А',
+      ].join('\n');
+      const r = parseBankStatement(csv, { format: 'monobank' });
+      expect(r.rows[0].amount).toBe(99.5);
+      expect(r.rows[0].extractedApartment).toBe('7а');
     });
   });
 });

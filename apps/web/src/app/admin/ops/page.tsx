@@ -35,6 +35,11 @@ interface HealthStatus {
     lastBackupAt: string | null;
     ageHours: number | null;
   };
+  worker?: {
+    status: string;
+    updatedAt: string | null;
+    jobs?: Record<string, unknown> | null;
+  };
   timestamp: string;
 }
 
@@ -119,9 +124,11 @@ export default function OpsPage() {
     setError('');
     try {
       const [hRes, m, l, bStatus, bList] = await Promise.all([
-        fetch(`${getApiBaseUrl()}/health`, { cache: 'no-store' }).then(
-          (r) => r.json() as Promise<HealthStatus>,
-        ),
+        apiFetch<HealthStatus>('/health/details', { token }).catch(async () => {
+          // fallback public probe if details forbidden
+          const r = await fetch(`${getApiBaseUrl()}/health`, { cache: 'no-store' });
+          return r.json() as Promise<HealthStatus>;
+        }),
         apiFetch<MailStatus>('/mail/status', { token }),
         apiFetch<EmailLog[]>('/mail/logs?limit=15', { token }).catch(() => [] as EmailLog[]),
         apiFetch<BackupStatus>('/backups/status', { token }).catch(() => null),
@@ -141,6 +148,13 @@ export default function OpsPage() {
   useEffect(() => {
     refresh().catch(() => undefined);
   }, [refresh]);
+
+  const backupAgeHours =
+    health?.backup?.ageHours ??
+    (backupStatus?.lastBackupAt
+      ? (Date.now() - Date.parse(backupStatus.lastBackupAt)) / 3600000
+      : null);
+  const backupStale = backupAgeHours != null && backupAgeHours > 8 * 24;
 
   async function processReminders() {
     const token = getToken();
@@ -378,6 +392,28 @@ export default function OpsPage() {
 
       {error && <p className="error">{error}</p>}
       {message && <p className="success-banner">{message}</p>}
+      {backupStale && (
+        <p className="error" role="alert">
+          Увага: остання резервна копія старша за 8 днів
+          {backupAgeHours != null ? ` (~${Math.round(backupAgeHours / 24)} дн.)` : ''}.
+          Створіть копію зараз або перевірте worker.
+        </p>
+      )}
+      {health?.worker?.status === 'stale' && (
+        <p className="error" role="alert">
+          Worker не оновлював маркери &gt; 24 год
+          {health.worker.updatedAt
+            ? ` (останнє: ${new Date(health.worker.updatedAt).toLocaleString('uk-UA')})`
+            : ''}
+          . Перевірте, що процес worker запущений.
+        </p>
+      )}
+      {health?.worker?.status === 'missing' && (
+        <p style={{ color: 'var(--muted)' }} role="status">
+          Немає markers worker (`backups/worker-last.json`) — після першого циклу jobs зʼявляться
+          тут.
+        </p>
+      )}
 
       <div className="grid-2" style={{ marginBottom: '1.25rem' }}>
         <StatCard

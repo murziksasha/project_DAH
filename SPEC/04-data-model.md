@@ -117,6 +117,39 @@ DELETE config-row: лише якщо `memberCount=0` і роль не protected 
 ### Payment / PaymentAllocation
 Платіж прив'язаний до квартири. `PaymentAllocation` — розноска на `AccrualLine` (FIFO).
 
+### AccountingPeriod
+Помісячний lock (`open` | `soft_closed` | `locked`) per building.
+
+### BankStatement / BankStatementLine / IbanApartmentAlias
+Імпорт виписки з confidence matching + learned IBAN aliases.
+
+### BudgetLine
+Річний/місячний план витрат (plan vs actual).
+
+### FundTransfer
+Переказ між фондами одного будинку + journal dual-entry.
+
+### LedgerAccount / Journal v2
+План рахунків продукту + immutable journal (idempotency, valueDate, period, entryNo, reverse chain).
+
+### ServiceTariff
+Тарифи/послуги з effective dates для масових нарахувань.
+
+### SupplierInvoice / SupplierPayment
+Кредиторка: рахунок → approve (expense/payable) → оплата (payable/cash).
+
+### BankReconciliation
+Звірка залишку виписки з GL cash per bank account + period.
+
+### DebtWriteOff
+Списання безнадійної дебіторки (pending → approved, maker-checker).
+
+### PeriodCloseSnapshot
+JSON snapshot TB/aging/reconcile при закритті місяця.
+
+### Owner / personal account policy
+Борг і `advanceBalance` привʼязані до **квартири**, не до User. Зміна власника не переносить сальдо на інший обʼєкт (див. `GET /accounting/owner-change-policy`).
+
 ### Communications
 
 | Модель | Опис |
@@ -130,9 +163,10 @@ DELETE config-row: лише якщо `memberCount=0` і роль не protected 
 
 Типові `action`:
 - `auth.login`, `expense.created`, `expense.voided`
-- `accrual.created`, `payment.created`, `payment.voided`
+- `accrual.created`, `accrual.reversed`, `payment.created`, `payment.voided`
 - `announcement.created`, `request.created`, `poll.created`
 - `building.settings_updated`, `document.created`
+- `accounting_period.status`, `budget.*`, `fund_transfer.*`, `bank_statement.*`
 
 ### PushSubscription
 Web Push endpoint + ключі (`p256dh`, `auth`) для користувача.

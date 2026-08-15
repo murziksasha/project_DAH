@@ -17,7 +17,11 @@ import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { CreatePaymentDto } from './dto/create-payment.dto';
-import { ImportPaymentsDto, ImportPreviewDto } from './dto/import-payments.dto';
+import {
+  AssignStatementLineDto,
+  ImportPaymentsDto,
+  ImportPreviewDto,
+} from './dto/import-payments.dto';
 import {
   CreateOnlinePaymentIntentDto,
   OnlinePaymentWebhookDto,
@@ -27,7 +31,8 @@ import { VoidPaymentDto } from './dto/void-payment.dto';
 import { PaymentsService } from './payments.service';
 
 const WRITE_ROLES = [UserRole.chairman, UserRole.accountant, UserRole.board];
-const REPORT_ROLES = [...WRITE_ROLES, UserRole.auditor];
+const REPORT_ROLES = [...WRITE_ROLES, UserRole.auditor, UserRole.super_admin];
+const READ_ROLES = [...REPORT_ROLES];
 
 @ApiTags('payments')
 @Controller('payments')
@@ -100,6 +105,8 @@ export class PaymentsController {
     @TenantId() tenantId: string | null | undefined,
     @CurrentUser() user: AuthUser,
   ) {
+    // Residents may list only own apartments (enforced in service).
+    // Staff need read finance roles for building-wide lists without apartmentId.
     return this.payments.listPayments(user, {
       apartmentId,
       from,
@@ -131,8 +138,48 @@ export class PaymentsController {
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(...WRITE_ROLES)
   @Post('import/preview')
-  importPreview(@Body() dto: ImportPreviewDto) {
-    return this.payments.previewBankImport(dto.csv, dto.buildingId, dto.format);
+  importPreview(
+    @Body() dto: ImportPreviewDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.payments.previewBankImport(
+      dto.csv,
+      dto.buildingId,
+      dto.format,
+      user.id,
+      dto.sourceFileName,
+    );
+  }
+
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(...WRITE_ROLES)
+  @Patch('import/lines/:lineId')
+  assignLine(
+    @Param('lineId') lineId: string,
+    @Body() dto: AssignStatementLineDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.payments.assignStatementLine(lineId, dto.apartmentId, user);
+  }
+
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(...WRITE_ROLES)
+  @Patch('import/lines/:lineId/ignore')
+  ignoreLine(@Param('lineId') lineId: string, @CurrentUser() user: AuthUser) {
+    return this.payments.ignoreStatementLine(lineId, user);
+  }
+
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(...REPORT_ROLES)
+  @Get('import/unmatched')
+  unmatchedReport(
+    @Query('buildingId') buildingId?: string,
+    @Query('days') days?: string,
+  ) {
+    return this.payments.unmatchedStatementReport(
+      buildingId,
+      days ? Number(days) : 30,
+    );
   }
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)

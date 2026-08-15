@@ -39,9 +39,28 @@ export interface ParsedStatementRow {
   format?: StatementFormat;
 }
 
+export type MatchMethod =
+  | 'apartment'
+  | 'iban'
+  | 'iban_alias'
+  | 'name'
+  | 'manual'
+  | null;
+
+export interface MatchCandidate {
+  apartmentId: string;
+  apartmentNumber: string;
+  method: Exclude<MatchMethod, null>;
+  confidence: number;
+}
+
 export interface MatchedStatementRow extends ParsedStatementRow {
   apartmentId: string | null;
   apartmentNumber: string | null;
+  /** 0–1 confidence of auto-match (null if invalid/skipped) */
+  confidence?: number | null;
+  matchMethod?: MatchMethod;
+  candidates?: MatchCandidate[];
 }
 
 export interface ApartmentRef {
@@ -536,11 +555,29 @@ export interface MatchResidentRef {
   iban?: string | null;
 }
 
+export interface IbanAliasRef {
+  iban: string;
+  apartmentId: string;
+  apartmentNumber: string;
+}
+
 export interface MatchContext {
   apartments: ApartmentRef[];
   /** Optional residents for IBAN + full-name matching */
   residents?: MatchResidentRef[];
+  /** Learned IBAN → apartment from prior manual matches */
+  ibanAliases?: IbanAliasRef[];
+  /** Auto-accept threshold (default 0.85) */
+  autoMatchMinConfidence?: number;
 }
+
+/** Confidence scores by strategy (higher wins). */
+export const MATCH_CONFIDENCE = {
+  apartment: 0.95,
+  iban: 0.92,
+  iban_alias: 0.9,
+  name: 0.65,
+} as const;
 
 export function normalizeIban(value: string | null | undefined): string | null {
   if (!value) return null;
@@ -569,7 +606,10 @@ export function normalizePersonName(last: string, first: string): string {
     .trim();
 }
 
-/** Match by apartment #, then payer IBAN, then resident full name in purpose. */
+/**
+ * Match by apartment #, IBAN, learned alias, then resident full name.
+ * Collects candidates with confidence; picks best if above threshold.
+ */
 export function matchStatementRows(
   rows: ParsedStatementRow[],
   apartmentsOrCtx: ApartmentRef[] | MatchContext,
@@ -577,6 +617,7 @@ export function matchStatementRows(
   const ctx: MatchContext = Array.isArray(apartmentsOrCtx)
     ? { apartments: apartmentsOrCtx }
     : apartmentsOrCtx;
+  const minConf = ctx.autoMatchMinConfidence ?? 0.85;
 
   const byNumber = new Map<string, ApartmentRef>();
   for (const a of ctx.apartments) {
@@ -584,6 +625,7 @@ export function matchStatementRows(
   }
 
   const byIban = new Map<string, { id: string; number: string }>();
+  const byAlias = new Map<string, { id: string; number: string }>();
   const byName = new Map<string, { id: string; number: string }>();
   for (const r of ctx.residents ?? []) {
     const iban = normalizeIban(r.iban ?? null);
@@ -592,46 +634,64 @@ export function matchStatementRows(
       id: r.apartmentId,
       number: r.apartmentNumber,
     });
-    // Also "First Last" order
     byName.set(normalizePersonName(r.firstName, r.lastName), {
       id: r.apartmentId,
       number: r.apartmentNumber,
     });
   }
+  for (const a of ctx.ibanAliases ?? []) {
+    const iban = normalizeIban(a.iban);
+    if (iban) byAlias.set(iban, { id: a.apartmentId, number: a.apartmentNumber });
+  }
 
   return rows.map((row) => {
     if (row.status === 'invalid' || row.status === 'skipped') {
-      return { ...row, apartmentId: null, apartmentNumber: null };
+      return {
+        ...row,
+        apartmentId: null,
+        apartmentNumber: null,
+        confidence: null,
+        matchMethod: null,
+        candidates: [],
+      };
     }
+
+    const candidates: MatchCandidate[] = [];
 
     // 1) Apartment number in purpose
     if (row.extractedApartment) {
       const apt = byNumber.get(normalizeAptNumber(row.extractedApartment));
       if (apt) {
-        return {
-          ...row,
-          status: 'matched',
+        candidates.push({
           apartmentId: apt.id,
           apartmentNumber: apt.number,
-          message: 'Зіставлено за номером квартири',
-        };
+          method: 'apartment',
+          confidence: MATCH_CONFIDENCE.apartment,
+        });
       }
     }
 
-    // 2) Counterparty / text IBAN
+    // 2) Counterparty / text IBAN → resident profile
     const iban =
       normalizeIban(row.counterpartyIban ?? null) ?? extractIbanFromText(row.reference);
     if (iban) {
       const hit = byIban.get(iban);
       if (hit) {
-        return {
-          ...row,
-          status: 'matched',
+        candidates.push({
           apartmentId: hit.id,
           apartmentNumber: hit.number,
-          counterpartyIban: iban,
-          message: 'Зіставлено за IBAN мешканця',
-        };
+          method: 'iban',
+          confidence: MATCH_CONFIDENCE.iban,
+        });
+      }
+      const alias = byAlias.get(iban);
+      if (alias) {
+        candidates.push({
+          apartmentId: alias.id,
+          apartmentNumber: alias.number,
+          method: 'iban_alias',
+          confidence: MATCH_CONFIDENCE.iban_alias,
+        });
       }
     }
 
@@ -642,14 +702,72 @@ export function matchStatementRows(
       .replace(/\s+/g, ' ');
     for (const [nameKey, hit] of byName) {
       if (nameKey.length >= 5 && refNorm.includes(nameKey)) {
-        return {
-          ...row,
-          status: 'matched',
+        candidates.push({
           apartmentId: hit.id,
           apartmentNumber: hit.number,
-          message: 'Зіставлено за ПІБ мешканця',
-        };
+          method: 'name',
+          confidence: MATCH_CONFIDENCE.name,
+        });
       }
+    }
+
+    // Dedupe by apartment — keep highest confidence
+    const bestByApt = new Map<string, MatchCandidate>();
+    for (const c of candidates) {
+      const prev = bestByApt.get(c.apartmentId);
+      if (!prev || c.confidence > prev.confidence) bestByApt.set(c.apartmentId, c);
+    }
+    const unique = [...bestByApt.values()].sort((a, b) => b.confidence - a.confidence);
+
+    // Conflicting high-confidence apartments → demote
+    if (unique.length >= 2 && unique[0].confidence - unique[1].confidence < 0.05) {
+      return {
+        ...row,
+        status: 'unmatched' as const,
+        apartmentId: null,
+        apartmentNumber: row.extractedApartment,
+        confidence: unique[0].confidence,
+        matchMethod: null,
+        candidates: unique,
+        counterpartyIban: iban ?? row.counterpartyIban,
+        message: 'Кілька кандидатів з близькою впевненістю — потрібне ручне зіставлення',
+      };
+    }
+
+    const best = unique[0];
+    if (best && best.confidence >= minConf) {
+      const labels: Record<string, string> = {
+        apartment: 'Зіставлено за номером квартири',
+        iban: 'Зіставлено за IBAN мешканця',
+        iban_alias: 'Зіставлено за збереженим IBAN',
+        name: 'Зіставлено за ПІБ мешканця',
+      };
+      return {
+        ...row,
+        status: 'matched',
+        apartmentId: best.apartmentId,
+        apartmentNumber: best.apartmentNumber,
+        confidence: best.confidence,
+        matchMethod: best.method,
+        candidates: unique,
+        counterpartyIban: iban ?? row.counterpartyIban,
+        message: `${labels[best.method] ?? 'Зіставлено'} (${Math.round(best.confidence * 100)}%)`,
+      };
+    }
+
+    // Low-confidence name-only → suggest but leave unmatched for review
+    if (best) {
+      return {
+        ...row,
+        status: 'unmatched' as const,
+        apartmentId: null,
+        apartmentNumber: best.apartmentNumber,
+        confidence: best.confidence,
+        matchMethod: null,
+        candidates: unique,
+        counterpartyIban: iban ?? row.counterpartyIban,
+        message: `Низька впевненість (${Math.round(best.confidence * 100)}%) — підтвердіть квартиру`,
+      };
     }
 
     return {
@@ -657,6 +775,10 @@ export function matchStatementRows(
       status: 'unmatched' as const,
       apartmentId: null,
       apartmentNumber: row.extractedApartment,
+      confidence: null,
+      matchMethod: null,
+      candidates: [],
+      counterpartyIban: iban ?? row.counterpartyIban,
       message: row.extractedApartment
         ? `Квартиру «${row.extractedApartment}» не знайдено; IBAN/ПІБ також без збігу`
         : 'Не знайдено квартиру / IBAN / ПІБ у призначенні',

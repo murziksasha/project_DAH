@@ -130,4 +130,19 @@ export class UpdateBuildingSettingsDto {
   @ValidateNested()
   @Type(() => SlaHoursByCategoryDto)
   slaHoursByCategory?: SlaHoursByCategoryDto;
+
+  @ApiPropertyOptional({ description: 'Use journal projectors as balance SoT (reads)' })
+  @IsOptional()
+  @IsBoolean()
+  journalSot?: boolean;
+
+  @ApiPropertyOptional({ description: 'Hard-block soft_close if bank rec open' })
+  @IsOptional()
+  @IsBoolean()
+  strictBankRec?: boolean;
+
+  @ApiPropertyOptional({ enum: ['legacy', 'journal', 'both'] })
+  @IsOptional()
+  @IsIn(['legacy', 'journal', 'both'])
+  defaultCashFlowSource?: 'legacy' | 'journal' | 'both';
 }

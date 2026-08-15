@@ -1,8 +1,11 @@
 # One-shot update on Windows native host (no Docker, no systemd):
-#   install -> prisma generate -> build -> migrate -> restart stack
+#   stop stack -> install -> prisma generate -> build -> migrate -> start stack
 #
 # Does NOT run git pull — update the tree yourself first (git pull / copy / rsync),
 # then: npm run update:native:win
+#
+# Stack is stopped BEFORE generate/build so Windows can replace
+# node_modules\.prisma\client\query_engine-windows.dll.node (avoids EPERM rename).
 #
 # Usage (from repo root):
 #   npm run update:native:win
@@ -13,8 +16,9 @@
 #   -SkipGenerate / SKIP_GENERATE=1
 #   -SkipBuild / SKIP_BUILD=1
 #   -SkipMigrate / SKIP_MIGRATE=1
-#   -SkipRestart / SKIP_RESTART=1
+#   -SkipRestart / SKIP_RESTART=1   # skip both early stop and final start
 #   -SkipPreBackup / SKIP_PRE_BACKUP=1
+#   -SkipStop / SKIP_STOP=1         # do not stop before generate (risk EPERM)
 param(
   [string]$DahRoot = "",
   [int]$WebPort = 0,
@@ -23,7 +27,8 @@ param(
   [switch]$SkipBuild,
   [switch]$SkipMigrate,
   [switch]$SkipRestart,
-  [switch]$SkipPreBackup
+  [switch]$SkipPreBackup,
+  [switch]$SkipStop
 )
 
 $ErrorActionPreference = "Stop"
@@ -40,6 +45,29 @@ if (EnvFlag "SKIP_BUILD") { $SkipBuild = $true }
 if (EnvFlag "SKIP_MIGRATE") { $SkipMigrate = $true }
 if (EnvFlag "SKIP_RESTART") { $SkipRestart = $true }
 if (EnvFlag "SKIP_PRE_BACKUP") { $SkipPreBackup = $true }
+if (EnvFlag "SKIP_STOP") { $SkipStop = $true }
+
+$stopPs1 = Join-Path $PSScriptRoot "stop-dah-windows-stack.ps1"
+$startPs1 = Join-Path $PSScriptRoot "start-dah-windows-stack.ps1"
+
+function Invoke-StopStack {
+  param([string]$Root, [int]$Port)
+  if (-not (Test-Path -LiteralPath $stopPs1)) {
+    Write-Host "    WARN: missing stop script $stopPs1"
+    return
+  }
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $stopPs1 `
+    -DahRoot $Root -WebPort $Port -ForcePorts
+  Start-Sleep -Seconds 2
+  # Drop stale Prisma engine temp files left after failed generate
+  $prismaDir = Join-Path $Root "node_modules\.prisma\client"
+  if (Test-Path -LiteralPath $prismaDir) {
+    Get-ChildItem -LiteralPath $prismaDir -Filter "query_engine-windows.dll.node.tmp*" -ErrorAction SilentlyContinue |
+      ForEach-Object {
+        try { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop } catch { }
+      }
+  }
+}
 
 if (-not $DahRoot) {
   if ($env:DAH_ROOT) { $DahRoot = $env:DAH_ROOT }
@@ -204,6 +232,14 @@ if (-not $SkipPreBackup) {
 
 Write-Step "git pull skipped (update code manually before this script)"
 
+# Stop API/worker (and free ports) so prisma can replace query_engine-windows.dll.node
+if (-not $SkipRestart -and -not $SkipStop) {
+  Write-Step "stop stack (required before prisma generate on Windows)"
+  Invoke-StopStack -Root $DahRoot -Port $WebPort
+} elseif ($SkipStop) {
+  Write-Step "skip early stop (EPERM on prisma generate is likely if API is running)"
+}
+
 if (-not $SkipInstall) {
   Write-Step "npm install"
   npm install
@@ -215,7 +251,24 @@ if (-not $SkipInstall) {
 if (-not $SkipGenerate) {
   Write-Step "prisma generate (db:generate)"
   npm run db:generate -w @dah/api
-  if ($LASTEXITCODE -ne 0) { throw "db:generate failed" }
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host "    prisma generate failed — often EPERM if node still holds query_engine DLL"
+    Write-Host "    retry after forced stop..."
+    if (-not $SkipStop) {
+      Invoke-StopStack -Root $DahRoot -Port $WebPort
+      Start-Sleep -Seconds 2
+      npm run db:generate -w @dah/api
+    }
+    if ($LASTEXITCODE -ne 0) {
+      throw @"
+db:generate failed (often EPERM on Windows when API/worker still run).
+  1) npm run stop:native:win
+  2) Close other node terminals using this repo
+  3) npm run db:generate -w @dah/api
+  4) npm run update:native:win  (or continue build/migrate/start)
+"@
+    }
+  }
 } else {
   Write-Step "skip prisma generate"
 }
@@ -242,14 +295,13 @@ if (-not $SkipMigrate) {
 }
 
 if (-not $SkipRestart) {
-  Write-Step "restart stack (stop -> start)"
-  $stopPs1 = Join-Path $DahRoot "infra\scripts\stop-dah-windows-stack.ps1"
-  $startPs1 = Join-Path $DahRoot "infra\scripts\start-dah-windows-stack.ps1"
-  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $stopPs1 -DahRoot $DahRoot -WebPort $WebPort
-  Start-Sleep -Seconds 2
+  Write-Step "start stack"
+  if (-not (Test-Path -LiteralPath $startPs1)) {
+    throw "Missing start script: $startPs1"
+  }
   & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $startPs1 -DahRoot $DahRoot -WebPort $WebPort
 } else {
-  Write-Step "skip restart - restart manually: npm run start:native:win"
+  Write-Step "skip start - start manually: npm run start:native:win"
 }
 
 Write-Step "health smoke"

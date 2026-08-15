@@ -65,6 +65,44 @@ export default function DispatchPage() {
     }
   }
 
+  async function applyCopilotHint(item: {
+    id: string;
+    title: string;
+    description?: string;
+    category: string;
+  }) {
+    const token = getToken();
+    if (!token) return;
+    setBusyId(item.id);
+    setError('');
+    try {
+      const hint = await apiFetch<{
+        enabled?: boolean;
+        priority?: string;
+        category?: string;
+      }>('/copilot/classify-request', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          title: item.title,
+          description: item.description,
+          category: item.category,
+        }),
+      });
+      if (hint.enabled === false) {
+        setError('Copilot вимкнено');
+        return;
+      }
+      await patchRequest(item.id, {
+        priority: hint.priority,
+        category: hint.category,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setBusyId(null);
+    }
+  }
+
   function priorityLabel(p: string) {
     switch (p) {
       case 'urgent':
@@ -176,6 +214,20 @@ export default function DispatchPage() {
                   {priorityLabel(item.priority)} · {item.category} ·{' '}
                   {item.dueAt ? formatDateUk(item.dueAt) : '—'}
                 </div>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  disabled={busyId === item.id}
+                  onClick={() =>
+                    void applyCopilotHint({
+                      id: item.id,
+                      title: item.title,
+                      category: item.category,
+                    })
+                  }
+                >
+                  AI пріоритет
+                </button>
                 <div style={{ fontSize: '0.85rem' }}>
                   {item.author.lastName} {item.author.firstName}
                   {item.assignee

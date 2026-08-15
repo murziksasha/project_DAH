@@ -23,7 +23,14 @@ import { AccountHistory } from './AccountHistory';
 
 export interface ResidentAccount {
   apartment: { number: string; buildingName: string };
-  summary: { totalAccrued: number; totalPaid: number; debt: number; advance: number };
+  summary: {
+    totalAccrued: number;
+    totalPaid: number;
+    debt: number;
+    debtPrincipal?: number;
+    debtPenalty?: number;
+    advance: number;
+  };
   lines: AccountLineLike[];
   payments: Array<{ id: string; amount: number; date: string; source: string }>;
   timeline?: TimelineEventLike[];
@@ -263,6 +270,12 @@ export function AccountTab({
             tone={account.summary.advance > 0 ? 'success' : 'muted'}
           />
         </div>
+        {(account.summary.debtPenalty ?? 0) > 0 && (
+          <p className="resident-muted resident-sm" style={{ marginTop: '0.5rem' }}>
+            Внески: {formatMoney(account.summary.debtPrincipal ?? 0)} · Пеня:{' '}
+            {formatMoney(account.summary.debtPenalty ?? 0)}
+          </p>
+        )}
         <div className="resident-account-cta-row">
           {account.summary.debt > 0 && onPay && (
             <button type="button" className="btn resident-account-pay-btn" onClick={onPay}>

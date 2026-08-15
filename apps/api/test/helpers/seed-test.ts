@@ -26,6 +26,12 @@ export async function resetTestDatabase() {
   await prisma.meter.deleteMany();
   await prisma.paymentAllocation.deleteMany();
   await prisma.payment.deleteMany();
+  await prisma.bankStatementLine.deleteMany().catch(() => undefined);
+  await prisma.bankStatement.deleteMany().catch(() => undefined);
+  await prisma.ibanApartmentAlias.deleteMany().catch(() => undefined);
+  await prisma.accountingPeriod.deleteMany().catch(() => undefined);
+  await prisma.fundTransfer.deleteMany().catch(() => undefined);
+  await prisma.budgetLine.deleteMany().catch(() => undefined);
   await prisma.accrualLine.deleteMany();
   await prisma.accrual.deleteMany();
   await prisma.accrualTemplate.deleteMany();

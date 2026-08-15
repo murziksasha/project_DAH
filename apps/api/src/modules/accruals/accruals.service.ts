@@ -9,11 +9,16 @@ import {
   calcAccrualLineAmount,
   validateAccrualDistribution,
 } from '../../common/utils/accrual-distribution';
+import { resolveAccrualLineStatus } from '../../common/utils/fifo-allocation';
+import { isJournalSotEnabled } from '../../common/utils/finance-sot';
 import { roundMoney } from '../../common/utils/money';
 import { createZipStore } from '../../common/utils/zip-store';
 import { PrismaService } from '../../prisma/prisma.service';
+import { domainEvents } from '../../common/utils/domain-events';
+import { AccountingPeriodsService } from '../accounting-periods/accounting-periods.service';
 import { AuditService } from '../audit/audit.service';
 import { JournalService } from '../journal/journal.service';
+import { PostingService } from '../journal/posting.service';
 import { MailService } from '../mail/mail.service';
 import { parseBuildingSettings } from '../building/building-settings';
 import { CreateAccrualDto } from './dto/create-accrual.dto';
@@ -32,6 +37,8 @@ export class AccrualsService {
     private audit: AuditService,
     private mail: MailService,
     private journal: JournalService,
+    private posting: PostingService,
+    private periods: AccountingPeriodsService,
   ) {}
 
   listTemplates(buildingId?: string, tenantId?: string | null) {
@@ -171,6 +178,9 @@ export class AccrualsService {
     const fund = await this.prisma.fund.findUnique({ where: { id: dto.fundId } });
     if (!fund) throw new NotFoundException('Фонд не знайдено');
 
+    // Accrual.period is YYYY-MM — gate by period key
+    await this.periods.assertAllowsMutation(fund.buildingId, dto.period, 'accrual');
+
     const existing = await this.prisma.accrual.findFirst({
       where: { fundId: dto.fundId, period: dto.period, title: dto.title },
     });
@@ -242,27 +252,14 @@ export class AccrualsService {
         })),
       });
 
-      await this.journal.write(
+      await this.posting.postAccrual(
+        created.id,
+        total,
         {
-          type: JournalEntryType.accrual,
-          refType: 'Accrual',
-          refId: created.id,
-          description: `${dto.title} (${dto.period})`,
           buildingId,
           fundId: dto.fundId,
           createdById: userId,
-          lines: [
-            {
-              account: 'receivable',
-              debit: total,
-              fundId: dto.fundId,
-            },
-            {
-              account: 'fund_balance',
-              credit: total,
-              fundId: dto.fundId,
-            },
-          ],
+          description: `${dto.title} (${dto.period})`,
         },
         tx,
       );
@@ -300,6 +297,208 @@ export class AccrualsService {
     return this.getAccrual(accrual.id);
   }
 
+  /**
+   * Storno: reverse open unpaid portions of an accrual with correcting lines + journal.
+   * Creates a new Accrual titled «Сторно: …» with negative amounts (or zero remaining open).
+   */
+  async reverseAccrual(accrualId: string, userId: string, reason?: string) {
+    const accrual = await this.prisma.accrual.findUnique({
+      where: { id: accrualId },
+      include: {
+        fund: true,
+        lines: true,
+      },
+    });
+    if (!accrual) throw new NotFoundException('Нарахування не знайдено');
+
+    await this.periods.assertAllowsMutation(
+      accrual.fund.buildingId,
+      accrual.period,
+      'accrual',
+    );
+
+    const openLines = accrual.lines
+      .map((l) => ({
+        apartmentId: l.apartmentId,
+        remaining: roundMoney(Number(l.amount) - Number(l.paidAmount)),
+        lineId: l.id,
+      }))
+      .filter((l) => l.remaining > 0);
+
+    if (!openLines.length) {
+      throw new BadRequestException('Немає відкритого залишку для сторно');
+    }
+
+    const total = roundMoney(openLines.reduce((s, l) => s + l.remaining, 0));
+    const title = `Сторно: ${accrual.title}${reason ? ` (${reason})` : ''}`;
+
+    const existing = await this.prisma.accrual.findFirst({
+      where: { fundId: accrual.fundId, period: accrual.period, title },
+    });
+    if (existing) {
+      throw new BadRequestException('Сторно з такою назвою вже існує');
+    }
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      // Zero out remaining on original lines (keep paidAmount)
+      for (const ol of openLines) {
+        const line = accrual.lines.find((l) => l.id === ol.lineId)!;
+        const paid = Number(line.paidAmount);
+        await tx.accrualLine.update({
+          where: { id: ol.lineId },
+          data: {
+            amount: paid,
+            status: paid > 0 ? AccrualLineStatus.paid : AccrualLineStatus.paid,
+          },
+        });
+      }
+
+      const storno = await tx.accrual.create({
+        data: {
+          fundId: accrual.fundId,
+          period: accrual.period,
+          title,
+        },
+      });
+
+      // Correction accrual lines with amount 0 (audit trail) — journal holds reverse
+      await tx.accrualLine.createMany({
+        data: openLines.map((l) => ({
+          accrualId: storno.id,
+          apartmentId: l.apartmentId,
+          amount: 0,
+          paidAmount: 0,
+          status: AccrualLineStatus.paid,
+          dueDate: null,
+        })),
+      });
+
+      await this.journal.write(
+        {
+          type: JournalEntryType.accrual_reverse,
+          refType: 'Accrual',
+          refId: storno.id,
+          idempotencyKey: `Accrual:${accrual.id}:accrual_reverse`,
+          description: title,
+          buildingId: accrual.fund.buildingId,
+          fundId: accrual.fundId,
+          createdById: userId,
+          lines: [
+            {
+              account: 'receivable',
+              credit: total,
+              fundId: accrual.fundId,
+            },
+            {
+              account: 'fund_balance',
+              debit: total,
+              fundId: accrual.fundId,
+            },
+          ],
+        },
+        tx,
+      );
+
+      return storno;
+    });
+
+    await this.audit.log({
+      userId,
+      action: 'accrual.reversed',
+      entityType: 'Accrual',
+      entityId: accrualId,
+      payload: { stornoId: created.id, total, reason: reason ?? null },
+    });
+    void domainEvents.emit('accrual.reversed', {
+      accrualId,
+      stornoId: created.id,
+      total,
+    });
+
+    return this.getAccrual(created.id);
+  }
+
+  /**
+   * Partial credit note on open (unpaid) balance of AccrualLine.
+   * Reduces line amount; journal: Dr fund_balance / Cr receivable.
+   */
+  async creditNoteLine(
+    lineId: string,
+    amount: number,
+    userId: string,
+    reason?: string,
+  ) {
+    if (!(amount > 0)) {
+      throw new BadRequestException('Сума credit note має бути > 0');
+    }
+    const line = await this.prisma.accrualLine.findUnique({
+      where: { id: lineId },
+      include: {
+        accrual: { include: { fund: true } },
+        apartment: true,
+      },
+    });
+    if (!line) throw new NotFoundException('Рядок нарахування не знайдено');
+
+    const open = roundMoney(Number(line.amount) - Number(line.paidAmount));
+    if (open <= 0) {
+      throw new BadRequestException('Немає відкритого залишку для credit note');
+    }
+    if (amount > open + 0.001) {
+      throw new BadRequestException(
+        `Credit note ${amount} перевищує відкритий залишок ${open}`,
+      );
+    }
+
+    await this.periods.assertAllowsMutation(
+      line.accrual.fund.buildingId,
+      line.accrual.period,
+      'accrual',
+    );
+
+    const paid = Number(line.paidAmount);
+    const newAmount = roundMoney(Number(line.amount) - amount);
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.accrualLine.update({
+        where: { id: lineId },
+        data: {
+          amount: newAmount,
+          status: resolveAccrualLineStatus(newAmount, paid, line.dueDate),
+        },
+      });
+
+      await this.posting.postCreditNote(
+        `${lineId}:${Date.now()}`,
+        amount,
+        {
+          buildingId: line.accrual.fund.buildingId,
+          fundId: line.accrual.fundId,
+          apartmentId: line.apartmentId,
+          createdById: userId,
+          description: `Credit note кв. ${line.apartment.number}: ${reason ?? line.accrual.title}`,
+        },
+        tx,
+      );
+
+      return row;
+    });
+
+    await this.audit.log({
+      userId,
+      action: 'accrual.credit_note',
+      entityType: 'AccrualLine',
+      entityId: lineId,
+      payload: { amount, reason: reason ?? null, openBefore: open },
+    });
+
+    return {
+      line: updated,
+      creditNoteAmount: amount,
+      reason: reason ?? null,
+    };
+  }
+
   async getApartmentAccount(apartmentId: string) {
     const apartment = await this.prisma.apartment.findUnique({
       where: { id: apartmentId },
@@ -322,15 +521,25 @@ export class AccrualsService {
 
     if (!apartment) throw new NotFoundException('Квартиру не знайдено');
 
+    let debtPrincipal = 0;
+    let debtPenalty = 0;
+
     const lines = apartment.accrualLines.map((line) => {
       const amount = Number(line.amount);
       const paid = Number(line.paidAmount);
+      const balance = roundMoney(Math.max(0, amount - paid));
+      const isPenalty = /^Пеня\s/i.test(line.accrual.title);
+      if (balance > 0) {
+        if (isPenalty) debtPenalty += balance;
+        else debtPrincipal += balance;
+      }
       const status = this.resolveLineStatus(line.status, line.dueDate, amount, paid);
       return {
         id: line.id,
         period: line.accrual.period,
         title: line.accrual.title,
         fundName: line.accrual.fund.name,
+        isPenalty,
         amount,
         paidAmount: paid,
         balance: roundMoney(amount - paid),
@@ -349,6 +558,11 @@ export class AccrualsService {
       const allocated = p.allocations.reduce((a, x) => a + Number(x.amount), 0);
       return s + Math.max(0, Number(p.amount) - allocated);
     }, 0);
+    const advanceJournal = await this.journal.apartmentAdvanceFromJournal(
+      apartment.id,
+    );
+    const sot = isJournalSotEnabled(apartment.building?.settings);
+    const advance = sot ? advanceJournal : advanceStored;
 
     const timeline = this.buildTimeline(apartment);
 
@@ -365,8 +579,14 @@ export class AccrualsService {
         totalAccrued: roundMoney(totalAccrued),
         totalPaid: roundMoney(totalPaidOnLines),
         debt: roundMoney(debt),
-        advance: advanceStored,
+        debtPrincipal: roundMoney(debtPrincipal),
+        debtPenalty: roundMoney(debtPenalty),
+        advance,
+        advanceLegacy: advanceStored,
+        advanceJournal,
         advanceComputed: roundMoney(advanceFromPayments),
+        balanceSource: sot ? ('journal' as const) : ('legacy' as const),
+        journalSot: sot,
       },
       lines,
       payments: apartment.payments.map((p) => {
