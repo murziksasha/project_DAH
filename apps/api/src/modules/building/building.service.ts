@@ -4,6 +4,11 @@ import {
   type DocumentTemplatesConfig,
 } from '@dah/shared';
 import { Prisma } from '@prisma/client';
+import {
+  extractEmailsFromResidentsCell,
+  parseApartmentsCsv,
+} from '../../common/utils/apartment-csv';
+import { sortByApartmentNumber } from '../../common/utils/apartment-sort';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import {
@@ -554,13 +559,16 @@ export class BuildingService {
         },
       },
     });
-    return apartments.map((a) => ({
-      ...a,
-      users: a.apartmentLinks.map((l) => ({
-        ...l.user,
-        isPrimary: l.isPrimary,
+    // Prisma string order is lexicographic ("1","10","101"); natural sort for UI.
+    return sortByApartmentNumber(
+      apartments.map((a) => ({
+        ...a,
+        users: a.apartmentLinks.map((l) => ({
+          ...l.user,
+          isPrimary: l.isPrimary,
+        })),
       })),
-    }));
+    );
   }
 
   getApartment(id: string) {
@@ -612,79 +620,169 @@ export class BuildingService {
   }
 
   /**
-   * Bulk import: lines "number,entrance,floor,area" (floor optional).
-   * Skips duplicates (same building + number).
+   * Full replace of the apartment registry from CSV.
+   * Columns: number,entrance,floor,area[,residents] (header optional).
+   * - Upserts by apartment number (updates area/entrance/floor)
+   * - Removes apartments not present in the file (and their finance links)
+   * - Re-links users listed in the residents column by email
    */
   async importApartmentsCsv(csv: string, userId: string) {
     const building = await this.prisma.building.findFirst();
     if (!building) throw new NotFoundException('Будинок не налаштовано');
 
-    const text = csv.replace(/^\uFEFF/, '').trim();
-    if (!text) throw new BadRequestException('Порожній CSV');
-
-    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-    let created = 0;
-    let skipped = 0;
-    const errors: Array<{ line: number; message: string }> = [];
-
-    for (let i = 0; i < lines.length; i++) {
-      const raw = lines[i];
-      // skip header
-      if (i === 0 && /номер|number|кв/i.test(raw) && /площа|area/i.test(raw)) {
-        continue;
-      }
-      const parts = raw.split(/[,;\t]/).map((p) => p.trim().replace(/^"|"$/g, ''));
-      if (parts.length < 2) {
-        errors.push({ line: i + 1, message: 'Очікується number,entrance,floor?,area' });
-        continue;
-      }
-
-      const number = parts[0];
-      let entrance = 1;
-      let floor: number | undefined;
-      let area: number;
-
-      if (parts.length === 2) {
-        area = Number(parts[1].replace(',', '.'));
-      } else if (parts.length === 3) {
-        entrance = Number(parts[1]) || 1;
-        area = Number(parts[2].replace(',', '.'));
-      } else {
-        entrance = Number(parts[1]) || 1;
-        floor = parts[2] ? Number(parts[2]) : undefined;
-        area = Number(parts[3].replace(',', '.'));
-      }
-
-      if (!number || !Number.isFinite(area) || area <= 0) {
-        errors.push({ line: i + 1, message: 'Некоректний номер або площа' });
-        continue;
-      }
-
-      try {
-        await this.prisma.apartment.create({
-          data: {
-            buildingId: building.id,
-            number,
-            entrance,
-            floor: Number.isFinite(floor as number) ? floor : undefined,
-            area,
-          },
-        });
-        created++;
-      } catch {
-        skipped++;
-      }
+    const { rows, errors } = parseApartmentsCsv(csv);
+    if (!rows.length) {
+      throw new BadRequestException(
+        errors[0]?.message ?? 'CSV не містить жодної коректної квартири',
+      );
     }
+
+    const wantedNumbers = new Set(rows.map((r) => r.number));
+    let created = 0;
+    let updated = 0;
+    let removed = 0;
+    let linked = 0;
+
+    await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.apartment.findMany({
+        where: { buildingId: building.id },
+        select: { id: true, number: true },
+      });
+      const byNumber = new Map(existing.map((a) => [a.number, a.id]));
+
+      const toRemoveIds = existing
+        .filter((a) => !wantedNumbers.has(a.number))
+        .map((a) => a.id);
+
+      if (toRemoveIds.length) {
+        await this.purgeApartments(tx, toRemoveIds);
+        removed = toRemoveIds.length;
+      }
+
+      for (const row of rows) {
+        const id = byNumber.get(row.number);
+        if (id && !toRemoveIds.includes(id)) {
+          await tx.apartment.update({
+            where: { id },
+            data: {
+              entrance: row.entrance,
+              floor: row.floor ?? null,
+              area: row.area,
+            },
+          });
+          updated++;
+        } else {
+          const createdApt = await tx.apartment.create({
+            data: {
+              buildingId: building.id,
+              number: row.number,
+              entrance: row.entrance,
+              floor: row.floor,
+              area: row.area,
+            },
+          });
+          byNumber.set(row.number, createdApt.id);
+          created++;
+        }
+      }
+
+      // Re-link users from residents column (email match). Clear prior links only for
+      // apartments we touch that have explicit residents data.
+      for (const row of rows) {
+        const emails = extractEmailsFromResidentsCell(row.residentsRaw);
+        if (!emails.length) continue;
+        const apartmentId = byNumber.get(row.number);
+        if (!apartmentId) continue;
+
+        const users = await tx.user.findMany({
+          where: { email: { in: emails, mode: 'insensitive' } },
+          select: { id: true, apartmentId: true },
+        });
+        for (const u of users) {
+          await tx.userApartment.upsert({
+            where: {
+              userId_apartmentId: { userId: u.id, apartmentId },
+            },
+            create: {
+              userId: u.id,
+              apartmentId,
+              isPrimary: !u.apartmentId,
+            },
+            update: {},
+          });
+          if (!u.apartmentId) {
+            await tx.user.update({
+              where: { id: u.id },
+              data: { apartmentId },
+            });
+          }
+          linked++;
+        }
+      }
+    });
 
     await this.audit.log({
       userId,
       action: 'building.apartments_import',
       entityType: 'Building',
       entityId: building.id,
-      payload: { created, skipped, errors: errors.length },
+      payload: { created, updated, removed, linked, errors: errors.length, mode: 'replace' },
     });
 
-    return { created, skipped, errors };
+    // Keep `skipped` for older UI clients (always 0 in replace mode).
+    return { created, updated, removed, linked, skipped: 0, errors };
+  }
+
+  /** Hard-remove apartments and dependent finance/links (import replace). */
+  private async purgeApartments(
+    tx: Prisma.TransactionClient,
+    apartmentIds: string[],
+  ) {
+    if (!apartmentIds.length) return;
+
+    const lines = await tx.accrualLine.findMany({
+      where: { apartmentId: { in: apartmentIds } },
+      select: { id: true },
+    });
+    const lineIds = lines.map((l) => l.id);
+    const payments = await tx.payment.findMany({
+      where: { apartmentId: { in: apartmentIds } },
+      select: { id: true },
+    });
+    const paymentIds = payments.map((p) => p.id);
+
+    if (lineIds.length || paymentIds.length) {
+      await tx.paymentAllocation.deleteMany({
+        where: {
+          OR: [
+            ...(lineIds.length ? [{ accrualLineId: { in: lineIds } }] : []),
+            ...(paymentIds.length ? [{ paymentId: { in: paymentIds } }] : []),
+          ],
+        },
+      });
+    }
+
+    if (paymentIds.length) {
+      await tx.onlinePaymentOrder.updateMany({
+        where: { paymentId: { in: paymentIds } },
+        data: { paymentId: null },
+      });
+      await tx.payment.deleteMany({ where: { id: { in: paymentIds } } });
+    }
+    await tx.onlinePaymentOrder.deleteMany({
+      where: { apartmentId: { in: apartmentIds } },
+    });
+    if (lineIds.length) {
+      await tx.accrualLine.deleteMany({ where: { id: { in: lineIds } } });
+    }
+
+    await tx.resident.deleteMany({ where: { apartmentId: { in: apartmentIds } } });
+    await tx.user.updateMany({
+      where: { apartmentId: { in: apartmentIds } },
+      data: { apartmentId: null },
+    });
+    // UserApartment, Meter(+readings), DebtWriteOff cascade; reminders/pollVotes SetNull
+    await tx.apartment.deleteMany({ where: { id: { in: apartmentIds } } });
   }
 
   async updateApartment(id: string, dto: UpdateApartmentDto, userId: string) {
