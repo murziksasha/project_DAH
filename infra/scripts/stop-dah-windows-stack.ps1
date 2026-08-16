@@ -4,12 +4,16 @@
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File infra/scripts/stop-dah-windows-stack.ps1
 #   npm run stop:native:win
+#
+# -ForcePorts also kills orphan listeners and repo-scoped node (API/worker) so
+# prisma can replace query_engine-windows.dll.node without EPERM.
 param(
   [string]$DahRoot = "",
   [int]$WebPort = 0,
   [switch]$SkipMinio,
   [switch]$SkipNginx,
-  [switch]$ForcePorts
+  [switch]$ForcePorts,
+  [switch]$KillRepoNode
 )
 
 $ErrorActionPreference = "Continue"
@@ -17,6 +21,7 @@ $ErrorActionPreference = "Continue"
 if (-not $DahRoot) {
   $DahRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 }
+$DahRoot = (Resolve-Path -LiteralPath $DahRoot).Path
 $LogDir = Join-Path $DahRoot "logs\native-windows"
 $RunDir = Join-Path $DahRoot "logs\native-windows\run"
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
@@ -95,6 +100,77 @@ function Stop-ListenersOnPort([int]$Port, [string]$Label) {
   }
 }
 
+function Stop-RepoNodeProcesses([string]$Root) {
+  # Kill node processes that load this install (API/worker/orphans). Needed because
+  # Start-Process children can survive wrapper death and keep query_engine DLL locked.
+  $rootNorm = $Root.TrimEnd('\', '/')
+  $rootFwd = $rootNorm.Replace('\', '/')
+  $rootBack = $rootNorm.Replace('/', '\')
+  $markers = @(
+    ($rootBack + '\apps\api\dist\src\main.js'),
+    ($rootBack + '\apps\api\dist\src\worker.js'),
+    ($rootFwd + '/apps/api/dist/src/main.js'),
+    ($rootFwd + '/apps/api/dist/src/worker.js'),
+    ($rootBack + '\node_modules\.prisma\'),
+    ($rootFwd + '/node_modules/.prisma/'),
+    ($rootBack + '\apps\api\dist\'),
+    ($rootFwd + '/apps/api/dist/')
+  )
+
+  $killed = 0
+  try {
+    $procs = Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue
+  } catch {
+    $procs = @()
+  }
+  foreach ($proc in $procs) {
+    $cmd = $proc.CommandLine
+    if (-not $cmd) { continue }
+    $hit = $false
+    foreach ($m in $markers) {
+      if ($cmd.IndexOf($m, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+        $hit = $true
+        break
+      }
+    }
+    # Also match nest/tsx running under this root
+    if (-not $hit) {
+      if (
+        ($cmd.IndexOf($rootBack, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+         $cmd.IndexOf($rootFwd, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) -and
+        ($cmd -match '(?i)(nest\.js|nest start|tsx|ts-node|jest)')
+      ) {
+        $hit = $true
+      }
+    }
+    if (-not $hit) { continue }
+    $procId = [int]$proc.ProcessId
+    if ($procId -le 4) { continue }
+    Write-Log "repo-node: killing pid=$procId"
+    & taskkill.exe /PID $procId /T /F 2>$null | Out-Null
+    $killed++
+  }
+  if ($killed -gt 0) {
+    Write-Log "repo-node: killed $killed process(es)"
+    Start-Sleep -Milliseconds 800
+  } else {
+    Write-Log "repo-node: no matching node processes"
+  }
+}
+
+function Clear-PrismaEngineTemps([string]$Root) {
+  $prismaDir = Join-Path $Root "node_modules\.prisma\client"
+  if (-not (Test-Path -LiteralPath $prismaDir)) { return }
+  Get-ChildItem -LiteralPath $prismaDir -Filter "query_engine-windows.dll.node.tmp*" -ErrorAction SilentlyContinue |
+    ForEach-Object {
+      try { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop } catch { }
+    }
+  Get-ChildItem -LiteralPath $prismaDir -Filter "query_engine-windows.dll.node.bak_*" -ErrorAction SilentlyContinue |
+    ForEach-Object {
+      try { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop } catch { }
+    }
+}
+
 if ($WebPort -le 0) {
   $envMap = Get-EnvMap (Join-Path $DahRoot ".env")
   if ($envMap["WEB_PORT"]) {
@@ -141,9 +217,16 @@ if ($ForcePorts) {
   if (-not $SkipNginx) {
     Stop-ListenersOnPort $WebPort "Web"
   }
+  # Always free DLL locks when ForcePorts (update path)
+  Stop-RepoNodeProcesses -Root $DahRoot
+  Clear-PrismaEngineTemps -Root $DahRoot
 } else {
   # Free API/worker ports if orphan (common after crash without pid cleanup)
   Stop-ListenersOnPort 3001 "API"
+  if ($KillRepoNode) {
+    Stop-RepoNodeProcesses -Root $DahRoot
+    Clear-PrismaEngineTemps -Root $DahRoot
+  }
 }
 
 Write-Log "=== stack stop finished ==="

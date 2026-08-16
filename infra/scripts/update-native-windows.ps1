@@ -57,16 +57,77 @@ function Invoke-StopStack {
     return
   }
   & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $stopPs1 `
-    -DahRoot $Root -WebPort $Port -ForcePorts
+    -DahRoot $Root -WebPort $Port -ForcePorts -KillRepoNode
   Start-Sleep -Seconds 2
-  # Drop stale Prisma engine temp files left after failed generate
+}
+
+function Unlock-PrismaQueryEngine {
+  param([string]$Root)
+  # Windows locks query_engine-windows.dll.node while any node still maps it.
+  # Move/delete the file so prisma generate can write a fresh engine.
   $prismaDir = Join-Path $Root "node_modules\.prisma\client"
-  if (Test-Path -LiteralPath $prismaDir) {
-    Get-ChildItem -LiteralPath $prismaDir -Filter "query_engine-windows.dll.node.tmp*" -ErrorAction SilentlyContinue |
-      ForEach-Object {
-        try { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop } catch { }
+  if (-not (Test-Path -LiteralPath $prismaDir)) { return $true }
+
+  Get-ChildItem -LiteralPath $prismaDir -Filter "query_engine-windows.dll.node.tmp*" -ErrorAction SilentlyContinue |
+    ForEach-Object {
+      try { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop } catch { }
+    }
+
+  $engine = Join-Path $prismaDir "query_engine-windows.dll.node"
+  if (-not (Test-Path -LiteralPath $engine)) { return $true }
+
+  for ($i = 1; $i -le 10; $i++) {
+    $bak = Join-Path $prismaDir ("query_engine-windows.dll.node.bak_{0}_{1}" -f $PID, $i)
+    try {
+      Move-Item -LiteralPath $engine -Destination $bak -Force -ErrorAction Stop
+      try { Remove-Item -LiteralPath $bak -Force -ErrorAction SilentlyContinue } catch { }
+      Write-Host "    unlocked prisma query engine (attempt $i)"
+      return $true
+    } catch {
+      try {
+        Remove-Item -LiteralPath $engine -Force -ErrorAction Stop
+        Write-Host "    removed prisma query engine (attempt $i)"
+        return $true
+      } catch {
+        Start-Sleep -Milliseconds (400 * $i)
       }
+    }
   }
+  Write-Host "    WARN: query_engine-windows.dll.node still locked"
+  return $false
+}
+
+function Invoke-PrismaGenerate {
+  param([string]$Root, [int]$Port, [int]$MaxAttempts = 4)
+
+  for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+    Write-Host "    prisma generate attempt $attempt/$MaxAttempts"
+    if (-not $SkipStop) {
+      Invoke-StopStack -Root $Root -Port $Port
+    }
+    $null = Unlock-PrismaQueryEngine -Root $Root
+    Start-Sleep -Seconds 2
+
+    npm run db:generate -w @dah/api
+    if ($LASTEXITCODE -eq 0) {
+      Write-Host "    prisma generate OK"
+      return
+    }
+
+    Write-Host "    prisma generate failed (exit $LASTEXITCODE) - often EPERM while DLL is locked"
+    if ($attempt -lt $MaxAttempts) {
+      Write-Host "    retrying after forced stop + unlock..."
+      Start-Sleep -Seconds (2 * $attempt)
+    }
+  }
+
+  Write-Host "db:generate failed after $MaxAttempts attempts (EPERM on query_engine-windows.dll.node)."
+  Write-Host "  1) Close other terminals/IDEs using $Root"
+  Write-Host "  2) npm run stop:native:win"
+  Write-Host "  3) taskkill /IM node.exe /F   (only if no other Node apps needed)"
+  Write-Host "  4) npm run db:generate -w @dah/api"
+  Write-Host "  5) npm run update:native:win"
+  throw "db:generate failed after $MaxAttempts attempts"
 }
 
 if (-not $DahRoot) {
@@ -250,23 +311,10 @@ if (-not $SkipInstall) {
 
 if (-not $SkipGenerate) {
   Write-Step "prisma generate (db:generate)"
-  npm run db:generate -w @dah/api
-  if ($LASTEXITCODE -ne 0) {
-    Write-Host "    prisma generate failed - often EPERM if node still holds query_engine DLL"
-    Write-Host "    retry after forced stop..."
-    if (-not $SkipStop) {
-      Invoke-StopStack -Root $DahRoot -Port $WebPort
-      Start-Sleep -Seconds 2
-      npm run db:generate -w @dah/api
-    }
-    if ($LASTEXITCODE -ne 0) {
-      throw "db:generate failed (often EPERM on Windows when API/worker still run). 1) npm run stop:native:win  2) Close other node terminals using this repo  3) npm run db:generate -w @dah/api  4) npm run update:native:win"
-    }
-  }
+  Invoke-PrismaGenerate -Root $DahRoot -Port $WebPort -MaxAttempts 4
 } else {
   Write-Step "skip prisma generate"
 }
-
 if (-not $SkipBuild) {
   Write-Step "npm run build"
   npm run build
