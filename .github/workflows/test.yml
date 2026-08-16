@@ -4,7 +4,6 @@ on:
   push:
     branches: [main, master, experemntalBranch]
   pull_request:
-    branches: [main, master, experemntalBranch]
 
 jobs:
   api-unit:
@@ -21,7 +20,7 @@ jobs:
       - run: npm run db:generate -w @dah/api
       - run: npm run test:cov -w @dah/api
 
-  lint-typecheck:
+  typecheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,9 +29,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run build -w @dah/shared
-      - run: npm run build -w @dah/money
-      - run: npx tsc --noEmit -p apps/web/tsconfig.json
+      - run: npm run typecheck
       - run: npm run lint -w @dah/api
         continue-on-error: true
       - run: npm run lint -w @dah/web

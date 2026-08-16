@@ -8,13 +8,38 @@
 | API e2e | Jest + Supertest | auth, payments, communications |
 | Web e2e | Playwright | логін, кабінет мешканця |
 
+## Перед push (рекомендовано)
+
+```bash
+npm run prepush
+# alias: npm run check
+# = typecheck (packages + Prisma generate + api/web tsc) + unit tests (money, api, web)
+```
+
+Окремі кроки:
+
+| Команда | Що робить | БД |
+|---------|-----------|----|
+| `npm run typecheck` | build packages → `db:generate` → `tsc --noEmit` api + web | ні |
+| `npm run test:unit` | unit: `@dah/shared`, `@dah/money`, `@dah/api`, `@dah/web` | ні |
+| `npm run check` / `prepush` | typecheck + test:unit | ні |
+| `npm run test` | лише API unit (Jest) | ні |
+| `npm run test:e2e` | API e2e | так (`dah_test`) |
+| `npm run test:e2e:web` | Playwright | так + running app |
+| `npm run lint` | ESLint / next lint (може бути не сконфігуровано локально) | ні |
+
 ## Швидкий старт
 
 ```bash
 npm install
 npm run db:generate -w @dah/api   # required before unit/e2e (Prisma Client)
 
+# Перед push (typecheck + unit, без БД)
+npm run prepush
+
 # Unit-тести (без БД)
+npm run test:unit
+# або лише API:
 npm run test -w @dah/api
 
 # Покриття
@@ -56,7 +81,7 @@ GitHub Actions (`.github/workflows/test.yml`):
 - `api-unit` — `prisma generate` + unit + coverage
 - `api-e2e` — create `dah_test`, migrate, Jest e2e
 - `web-e2e` — migrate + seed on `dah`, Playwright smoke
-- `lint-typecheck` — web `tsc` + lint (non-blocking)
+- `typecheck` — `npm run typecheck` + lint (lint still non-blocking)
 
 ## Критична логіка (пріоритет покриття)
 

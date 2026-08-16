@@ -6,6 +6,7 @@
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start -p 3000",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "next lint",
     "test": "npx --yes tsx --test src/lib/nav-config.spec.ts src/lib/instructions-content.spec.ts",
     "test:e2e": "playwright test",
