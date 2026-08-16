@@ -812,9 +812,12 @@ const DICT = {
     orgResidentLinked: 'Мешканця привʼязано до квартири',
     orgResidentUnlinked: 'Мешканця відвʼязано',
     orgUnlinkConfirm: 'Відвʼязати мешканця від цієї квартири?',
-    orgImportResult: 'Імпорт: додано {created}, пропущено {skipped}',
+    orgImportResult:
+      'Імпорт (повна заміна): додано {created}, оновлено {updated}, видалено {removed}',
     orgImportErrors: ', помилок рядків: {count}',
     orgImportError: 'Помилка імпорту',
+    orgImportConfirm:
+      'CSV повністю замінить список квартир: відсутні в файлі будуть видалені (разом із нарахуваннями/платежами цих квартир). Продовжити?',
     orgUserSearchPh: 'Пошук (імʼя, email, телефон)…',
     orgUsersNotFound: 'Користувачів не знайдено',
     orgUsersPage: 'Сторінка {page} з {pages} ({total} користувачів)',
@@ -857,7 +860,7 @@ const DICT = {
     orgRolesDeleted: 'Роль видалено з каталогу',
     orgAptsCount: 'Квартири ({count})',
     orgCsvImportHint:
-      'Імпорт CSV: number,entrance,floor,area (рядок заголовка опційний)',
+      'Імпорт CSV повністю замінює реєстр: number,entrance,floor,area[,мешканці]. Квартир немає в файлі — видаляються. Заголовок опційний.',
     orgLinkedAccounts: 'Привʼязані облікові записи',
     orgNoLinkedResidents: 'Немає привʼязаних мешканців',
     orgSelectResident: 'Оберіть мешканця…',
@@ -910,7 +913,7 @@ const DICT = {
     tenantsDesc:
       'ОСББ або управляючі компанії (УК) на одному інстансі «Мій дім». Multi-tenant + multi-building.',
     tenantsDisableHint:
-      'Вимкнення організації одразу блокує login, refresh і поточні сесії користувачів (голова, правління, мешканці). Super-admin лишається з доступом. Увімкнення — лише після нового входу користувачів.',
+      'Вимкнення блокує login/refresh і сесії користувачів (голова, правління, мешканці). Super-admin лишається з доступом. Щоб прибрати тестову порожню організацію: Вимкнути → Видалити (лише без фінансових рухів).',
     tenantInactiveLogin:
       'Організацію вимкнено системним адміністратором. Доступ до кабінету закрито.',
     orgTypeOsbb: 'ОСББ',
@@ -936,6 +939,17 @@ const DICT = {
     tenantsSelected: 'Обрано',
     tenantsDisable: 'Вимкнути',
     tenantsEnable: 'Увімкнути',
+    tenantsDelete: 'Видалити',
+    tenantsDeleteTitle: 'Видалити організацію',
+    tenantsDeleteHint:
+      'Видалення доступне лише для вимкненої організації без фінансових рухів. Квартири/структура не блокують.',
+    tenantsDeleteConfirmSlug: 'Введіть slug для підтвердження',
+    tenantsDeleteAck: 'Розумію: дані організації буде знищено безвідклично',
+    tenantsDeleteBlocked: 'Видалити не можна',
+    tenantsDeleteBlockedActive: 'Спочатку вимкніть організацію',
+    tenantsDeleted: 'Організацію «{name}» видалено',
+    tenantsDeleteSummary:
+      'Будинки: {buildings}, квартири: {apartments}, користувачі: {users}',
     tenantsActiveOrg: 'Активна організація:',
     tenantsReset: 'Скинути',
     tenantsCreatedOsbb: 'ОСББ створено',
@@ -2106,9 +2120,12 @@ const DICT = {
     orgResidentLinked: 'Жилец привязан к квартире',
     orgResidentUnlinked: 'Жилец отвязан',
     orgUnlinkConfirm: 'Отвязать жильца от этой квартиры?',
-    orgImportResult: 'Импорт: добавлено {created}, пропущено {skipped}',
+    orgImportResult:
+      'Импорт (полная замена): добавлено {created}, обновлено {updated}, удалено {removed}',
     orgImportErrors: ', ошибок строк: {count}',
     orgImportError: 'Ошибка импорта',
+    orgImportConfirm:
+      'CSV полностью заменит список квартир: отсутствующие в файле будут удалены (вместе с начислениями/платежами этих квартир). Продолжить?',
     orgUserSearchPh: 'Поиск (имя, email, телефон)…',
     orgUsersNotFound: 'Пользователи не найдены',
     orgUsersPage: 'Страница {page} из {pages} ({total} пользователей)',
@@ -2151,7 +2168,7 @@ const DICT = {
     orgRolesDeleted: 'Роль удалена из каталога',
     orgAptsCount: 'Квартиры ({count})',
     orgCsvImportHint:
-      'Импорт CSV: number,entrance,floor,area (строка заголовка необязательна)',
+      'Импорт CSV полностью заменяет реестр: number,entrance,floor,area[,жильцы]. Квартир нет в файле — удаляются. Заголовок необязателен.',
     orgLinkedAccounts: 'Привязанные учётные записи',
     orgNoLinkedResidents: 'Нет привязанных жильцов',
     orgSelectResident: 'Выберите жильца…',
@@ -2201,7 +2218,7 @@ const DICT = {
     tenantsDesc:
       'ОСББ или управляющие компании (УК) на одном инстансе «Мій дім». Multi-tenant + multi-building.',
     tenantsDisableHint:
-      'Отключение организации сразу блокирует login, refresh и текущие сессии пользователей (председатель, правление, жильцы). Super-admin остаётся с доступом. Включение — только после нового входа пользователей.',
+      'Отключение блокирует login/refresh и сессии пользователей (председатель, правление, жильцы). Super-admin остаётся с доступом. Чтобы убрать тестовую пустую организацию: Выключить → Удалить (только без финансовых движений).',
     tenantInactiveLogin:
       'Организация отключена системным администратором. Доступ в кабинет закрыт.',
     orgTypeOsbb: 'ОСББ',
@@ -2227,6 +2244,17 @@ const DICT = {
     tenantsSelected: 'Выбрано',
     tenantsDisable: 'Выключить',
     tenantsEnable: 'Включить',
+    tenantsDelete: 'Удалить',
+    tenantsDeleteTitle: 'Удалить организацию',
+    tenantsDeleteHint:
+      'Удаление доступно только для выключенной организации без финансовых движений. Квартиры/структура не блокируют.',
+    tenantsDeleteConfirmSlug: 'Введите slug для подтверждения',
+    tenantsDeleteAck: 'Понимаю: данные организации будут уничтожены безвозвратно',
+    tenantsDeleteBlocked: 'Удалить нельзя',
+    tenantsDeleteBlockedActive: 'Сначала выключите организацию',
+    tenantsDeleted: 'Организация «{name}» удалена',
+    tenantsDeleteSummary:
+      'Дома: {buildings}, квартиры: {apartments}, пользователи: {users}',
     tenantsActiveOrg: 'Активная организация:',
     tenantsReset: 'Сбросить',
     tenantsCreatedOsbb: 'ОСББ создано',
