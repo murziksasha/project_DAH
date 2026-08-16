@@ -500,12 +500,13 @@ cd C:\miy_dim
 # 1) оновіть код вручну (git pull / copy / rsync)
 git pull   # або інший спосіб
 
-# 2) stop → install → generate → build → migrate → start
+# 2) update (всередині: stop → dump → install → generate → build → migrate → start)
 npm run update:native:win
 # = infra/scripts/update-native-windows.ps1
+# stop вбудований на початку (ForcePorts + KillRepoNode); окремий stop:native:win не потрібен
 # pre-update dump: backups\pre-update\ (якщо є pg_dump)
 # git pull у скрипті НЕ викликається
-# стек зупиняється ДО prisma generate (інакше EPERM на .dll.node)
+# якщо stop: Access denied — PowerShell as Admin → stop → update
 ```
 
 Або: `npx dah-native update` / `npm run update:native` на Windows також викликає **той самий** `.ps1`.

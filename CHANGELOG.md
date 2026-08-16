@@ -111,10 +111,11 @@
 - Security link respects resident vs staff (`/resident/security` vs `/admin/security`)
 
 ### Native Windows host ops (KeenDNS-ready)
-- `npm run update:native:win` — install → generate → build → migrate → restart (`update-native-windows.ps1`)
+- `npm run update:native:win` — **stop →** dump → install → generate → build → migrate → start (`update-native-windows.ps1`)
 - **No git pull** in Windows update script (operator updates tree manually)
 - Fix: pre-update dump no longer assigns `$host` (PowerShell read-only automatic variable → `$pgHost`)
-- Fix: stop stack **before** `prisma generate` (Windows EPERM on `query_engine-windows.dll.node`)
+- Fix: stop stack **first** (before dump/generate); fail if API:3001 still held / Access denied
+- `stop:native:win` defaults to `-ForcePorts -KillRepoNode`; reports Access denied instead of silent no-op
 - `stop:native:win` / `restart:native:win` / `status:native:win` / `smoke:native:win`
 - `npx dah-native update` on win32 → PowerShell update (not bash/`systemctl`)
 - `backup.ps1` native fallback: `pg_dump` + optional `mc`; `npm run backup:native` / `backup:win`
