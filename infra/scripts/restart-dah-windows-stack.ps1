@@ -21,7 +21,11 @@ if ($WebPort -gt 0) {
   $startArgs.WebPort = $WebPort
 }
 
-& $stopPs1 @stopArgs
+& $stopPs1 @stopArgs -ForcePorts -KillRepoNode
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "stop failed (exit $LASTEXITCODE) - not starting"
+  exit $LASTEXITCODE
+}
 Start-Sleep -Seconds 2
 & $startPs1 @startArgs
 exit $LASTEXITCODE

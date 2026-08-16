@@ -151,7 +151,10 @@ function Start-DetachedNodeApp {
   $wdEsc = $WorkDir.Replace("'", "''")
   $outEsc = $outLog.Replace("'", "''")
   $errEsc = $errLog.Replace("'", "''")
+  $pidEsc = $pidFile.Replace("'", "''")
 
+  # Start node without -Wait so we can record the *node* PID (not only the PS wrapper).
+  # Stop scripts kill that PID with /T; wrapper Wait-Process exits when node exits.
   $launcherBody = @"
 `$ErrorActionPreference = 'Continue'
 `$logOut = '$outEsc'
@@ -160,6 +163,7 @@ function Start-DetachedNodeApp {
 `$workDir = '$wdEsc'
 `$nodeExe = '$nodeEsc'
 `$entryJs = '$jsEsc'
+`$pidFile = '$pidEsc'
 try {
   if (-not (Test-Path -LiteralPath `$envFile)) { throw "missing env: `$envFile" }
   if (-not (Test-Path -LiteralPath `$entryJs)) { throw "missing entry: `$entryJs" }
@@ -177,9 +181,16 @@ try {
   }
   if (-not `$env:NODE_ENV) { `$env:NODE_ENV = 'production' }
   Set-Location -LiteralPath `$workDir
-  # -Wait keeps wrapper alive for Task Scheduler; logs append without outer file locks
-  `$p = Start-Process -FilePath `$nodeExe -ArgumentList @(`$entryJs) -WorkingDirectory `$workDir -NoNewWindow -Wait -PassThru -RedirectStandardOutput `$logOut -RedirectStandardError `$logErr
-  exit `$p.ExitCode
+  `$p = Start-Process -FilePath `$nodeExe -ArgumentList @(`$entryJs) -WorkingDirectory `$workDir -NoNewWindow -PassThru -RedirectStandardOutput `$logOut -RedirectStandardError `$logErr
+  if (-not `$p) { throw 'Start-Process node returned null' }
+  Set-Content -LiteralPath `$pidFile -Value `$p.Id -Encoding ascii
+  try {
+    Wait-Process -Id `$p.Id -ErrorAction Stop
+  } catch {
+    # process already exited
+  }
+  if (`$null -ne `$p.ExitCode) { exit `$p.ExitCode }
+  exit 0
 } catch {
   Add-Content -LiteralPath `$logErr -Value (`$_.Exception.Message) -Encoding UTF8
   exit 1
@@ -198,8 +209,26 @@ try {
     -WindowStyle Hidden `
     -PassThru
 
+  # Temporary wrapper PID until launcher overwrites with node PID
   Set-Content -LiteralPath $pidFile -Value $p.Id -Encoding ascii
   Write-Log "Started $Name wrapper pid=$($p.Id) (logs: $Name.*.log)"
+
+  # Wait briefly for launcher to publish the real node PID
+  $deadline = (Get-Date).AddSeconds(8)
+  while ((Get-Date) -lt $deadline) {
+    Start-Sleep -Milliseconds 200
+    $raw = (Get-Content -LiteralPath $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1)
+    $nid = 0
+    if ($raw -and [int]::TryParse($raw.Trim(), [ref]$nid) -and $nid -ne $p.Id) {
+      try {
+        $np = Get-Process -Id $nid -ErrorAction Stop
+        if ($np.ProcessName -match '^(node|nodejs)$') {
+          Write-Log "Started $Name node pid=$nid"
+          break
+        }
+      } catch { }
+    }
+  }
 }
 
 # --- main ---

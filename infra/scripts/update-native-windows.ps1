@@ -1,11 +1,12 @@
 # One-shot update on Windows native host (no Docker, no systemd):
-#   stop stack -> install -> prisma generate -> build -> migrate -> start stack
+#   stop stack -> pre-dump -> install -> prisma generate -> build -> migrate -> start
 #
 # Does NOT run git pull - update the tree yourself first (git pull / copy / rsync),
 # then: npm run update:native:win
 #
-# Stack is stopped BEFORE generate/build so Windows can replace
+# Stop is automatic (first step): ForcePorts + KillRepoNode so Windows can replace
 # node_modules\.prisma\client\query_engine-windows.dll.node (avoids EPERM rename).
+# If stop fails (Access denied / API:3001 still up), update aborts with Admin hints.
 #
 # Usage (from repo root):
 #   npm run update:native:win
@@ -50,23 +51,111 @@ if (EnvFlag "SKIP_STOP") { $SkipStop = $true }
 $stopPs1 = Join-Path $PSScriptRoot "stop-dah-windows-stack.ps1"
 $startPs1 = Join-Path $PSScriptRoot "start-dah-windows-stack.ps1"
 
+function Test-ApiPortFree {
+  try {
+    $conns = Get-NetTCPConnection -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue
+    if (-not $conns) { return $true }
+    $ids = @($conns | Select-Object -ExpandProperty OwningProcess -Unique | Where-Object { $_ -gt 4 })
+    return ($ids.Count -eq 0)
+  } catch {
+    return $true
+  }
+}
+
 function Invoke-StopStack {
-  param([string]$Root, [int]$Port)
+  param([string]$Root, [int]$Port, [switch]$Required)
   if (-not (Test-Path -LiteralPath $stopPs1)) {
+    if ($Required) { throw "Missing stop script $stopPs1" }
     Write-Host "    WARN: missing stop script $stopPs1"
     return
   }
+  # Always force ports + repo node so prisma can replace query_engine DLL
   & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $stopPs1 `
-    -DahRoot $Root -WebPort $Port -ForcePorts
+    -DahRoot $Root -WebPort $Port -ForcePorts -KillRepoNode
+  $stopCode = $LASTEXITCODE
   Start-Sleep -Seconds 2
-  # Drop stale Prisma engine temp files left after failed generate
-  $prismaDir = Join-Path $Root "node_modules\.prisma\client"
-  if (Test-Path -LiteralPath $prismaDir) {
-    Get-ChildItem -LiteralPath $prismaDir -Filter "query_engine-windows.dll.node.tmp*" -ErrorAction SilentlyContinue |
-      ForEach-Object {
-        try { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop } catch { }
-      }
+  if ($stopCode -ne 0) {
+    throw @"
+stop stack failed (exit $stopCode) - API/worker still running (often Access denied if stack was started as Admin).
+  1) Open PowerShell as Administrator
+  2) cd $Root
+  3) npm run stop:native:win
+  4) If still: taskkill /IM node.exe /F
+  5) npm run update:native:win
+"@
   }
+  if ($Required -and -not (Test-ApiPortFree)) {
+    throw "API port 3001 still listening after stop - free it (Admin if Access denied), then retry update"
+  }
+}
+
+function Unlock-PrismaQueryEngine {
+  param([string]$Root)
+  # Windows locks query_engine-windows.dll.node while any node still maps it.
+  # Move/delete the file so prisma generate can write a fresh engine.
+  $prismaDir = Join-Path $Root "node_modules\.prisma\client"
+  if (-not (Test-Path -LiteralPath $prismaDir)) { return $true }
+
+  Get-ChildItem -LiteralPath $prismaDir -Filter "query_engine-windows.dll.node.tmp*" -ErrorAction SilentlyContinue |
+    ForEach-Object {
+      try { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop } catch { }
+    }
+
+  $engine = Join-Path $prismaDir "query_engine-windows.dll.node"
+  if (-not (Test-Path -LiteralPath $engine)) { return $true }
+
+  for ($i = 1; $i -le 10; $i++) {
+    $bak = Join-Path $prismaDir ("query_engine-windows.dll.node.bak_{0}_{1}" -f $PID, $i)
+    try {
+      Move-Item -LiteralPath $engine -Destination $bak -Force -ErrorAction Stop
+      try { Remove-Item -LiteralPath $bak -Force -ErrorAction SilentlyContinue } catch { }
+      Write-Host "    unlocked prisma query engine (attempt $i)"
+      return $true
+    } catch {
+      try {
+        Remove-Item -LiteralPath $engine -Force -ErrorAction Stop
+        Write-Host "    removed prisma query engine (attempt $i)"
+        return $true
+      } catch {
+        Start-Sleep -Milliseconds (400 * $i)
+      }
+    }
+  }
+  Write-Host "    WARN: query_engine-windows.dll.node still locked"
+  return $false
+}
+
+function Invoke-PrismaGenerate {
+  param([string]$Root, [int]$Port, [int]$MaxAttempts = 4)
+
+  for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+    Write-Host "    prisma generate attempt $attempt/$MaxAttempts"
+    if (-not $SkipStop) {
+      Invoke-StopStack -Root $Root -Port $Port -Required:($attempt -eq 1)
+    }
+    $null = Unlock-PrismaQueryEngine -Root $Root
+    Start-Sleep -Seconds 2
+
+    npm run db:generate -w @dah/api
+    if ($LASTEXITCODE -eq 0) {
+      Write-Host "    prisma generate OK"
+      return
+    }
+
+    Write-Host "    prisma generate failed (exit $LASTEXITCODE) - often EPERM while DLL is locked"
+    if ($attempt -lt $MaxAttempts) {
+      Write-Host "    retrying after forced stop + unlock..."
+      Start-Sleep -Seconds (2 * $attempt)
+    }
+  }
+
+  Write-Host "db:generate failed after $MaxAttempts attempts (EPERM on query_engine-windows.dll.node)."
+  Write-Host "  1) Close other terminals/IDEs using $Root"
+  Write-Host "  2) Open Admin PowerShell if Access denied: npm run stop:native:win"
+  Write-Host "  3) taskkill /IM node.exe /F   (only if no other Node apps needed)"
+  Write-Host "  4) npm run db:generate -w @dah/api"
+  Write-Host "  5) npm run update:native:win"
+  throw "db:generate failed after $MaxAttempts attempts"
 }
 
 if (-not $DahRoot) {
@@ -223,21 +312,22 @@ try {
   }
 } catch { }
 
+Write-Step "git pull skipped (update code manually before this script)"
+
+# FIRST: stop stack so Windows can replace query_engine-windows.dll.node (avoids EPERM).
+# Built into update — no separate npm run stop:native:win needed (unless Access denied).
+if (-not $SkipRestart -and -not $SkipStop) {
+  Write-Step "stop stack (automatic, before dump/install/generate)"
+  Invoke-StopStack -Root $DahRoot -Port $WebPort -Required
+} elseif ($SkipStop) {
+  Write-Step "skip early stop (EPERM on prisma generate is likely if API is running)"
+}
+
 if (-not $SkipPreBackup) {
   Write-Step "pre-update database dump"
   Invoke-PreUpdateDump -EnvMap $envMap -Root $DahRoot
 } else {
   Write-Step "skip pre-update dump"
-}
-
-Write-Step "git pull skipped (update code manually before this script)"
-
-# Stop API/worker (and free ports) so prisma can replace query_engine-windows.dll.node
-if (-not $SkipRestart -and -not $SkipStop) {
-  Write-Step "stop stack (required before prisma generate on Windows)"
-  Invoke-StopStack -Root $DahRoot -Port $WebPort
-} elseif ($SkipStop) {
-  Write-Step "skip early stop (EPERM on prisma generate is likely if API is running)"
 }
 
 if (-not $SkipInstall) {
@@ -250,23 +340,10 @@ if (-not $SkipInstall) {
 
 if (-not $SkipGenerate) {
   Write-Step "prisma generate (db:generate)"
-  npm run db:generate -w @dah/api
-  if ($LASTEXITCODE -ne 0) {
-    Write-Host "    prisma generate failed - often EPERM if node still holds query_engine DLL"
-    Write-Host "    retry after forced stop..."
-    if (-not $SkipStop) {
-      Invoke-StopStack -Root $DahRoot -Port $WebPort
-      Start-Sleep -Seconds 2
-      npm run db:generate -w @dah/api
-    }
-    if ($LASTEXITCODE -ne 0) {
-      throw "db:generate failed (often EPERM on Windows when API/worker still run). 1) npm run stop:native:win  2) Close other node terminals using this repo  3) npm run db:generate -w @dah/api  4) npm run update:native:win"
-    }
-  }
+  Invoke-PrismaGenerate -Root $DahRoot -Port $WebPort -MaxAttempts 4
 } else {
   Write-Step "skip prisma generate"
 }
-
 if (-not $SkipBuild) {
   Write-Step "npm run build"
   npm run build

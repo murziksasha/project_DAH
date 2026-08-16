@@ -79,9 +79,9 @@ JWT_SECRET=test-jwt-secret-for-e2e-only
 
 GitHub Actions (`.github/workflows/test.yml`):
 - `api-unit` — `prisma generate` + unit + coverage
-- `api-e2e` — create `dah_test`, migrate, Jest e2e
-- `web-e2e` — migrate + seed on `dah`, Playwright smoke
 - `typecheck` — `npm run typecheck` + lint (lint still non-blocking)
+
+API/web e2e run locally only (`npm run test:e2e`, `npm run test:e2e:web`) — not in CI.
 
 ## Критична логіка (пріоритет покриття)
 

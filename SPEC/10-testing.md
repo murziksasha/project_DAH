@@ -69,8 +69,9 @@ npm run test:e2e -w @dah/web
 
 `.github/workflows/test.yml`:
 - `api-unit` — Jest + coverage
-- `api-e2e` — PostgreSQL service + dah_test
-- `web-e2e` — build + Playwright smoke
+- `typecheck` — monorepo typecheck + lint (non-blocking)
+
+API/web e2e — local only (`test:e2e` / `test:e2e:web`), not in GitHub Actions.
 
 ## Покриття (орієнтир)
 
