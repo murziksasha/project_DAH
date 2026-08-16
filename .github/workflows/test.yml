@@ -108,7 +108,26 @@ jobs:
       - run: npx playwright install --with-deps chromium
         working-directory: apps/web
       - run: npm run build -w @dah/api
-      - run: npm run start -w @dah/api &
-      - run: npm run build -w @dah/web && npm run start -w @dah/web &
-      - run: npx wait-on http://localhost:3001/api/health http://localhost:3000
-      - run: npm run test:e2e -w @dah/web
+      - run: npm run build -w @dah/web
+      # Background servers must share the same step as wait-on + tests:
+      # GHA kills processes when a step shell exits, so start/wait cannot be split.
+      - name: Start API/web and run Playwright e2e
+        run: |
+          set -euo pipefail
+          npm run start -w @dah/api > /tmp/api-e2e.log 2>&1 &
+          API_PID=$!
+          npm run start -w @dah/web > /tmp/web-e2e.log 2>&1 &
+          WEB_PID=$!
+          cleanup() {
+            kill "$API_PID" "$WEB_PID" 2>/dev/null || true
+            wait "$API_PID" "$WEB_PID" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          if ! npx --yes wait-on http://localhost:3001/api/health http://localhost:3000 --timeout 120000; then
+            echo '=== API log ==='
+            cat /tmp/api-e2e.log || true
+            echo '=== Web log ==='
+            cat /tmp/web-e2e.log || true
+            exit 1
+          fi
+          npm run test:e2e -w @dah/web
