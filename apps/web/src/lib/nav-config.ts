@@ -127,6 +127,13 @@ export function getNavGroups(role: string, isInitialized = true): NavGroup[] {
         { href: '/admin/accruals', label: 'Нарахування', icon: 'calc' },
         { href: '/admin/accruals/list', label: 'Історія нарахувань', icon: 'history' },
         { href: '/admin/payments', label: 'Платежі', icon: 'card' },
+        { href: '/admin/periods', label: 'Облікові періоди', icon: 'history' },
+        { href: '/admin/budget', label: 'Бюджет', icon: 'chart' },
+        { href: '/admin/transfers', label: 'Перекази фондів', icon: 'bank' },
+        { href: '/admin/journal', label: 'Журнал / ОСВ', icon: 'list' },
+        { href: '/admin/ar', label: 'Дебіторка (AR)', icon: 'calc' },
+        { href: '/admin/ap', label: 'Кредиторка (AP)', icon: 'wallet' },
+        { href: '/admin/bank-rec', label: 'Звірка банку', icon: 'bank' },
         { href: '/admin/meters', label: 'Лічильники', icon: 'gauge' },
       );
     } else {

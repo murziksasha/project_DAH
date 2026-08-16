@@ -63,13 +63,21 @@ function Get-EnvMap([string]$EnvPath) {
 function Test-PidAlive([string]$PidFile) {
   if (-not (Test-Path -LiteralPath $PidFile)) { return $false }
   $raw = (Get-Content -LiteralPath $PidFile -ErrorAction SilentlyContinue | Select-Object -First 1)
-  if (-not $raw) { return $false }
+  if (-not $raw) {
+    Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue
+    return $false
+  }
   $procId = 0
-  if (-not [int]::TryParse($raw.Trim(), [ref]$procId)) { return $false }
+  if (-not [int]::TryParse($raw.Trim(), [ref]$procId)) {
+    Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue
+    return $false
+  }
   try {
     $null = Get-Process -Id $procId -ErrorAction Stop
     return $true
   } catch {
+    # Stale pid file after crash/kill — clear so start can relaunch
+    Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue
     return $false
   }
 }
@@ -88,19 +96,21 @@ function Start-DetachedPowerShell {
   $outLog = Join-Path $LogDir "$Name.out.log"
   $errLog = Join-Path $LogDir "$Name.err.log"
   $launcher = Join-Path $RunDir "launch-$Name.ps1"
-  # Launcher keeps process tree alive and appends a started marker
+  # Do NOT RedirectStandard* on outer Start-Process — that locks the same log files
+  # the child also writes to (api.err.log "being used by another process").
   $launcherBody = @"
 `$ErrorActionPreference = 'Continue'
 `$logOut = '$($outLog.Replace("'", "''"))'
 `$logErr = '$($errLog.Replace("'", "''"))'
 try {
-  $CommandText
+  $CommandText 1>> `$logOut 2>> `$logErr
 } catch {
   Add-Content -LiteralPath `$logErr -Value `$_.Exception.Message -Encoding UTF8
   exit 1
 }
 "@
-  Set-Content -LiteralPath $launcher -Value $launcherBody -Encoding UTF8
+  $enc = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllText($launcher, $launcherBody, $enc)
 
   $p = Start-Process -FilePath "powershell.exe" `
     -ArgumentList @(
@@ -110,8 +120,82 @@ try {
     ) `
     -WorkingDirectory $DahRoot `
     -WindowStyle Hidden `
-    -RedirectStandardOutput $outLog `
-    -RedirectStandardError $errLog `
+    -PassThru
+
+  Set-Content -LiteralPath $pidFile -Value $p.Id -Encoding ascii
+  Write-Log "Started $Name wrapper pid=$($p.Id) (logs: $Name.*.log)"
+}
+
+# Start node app with .env loaded in-process (avoids run-with-env.ps1 + "--" PS 5.1 bugs)
+function Start-DetachedNodeApp {
+  param(
+    [string]$Name,
+    [string]$NodeExe,
+    [string]$EntryJs,
+    [string]$EnvFilePath,
+    [string]$WorkDir
+  )
+  $pidFile = Join-Path $RunDir "$Name.pid"
+  if (Test-PidAlive $pidFile) {
+    Write-Log "$Name already running (pid file)"
+    return
+  }
+
+  $outLog = Join-Path $LogDir "$Name.out.log"
+  $errLog = Join-Path $LogDir "$Name.err.log"
+  $launcher = Join-Path $RunDir "launch-$Name.ps1"
+
+  $nodeEsc = $NodeExe.Replace("'", "''")
+  $jsEsc = $EntryJs.Replace("'", "''")
+  $envEsc = $EnvFilePath.Replace("'", "''")
+  $wdEsc = $WorkDir.Replace("'", "''")
+  $outEsc = $outLog.Replace("'", "''")
+  $errEsc = $errLog.Replace("'", "''")
+
+  $launcherBody = @"
+`$ErrorActionPreference = 'Continue'
+`$logOut = '$outEsc'
+`$logErr = '$errEsc'
+`$envFile = '$envEsc'
+`$workDir = '$wdEsc'
+`$nodeExe = '$nodeEsc'
+`$entryJs = '$jsEsc'
+try {
+  if (-not (Test-Path -LiteralPath `$envFile)) { throw "missing env: `$envFile" }
+  if (-not (Test-Path -LiteralPath `$entryJs)) { throw "missing entry: `$entryJs" }
+  Get-Content -LiteralPath `$envFile -Encoding UTF8 | ForEach-Object {
+    `$line = `$_.Trim()
+    if (`$line -eq '' -or `$line.StartsWith('#')) { return }
+    `$eq = `$line.IndexOf('=')
+    if (`$eq -lt 1) { return }
+    `$name = `$line.Substring(0, `$eq).Trim()
+    `$val = `$line.Substring(`$eq + 1).Trim()
+    if ((`$val.StartsWith('"') -and `$val.EndsWith('"')) -or (`$val.StartsWith("'") -and `$val.EndsWith("'"))) {
+      `$val = `$val.Substring(1, `$val.Length - 2)
+    }
+    [System.Environment]::SetEnvironmentVariable(`$name, `$val, 'Process')
+  }
+  if (-not `$env:NODE_ENV) { `$env:NODE_ENV = 'production' }
+  Set-Location -LiteralPath `$workDir
+  # -Wait keeps wrapper alive for Task Scheduler; logs append without outer file locks
+  `$p = Start-Process -FilePath `$nodeExe -ArgumentList @(`$entryJs) -WorkingDirectory `$workDir -NoNewWindow -Wait -PassThru -RedirectStandardOutput `$logOut -RedirectStandardError `$logErr
+  exit `$p.ExitCode
+} catch {
+  Add-Content -LiteralPath `$logErr -Value (`$_.Exception.Message) -Encoding UTF8
+  exit 1
+}
+"@
+  $enc = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllText($launcher, $launcherBody, $enc)
+
+  $p = Start-Process -FilePath "powershell.exe" `
+    -ArgumentList @(
+      "-NoProfile",
+      "-ExecutionPolicy", "Bypass",
+      "-File", $launcher
+    ) `
+    -WorkingDirectory $WorkDir `
+    -WindowStyle Hidden `
     -PassThru
 
   Set-Content -LiteralPath $pidFile -Value $p.Id -Encoding ascii
@@ -147,7 +231,6 @@ if (-not $node) {
 
 $apiMain = Join-Path $DahRoot "apps\api\dist\src\main.js"
 $workerMain = Join-Path $DahRoot "apps\api\dist\src\worker.js"
-$runWithEnv = Join-Path $PSScriptRoot "run-with-env.ps1"
 
 if (-not (Test-Path -LiteralPath $apiMain)) {
   Write-Log "ERROR: API not built ($apiMain). Run: npm run build"
@@ -189,7 +272,7 @@ if (-not $SkipMinio) {
   if (Test-PortOpen "127.0.0.1" 9000) {
     Write-Log "MinIO already listening on :9000"
   } elseif (-not $MinioExe -or -not (Test-Path -LiteralPath $MinioExe)) {
-    Write-Log "WARNING: minio.exe not found — skip. Put tools\minio.exe or re-run install with -DownloadMinio"
+    Write-Log "WARNING: minio.exe not found - skip. Put tools\minio.exe or re-run install with -DownloadMinio"
   } else {
     $access = $envMap["S3_ACCESS_KEY"]
     if (-not $access) { $access = $envMap["MINIO_ROOT_USER"] }
@@ -215,30 +298,32 @@ if (-not $SkipMinio) {
       Start-Sleep -Seconds 1
     }
     if (Test-PortOpen "127.0.0.1" 9000) { Write-Log "MinIO is up on :9000" }
-    else { Write-Log "WARNING: MinIO :9000 not open — see logs\minio.err.log" }
+    else { Write-Log "WARNING: MinIO :9000 not open - see logs\minio.err.log" }
   }
 }
 
-# API (load .env via run-with-env.ps1)
+# API — direct node + .env (no nested run-with-env; PS 5.1 "--" broke remaining args)
 if (Test-PortOpen "127.0.0.1" 3001) {
   Write-Log "API already listening on :3001"
 } else {
-  $runEsc = $runWithEnv.Replace("'", "''")
-  $rootEsc = $DahRoot.Replace("'", "''")
-  $nodeEsc = $node.Replace("'", "''")
-  $apiEsc = $apiMain.Replace("'", "''")
-  $cmd = @"
-& '$runEsc' -DahRoot '$rootEsc' -- '$nodeEsc' '$apiEsc'
-"@
-  Start-DetachedPowerShell -Name "api" -CommandText $cmd
+  Remove-Item (Join-Path $RunDir "api.pid") -ErrorAction SilentlyContinue
+  Start-DetachedNodeApp -Name "api" -NodeExe $node -EntryJs $apiMain -EnvFilePath $envPath -WorkDir $DahRoot
 
-  $aDeadline = (Get-Date).AddSeconds(60)
+  $aDeadline = (Get-Date).AddSeconds(90)
   while ((Get-Date) -lt $aDeadline) {
     if (Test-PortOpen "127.0.0.1" 3001) { break }
     Start-Sleep -Seconds 1
   }
-  if (Test-PortOpen "127.0.0.1" 3001) { Write-Log "API is up on :3001" }
-  else { Write-Log "WARNING: API :3001 not open — see logs\api.err.log" }
+  if (Test-PortOpen "127.0.0.1" 3001) {
+    Write-Log "API is up on :3001"
+  } else {
+    Write-Log "WARNING: API :3001 not open - see logs\api.err.log / api.out.log"
+    $errTail = Join-Path $LogDir "api.err.log"
+    if (Test-Path -LiteralPath $errTail) {
+      $lines = Get-Content -LiteralPath $errTail -Tail 15 -ErrorAction SilentlyContinue
+      if ($lines) { Write-Log "api.err.log tail: $($lines -join ' | ')" }
+    }
+  }
 }
 
 # Worker
@@ -250,14 +335,7 @@ if (-not $SkipWorker) {
     if (Test-PidAlive $wPid) {
       Write-Log "Worker already running"
     } else {
-      $runEsc = $runWithEnv.Replace("'", "''")
-      $rootEsc = $DahRoot.Replace("'", "''")
-      $nodeEsc = $node.Replace("'", "''")
-      $wEsc = $workerMain.Replace("'", "''")
-      $cmd = @"
-& '$runEsc' -DahRoot '$rootEsc' -- '$nodeEsc' '$wEsc'
-"@
-      Start-DetachedPowerShell -Name "worker" -CommandText $cmd
+      Start-DetachedNodeApp -Name "worker" -NodeExe $node -EntryJs $workerMain -EnvFilePath $envPath -WorkDir $DahRoot
     }
   }
 }
@@ -271,9 +349,83 @@ if (-not $SkipNginx) {
     }
   }
   $conf = Join-Path $DahRoot "infra\nginx\dah-windows.conf"
+  $tpl = Join-Path $DahRoot "infra\nginx\dah-windows.conf.in"
+  # Always render from template (UTF-8 no BOM). Relative include is next to THIS conf file,
+  # so mime.types must be absolute (C:/nginx/conf/mime.types), not conf/mime.types.
+  if (Test-Path -LiteralPath $tpl) {
+    $rootPosix = ($DahRoot -replace "\\", "/")
+    $mimePosix = "C:/nginx/conf/mime.types"
+    if ($NginxExe -and (Test-Path -LiteralPath $NginxExe)) {
+      $mimeCandidate = Join-Path (Split-Path -Parent $NginxExe) "conf\mime.types"
+      if (Test-Path -LiteralPath $mimeCandidate) {
+        $mimePosix = ($mimeCandidate -replace "\\", "/")
+      }
+    }
+    $body = Get-Content -LiteralPath $tpl -Raw -Encoding UTF8
+    if ($body.Length -gt 0 -and [int][char]$body[0] -eq 0xFEFF) { $body = $body.Substring(1) }
+    $body = $body.Replace("@@DAH_ROOT@@", $rootPosix).Replace("@@WEB_PORT@@", "$WebPort").Replace("@@MIMETYPES@@", $mimePosix)
+    # Keep existing TLS block if conf already has ssl and template placeholder empty-default.
+    # Default: empty @@TLS_SERVER_BLOCK@@ (HTTP-only). Opt-in: DAH_ENABLE_TLS=1 + certs.
+    $tlsBlock = ""
+    $enableTls = ($env:DAH_ENABLE_TLS -eq "1") -or ($envMap["DAH_ENABLE_TLS"] -eq "1")
+    $certPath = Join-Path $DahRoot "infra\certs\fullchain.pem"
+    $keyPath = Join-Path $DahRoot "infra\certs\privkey.pem"
+    if ($envMap["SSL_CERT_DIR"]) {
+      $certDir = $envMap["SSL_CERT_DIR"]
+      if (-not [System.IO.Path]::IsPathRooted($certDir)) { $certDir = Join-Path $DahRoot $certDir }
+      $certPath = Join-Path $certDir "fullchain.pem"
+      $keyPath = Join-Path $certDir "privkey.pem"
+    }
+    if ($enableTls -and (Test-Path -LiteralPath $certPath) -and (Test-Path -LiteralPath $keyPath)) {
+      $certPosix = ($certPath -replace "\\", "/")
+      $keyPosix = ($keyPath -replace "\\", "/")
+      $serverName = if ($envMap["DOMAIN"]) { $envMap["DOMAIN"] } else { "_" }
+      $tlsBlock = @"
+
+    server {
+        listen       443 ssl;
+        server_name  $serverName;
+        root         $rootPosix/apps/web/out;
+        index        index.html;
+        client_max_body_size 100m;
+        ssl_certificate     $certPosix;
+        ssl_certificate_key $keyPosix;
+        ssl_protocols       TLSv1.2 TLSv1.3;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        location /api/ {
+            proxy_pass http://127.0.0.1:3001/api/;
+            proxy_http_version 1.1;
+            proxy_set_header Host `$host;
+            proxy_set_header X-Real-IP `$remote_addr;
+            proxy_set_header X-Forwarded-For `$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto https;
+            proxy_read_timeout 120s;
+        }
+        location /_next/static/ {
+            expires 30d;
+            add_header Cache-Control "public, immutable";
+            try_files `$uri =404;
+        }
+        location = /sw.js {
+            add_header Cache-Control "no-cache";
+            try_files `$uri =404;
+        }
+        location / {
+            try_files `$uri `$uri/ `$uri/index.html /index.html;
+        }
+    }
+"@
+      Write-Log "TLS server block enabled (443)"
+    }
+    $body = $body.Replace("@@TLS_SERVER_BLOCK@@", $tlsBlock)
+    if (-not $body.EndsWith("`n")) { $body = $body + "`n" }
+    $enc = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($conf, $body, $enc)
+    Write-Log "Wrote nginx conf (no BOM, mime=$mimePosix, tls=$enableTls): $conf"
+  }
   if ($NginxExe -and (Test-Path -LiteralPath $NginxExe) -and (Test-Path -LiteralPath $conf)) {
     if (Test-PortOpen "127.0.0.1" $WebPort) {
-      Write-Log "Port $WebPort already in use — skip nginx"
+      Write-Log "Port $WebPort already in use - skip nginx"
     } else {
       $nginxDir = Split-Path -Parent $NginxExe
       $ngxEsc = $NginxExe.Replace("'", "''")
@@ -287,7 +439,10 @@ Set-Location '$($nginxDir.Replace("'", "''"))'
       Write-Log "nginx start requested"
     }
   } else {
-    Write-Log "nginx skipped (install C:\nginx or -NginxExe; conf: infra\nginx\dah-windows.conf)"
+    $why = @()
+    if (-not $NginxExe -or -not (Test-Path -LiteralPath $NginxExe)) { $why += "nginx.exe (C:\nginx\nginx.exe)" }
+    if (-not (Test-Path -LiteralPath $conf)) { $why += "conf $conf" }
+    Write-Log "nginx skipped (missing: $($why -join ', '))"
   }
 }
 

@@ -69,7 +69,15 @@ npm run update:native
 npm run install:native:win
 # = install-native-windows.ps1 → build, migrate, MinIO, API, worker, Scheduled Task
 # npx dah-native install   # на Windows теж викликає цей скрипт
+
+npm run start:native:win     # ручний старт стеку
+npm run update:native:win    # install → build → migrate → restart (git pull — вручну)
+npm run status:native:win    # порти / health / Task
+npm run backup:native        # pg_dump без Docker
+npm run smoke:native:win
+
 # docs/NATIVE-HOST-WINDOWS.md
+# KeenDNS (напр. dim.properservice.keenetic.pro): docs/KEENDNS-WINDOWS.md
 ```
 
 Також: [docs/DEPLOY.md](./docs/DEPLOY.md).

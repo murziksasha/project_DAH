@@ -203,7 +203,8 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ## 10. Native host (без Docker) — ноутбук / слабкий сервер
 
 > **Повна інструкція Linux (systemd):** [NATIVE-HOST.md](./NATIVE-HOST.md)  
-> **Хост на Windows** (без systemd-скрипта): [NATIVE-HOST-WINDOWS.md](./NATIVE-HOST-WINDOWS.md)
+> **Хост на Windows** (без systemd-скрипта): [NATIVE-HOST-WINDOWS.md](./NATIVE-HOST-WINDOWS.md)  
+> **KeenDNS + Windows native:** [KEENDNS-WINDOWS.md](./KEENDNS-WINDOWS.md) (`update:native:win`, `backup:native`)
 
 Коли Docker недоступний: Postgres + MinIO з apt/binary, Node 20+, nginx для static web.
 

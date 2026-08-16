@@ -28,6 +28,7 @@ export class HealthService {
     const criticalDown = db === 'down';
     // redis is optional (inline worker cron); only "down" when configured but unreachable
     const degraded = redis === 'down' || storage === 'down';
+    const worker = this.checkWorkerMarker();
 
     return {
       status: criticalDown ? 'down' : degraded ? 'degraded' : 'ok',
@@ -37,8 +38,44 @@ export class HealthService {
       redis,
       storage,
       backup,
+      worker,
       timestamp: new Date().toISOString(),
     };
+  }
+
+  /** Last job markers written by worker process (`backups/worker-last.json`). */
+  private checkWorkerMarker(): {
+    path: string | null;
+    updatedAt: string | null;
+    jobs: Record<string, unknown> | null;
+    status: 'ok' | 'stale' | 'missing';
+  } {
+    const backupDir =
+      this.config.get<string>('BACKUP_DIR')?.trim() ||
+      path.resolve(process.cwd(), '../../backups');
+    const statusPath = path.join(backupDir, 'worker-last.json');
+    if (!fs.existsSync(statusPath)) {
+      return { path: statusPath, updatedAt: null, jobs: null, status: 'missing' };
+    }
+    try {
+      const raw = fs.readFileSync(statusPath, 'utf8');
+      const data = JSON.parse(raw) as Record<string, unknown>;
+      const updatedAt =
+        typeof data.updatedAt === 'string' ? data.updatedAt : null;
+      const ageH = updatedAt
+        ? (Date.now() - Date.parse(updatedAt)) / 3600000
+        : null;
+      const jobs = { ...data };
+      delete jobs.updatedAt;
+      return {
+        path: statusPath,
+        updatedAt,
+        jobs,
+        status: ageH != null && ageH > 24 ? 'stale' : 'ok',
+      };
+    } catch {
+      return { path: statusPath, updatedAt: null, jobs: null, status: 'missing' };
+    }
   }
 
   private async checkDb(): Promise<ComponentStatus> {

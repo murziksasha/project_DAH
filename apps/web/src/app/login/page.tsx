@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
 import { PendingApprovalCard } from '@/components/PendingApprovalCard';
 import { useI18n } from '@/components/LocaleProvider';
+import { PasswordField } from '@/components/ui/PasswordField';
 import { apiFetch, isTenantInactiveMessage, LoginResponse, persistAccessToken } from '@/lib/api';
 import { getRoleHome } from '@/lib/auth';
 import { isPendingApprovalMessage } from '@/lib/notification-links';
@@ -236,7 +237,10 @@ export default function LoginPage() {
     try {
       const data = await apiFetch<LoginResponse>('/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          password,
+        }),
       });
       if (data.requires2fa && data.tempToken) {
         setTempToken(data.tempToken);
@@ -457,18 +461,15 @@ export default function LoginPage() {
               autoComplete="username"
             />
           </div>
-          <div>
-            <label htmlFor="password">{t('loginPassword')}</label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength={8}
-              autoComplete="current-password"
-            />
-          </div>
+          <PasswordField
+            id="password"
+            label={t('loginPassword')}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            minLength={8}
+            autoComplete="current-password"
+          />
           {error && <p className="error">{error}</p>}
           {message && <p style={{ color: 'var(--success)' }}>{message}</p>}
           <button type="submit" disabled={loading}>
@@ -542,18 +543,15 @@ export default function LoginPage() {
           <p style={{ color: 'var(--muted)', margin: 0, fontSize: '0.9rem' }}>
             Встановіть новий пароль (мін. 8 символів, літера + цифра).
           </p>
-          <div>
-            <label htmlFor="new-password">Новий пароль</label>
-            <input
-              id="new-password"
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              required
-              minLength={8}
-              autoComplete="new-password"
-            />
-          </div>
+          <PasswordField
+            id="new-password"
+            label="Новий пароль"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            required
+            minLength={8}
+            autoComplete="new-password"
+          />
           {error && <p className="error">{error}</p>}
           {message && <p style={{ color: 'var(--success)' }}>{message}</p>}
           <button type="submit" disabled={loading}>

@@ -105,10 +105,21 @@ export default function CommunicationsPage() {
     if (!token) return;
     setError('');
     try {
+      // Multi-building scope: optional comma-separated buildingIds from form field
+      const buildingIds =
+        (document.getElementById('ann-building-ids') as HTMLInputElement | null)?.value
+          ?.split(/[,\s]+/)
+          .map((s) => s.trim())
+          .filter(Boolean) ?? [];
       await apiFetch('/communications/announcements', {
         method: 'POST',
         token,
-        body: JSON.stringify({ title: annTitle, body: annBody, isPinned: annPinned }),
+        body: JSON.stringify({
+          title: annTitle,
+          body: annBody,
+          isPinned: annPinned,
+          ...(buildingIds.length ? { buildingIds } : {}),
+        }),
       });
       setMessage(t('commsAnnCreated'));
       setAnnTitle('');
@@ -225,6 +236,16 @@ export default function CommunicationsPage() {
               <input type="checkbox" checked={annPinned} onChange={(e) => setAnnPinned(e.target.checked)} />
               {t('commsPin')}
             </label>
+            <div>
+              <label htmlFor="ann-building-ids">
+                Building IDs (УК, опційно, через кому — інакше всі мешканці)
+              </label>
+              <input
+                id="ann-building-ids"
+                placeholder="cuid1, cuid2"
+                autoComplete="off"
+              />
+            </div>
             <button type="submit">{t('commsPublish')}</button>
           </form>
           <section className="card">

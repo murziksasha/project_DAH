@@ -15,14 +15,19 @@ export class RequestLoggingMiddleware implements NestMiddleware {
 
     const start = Date.now();
     res.on('finish', () => {
+      const tenantHeader = req.headers['x-tenant-id'];
+      const user = (req as RequestWithId & { user?: { id?: string; role?: string } }).user;
       const line = {
-        level: 'info',
+        level: res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info',
         msg: 'http_request',
         requestId,
         method: req.method,
         path: req.originalUrl?.split('?')[0] ?? req.url,
         status: res.statusCode,
         ms: Date.now() - start,
+        tenantId: typeof tenantHeader === 'string' ? tenantHeader : undefined,
+        userId: user?.id,
+        role: user?.role,
       };
       // Structured JSON for self-hosted log aggregation
       // eslint-disable-next-line no-console

@@ -21,6 +21,9 @@ interface Settings {
   metersReadingDeadlineDay?: number;
   locale: 'uk' | 'ru';
   slaHoursByCategory?: Record<string, number>;
+  journalSot?: boolean;
+  strictBankRec?: boolean;
+  defaultCashFlowSource?: 'legacy' | 'journal' | 'both';
 }
 
 export default function SettingsPage() {
@@ -366,6 +369,69 @@ export default function SettingsPage() {
               Зберегти
             </button>
           </div>
+        </div>
+        <div style={{ marginTop: '1.25rem' }}>
+          <h3 style={{ fontSize: '0.95rem', marginBottom: '0.5rem' }}>
+            Глибока бухгалтерія (Journal SoT)
+          </h3>
+          <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '0 0 0.75rem' }}>
+            Увімкніть після shadow-compare readyForSot. Записи як і раніше dual-run;
+            читання балансів/звітів — з journal. Env JOURNAL_SOT перевизначає.
+          </p>
+          <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+            <input
+              type="checkbox"
+              checked={!!settings.journalSot}
+              onChange={(e) =>
+                setSettings({ ...settings, journalSot: e.target.checked })
+              }
+            />
+            journalSot — читати баланси з journal
+          </label>
+          <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+            <input
+              type="checkbox"
+              checked={!!settings.strictBankRec}
+              onChange={(e) =>
+                setSettings({ ...settings, strictBankRec: e.target.checked })
+              }
+            />
+            strictBankRec — label strict у чеклісті (звірка банку)
+          </label>
+          <label style={{ display: 'block', marginBottom: 8 }}>
+            Джерело cash-flow за замовчуванням
+            <select
+              value={settings.defaultCashFlowSource ?? 'legacy'}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  defaultCashFlowSource: e.target.value as
+                    | 'legacy'
+                    | 'journal'
+                    | 'both',
+                })
+              }
+              style={{ display: 'block', marginTop: 4, minWidth: 160 }}
+            >
+              <option value="legacy">legacy</option>
+              <option value="journal">journal</option>
+              <option value="both">both (порівняння)</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            disabled={saving}
+            onClick={() =>
+              void patch({
+                journalSot: !!settings.journalSot,
+                strictBankRec: !!settings.strictBankRec,
+                defaultCashFlowSource: settings.defaultCashFlowSource ?? 'legacy',
+              })
+            }
+          >
+            Зберегти finance flags
+          </button>
         </div>
       </section>
 

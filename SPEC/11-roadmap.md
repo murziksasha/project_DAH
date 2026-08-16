@@ -106,18 +106,29 @@
 | **D** Next `output: 'export'` + nginx:alpine web (no Node web) | ✅ |
 | **E** React Query hot paths + dynamic DocumentTemplateBuilder | ✅ |
 
+## Strategic packs A–E (2026-08) — **IN PROGRESS / shipped core**
+
+| Пакет | Зміст | Статус |
+|-------|--------|--------|
+| **A** Довіра бухгалтера | Matching v2 + BankStatement, AccountingPeriod, backup pack+restore.ps1, finance policy | ✅ core |
+| **B** Мешканець | Action Home queues, ?pay=1, offline request drafts, transparency stories | ✅ core |
+| **C** УК | Portfolio API/dashboard, crew mobile actions | ✅ core |
+| **D** Юридична вага | Meeting lifecycle, quorum stats, protocol PDF, KEP prod checklist | ✅ core |
+| **E** Платформа | Typed settings v2, domain events, journal reconcile cron, OpenAPI docs | ✅ core |
+| **+** Глибина | Пеня, сторно, budget plan/fact, fund transfers, quiet hours, policy e2e | ✅ core |
+
 ## Beyond plan (future product, not blocking)
 
 | Тема | Примітка |
 |------|----------|
-| Production Diia/BankID | Потрібна реєстрація клієнта в IdP |
+| Production Diia/BankID | Реєстрація клієнта в IdP + `KEP_ALLOW_MOCK=false` |
 | Subdomain per tenant / SaaS billing | Низький пріоритет (self-hosted first) |
 | Email unique per tenant | **Не потрібно**: global unique identity + `TenantMembership` multi-org |
 | WayForPay multi-product arrays | Розширення під кошик |
-| Messenger / збори + КЕП | Після dispatcher polish |
-| Бригада (crew) role | Можна поверх dispatcher |
+| Full OpenAPI codegen CI | Див. `docs/OPENAPI-CODEGEN.md` |
+| Journal as sole SoT (drop dual-run) | Read path behind `journalSot` / `JOURNAL_SOT`; dual-write remains until prod readyForSot + drop legacy writes |
+| Deep GL (AP/AR/bank rec/TB/close pack) | ✅ core GL-0…GL-6 surfaces shipped |
 | Візуальний drag-and-drop WYSIWYG для PDF | Зараз блоковий конструктор + preview |
-| Bank matching by IBAN/resident profile | Наступний крок після adapters |
 
 ## Версіонування
 

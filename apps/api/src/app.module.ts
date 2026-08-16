@@ -30,6 +30,9 @@ import { BackupsModule } from './modules/backups/backups.module';
 import { MeetingsModule } from './modules/meetings/meetings.module';
 import { MessengerModule } from './modules/messenger/messenger.module';
 import { KepModule } from './modules/kep/kep.module';
+import { AccountingPeriodsModule } from './modules/accounting-periods/accounting-periods.module';
+import { CopilotModule } from './modules/copilot/copilot.module';
+import { DeepAccountingModule } from './modules/deep-accounting/deep-accounting.module';
 
 @Module({
   imports: [
@@ -55,6 +58,9 @@ import { KepModule } from './modules/kep/kep.module';
     DocumentsModule,
     FilesModule,
     FinanceModule,
+    AccountingPeriodsModule,
+    DeepAccountingModule,
+    CopilotModule,
     NotificationsModule,
     PaymentsModule,
     RemindersModule,

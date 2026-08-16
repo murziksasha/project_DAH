@@ -28,6 +28,14 @@ export interface BackupManifest {
   relativePath: string;
   weekKey?: string;
   error?: string;
+  /** Manifest schema for unified pack */
+  schemaVersion?: number;
+  components?: {
+    database: boolean;
+    files: boolean;
+    filesBytes?: number | null;
+  };
+  appVersion?: string | null;
 }
 
 export interface BackupListItem {
@@ -180,6 +188,97 @@ export class BackupsService {
       };
     } catch {
       throw new ServiceUnavailableException('DATABASE_URL is invalid');
+    }
+  }
+
+  /**
+   * Best-effort MinIO/S3 mirror into backupDir/files via `mc` CLI.
+   * Skips silently when S3 is not configured or mc is unavailable.
+   */
+  private async tryMirrorMinioFiles(
+    backupDir: string,
+  ): Promise<{ ok: boolean; filesBytes: number | null; error?: string }> {
+    const endpoint =
+      this.config.get<string>('S3_ENDPOINT') ||
+      process.env.S3_ENDPOINT ||
+      '';
+    const access =
+      this.config.get<string>('S3_ACCESS_KEY') || process.env.S3_ACCESS_KEY || '';
+    const secret =
+      this.config.get<string>('S3_SECRET_KEY') || process.env.S3_SECRET_KEY || '';
+    const bucket =
+      this.config.get<string>('S3_BUCKET') || process.env.S3_BUCKET || 'dah-files';
+    if (!endpoint || !access || !secret) {
+      return { ok: false, filesBytes: null, error: 'S3 not configured' };
+    }
+
+    const filesDir = path.join(backupDir, 'files');
+    await this.ensureDir(filesDir);
+
+    const alias = `dah_backup_${Date.now()}`;
+    const run = (args: string[]) =>
+      new Promise<{ code: number; stderr: string }>((resolve) => {
+        const child = spawn('mc', args, {
+          env: process.env,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        let stderr = '';
+        child.stderr?.on('data', (c: Buffer) => {
+          stderr += c.toString();
+        });
+        child.on('error', (err) => {
+          resolve({ code: 127, stderr: err.message });
+        });
+        child.on('close', (code) => resolve({ code: code ?? 1, stderr }));
+      });
+
+    try {
+      const set = await run([
+        'alias',
+        'set',
+        alias,
+        endpoint.replace(/\/$/, ''),
+        access,
+        secret,
+      ]);
+      if (set.code !== 0) {
+        this.logger.warn(`MinIO alias failed: ${set.stderr}`);
+        return { ok: false, filesBytes: null, error: set.stderr };
+      }
+      const mirror = await run([
+        'mirror',
+        '--quiet',
+        `${alias}/${bucket}`,
+        filesDir,
+      ]);
+      await run(['alias', 'remove', alias]).catch(() => undefined);
+      if (mirror.code !== 0) {
+        this.logger.warn(`MinIO mirror failed: ${mirror.stderr}`);
+        return { ok: false, filesBytes: null, error: mirror.stderr };
+      }
+      // Sum file sizes
+      let total = 0;
+      const walk = async (dir: string) => {
+        const entries = await fsp.readdir(dir, { withFileTypes: true });
+        for (const e of entries) {
+          const p = path.join(dir, e.name);
+          if (e.isDirectory()) await walk(p);
+          else {
+            const st = await fsp.stat(p);
+            total += st.size;
+          }
+        }
+      };
+      try {
+        await walk(filesDir);
+      } catch {
+        /* empty */
+      }
+      return { ok: true, filesBytes: total };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`MinIO pack skipped: ${message}`);
+      return { ok: false, filesBytes: null, error: message };
     }
   }
 
@@ -422,19 +521,28 @@ export class BackupsService {
 
     try {
       const sizeBytes = await this.runPgDump(dumpPath);
+      const filesMeta = await this.tryMirrorMinioFiles(dir);
       const finishedAt = new Date().toISOString();
+      const totalSize = sizeBytes + (filesMeta.filesBytes ?? 0);
       const manifest: BackupManifest = {
         kind: params.kind,
         status: 'ok',
         finishedAt,
-        sizeBytes,
+        sizeBytes: totalSize,
         source: params.source,
         triggeredBy: params.userId,
         relativePath,
+        schemaVersion: 2,
+        components: {
+          database: true,
+          files: filesMeta.ok,
+          filesBytes: filesMeta.filesBytes,
+        },
+        appVersion: process.env.npm_package_version ?? null,
         ...(params.weekKey ? { weekKey: params.weekKey } : {}),
       };
       await this.writeManifest(dir, manifest);
-      await this.writeHealthMarker(relativePath, finishedAt, sizeBytes);
+      await this.writeHealthMarker(relativePath, finishedAt, totalSize);
 
       await this.audit.log({
         userId: params.userId,
@@ -443,19 +551,22 @@ export class BackupsService {
         entityId: relativePath,
         payload: {
           source: params.source,
-          sizeBytes,
+          sizeBytes: totalSize,
+          files: filesMeta.ok,
           finishedAt,
         },
       });
 
-      this.logger.log(`Backup created ${relativePath} (${sizeBytes} bytes) source=${params.source}`);
+      this.logger.log(
+        `Backup created ${relativePath} (db=${sizeBytes} files=${filesMeta.filesBytes ?? 0}) source=${params.source}`,
+      );
 
       return {
         kind: params.kind,
         id: params.id,
         relativePath,
         finishedAt,
-        sizeBytes,
+        sizeBytes: totalSize,
         status: 'ok',
         source: params.source,
         weekKey: params.weekKey,

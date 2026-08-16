@@ -30,17 +30,19 @@ function usage(code = 0) {
     '',
     'Commands:',
     '  install   Linux: systemd+nginx | Windows: install-native-windows.ps1 (Scheduled Task)',
-    '  update    git pull → install → prisma generate → build → migrate → restart',
+    '  update    install → generate → build → migrate → restart',
+    '            (win: no git pull — update tree yourself; linux: bash may still pull)',
     '  help      Show this help',
     '',
     'Examples:',
     '  npx dah-native install',
     '  npx dah-install-native',
     '  npm run install:native:win          # Windows explicit',
+    '  npm run update:native:win           # Windows rebuild + migrate + restart (no pull)',
     '  sudo npx dah-native install         # Linux',
     '  npx dah-native update',
     '',
-    'Docs: docs/NATIVE-HOST.md · docs/NATIVE-HOST-WINDOWS.md',
+    'Docs: docs/NATIVE-HOST.md · docs/NATIVE-HOST-WINDOWS.md · docs/KEENDNS-WINDOWS.md',
   ];
   console.log(lines.join('\n'));
   process.exit(code);
@@ -154,8 +156,28 @@ function cmdInstall() {
 }
 
 function cmdUpdate() {
-  // update-native.sh works on Linux; on Windows may work partially via Git Bash
-  // but systemctl restart is skipped when units missing — still OK for build/migrate.
+  // Windows: dedicated PowerShell update (stop → build → migrate → start).
+  // Linux: bash update-native.sh (systemctl restart when units present).
+  if (process.platform === 'win32') {
+    const ps1 = join(REPO_ROOT, 'infra/scripts/update-native-windows.ps1');
+    if (!existsSync(ps1)) {
+      console.error(`Missing ${ps1}`);
+      console.error('Fallback: install Git Bash and use infra/scripts/update-native.sh with SKIP_RESTART=1');
+      process.exit(1);
+    }
+    console.log('Windows host → infra/scripts/update-native-windows.ps1');
+    console.log('Docs: docs/NATIVE-HOST-WINDOWS.md · docs/KEENDNS-WINDOWS.md');
+    const r = spawnSync(
+      'powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps1],
+      { stdio: 'inherit', cwd: REPO_ROOT, env: process.env },
+    );
+    if (r.error) {
+      console.error(r.error.message);
+      process.exit(1);
+    }
+    process.exit(r.status === null ? 1 : r.status);
+  }
   runBashScript(UPDATE_SH, { needRoot: false });
 }
 

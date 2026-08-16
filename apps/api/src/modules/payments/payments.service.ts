@@ -6,14 +6,18 @@ import {
 } from '@nestjs/common';
 import {
   AccrualLineStatus,
+  BankStatementLineStatus,
+  BankStatementStatus,
   JournalEntryType,
   PaymentSource,
   Prisma,
   UserRole,
 } from '@prisma/client';
+import { createHash } from 'crypto';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import {
   matchStatementRows,
+  normalizeIban,
   parseBankStatement,
   STATEMENT_FORMATS,
   type StatementFormat,
@@ -23,11 +27,15 @@ import {
   planFifoAllocation,
   resolveAccrualLineStatus,
 } from '../../common/utils/fifo-allocation';
+import { planManualAllocation } from '../../common/utils/manual-allocation';
 import { roundMoney } from '../../common/utils/money';
 import { normalizePage, toPageResult } from '../../common/utils/pagination';
 import { PrismaService } from '../../prisma/prisma.service';
+import { domainEvents } from '../../common/utils/domain-events';
+import { AccountingPeriodsService } from '../accounting-periods/accounting-periods.service';
 import { AuditService } from '../audit/audit.service';
 import { JournalService } from '../journal/journal.service';
+import { PostingService } from '../journal/posting.service';
 import { MailService } from '../mail/mail.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { ImportPaymentsDto } from './dto/import-payments.dto';
@@ -48,6 +56,27 @@ const PAYMENT_READ_ROLES: UserRole[] = [
   UserRole.super_admin,
 ];
 
+function mapLineStatus(
+  status: string,
+): BankStatementLineStatus {
+  switch (status) {
+    case 'matched':
+      return BankStatementLineStatus.matched;
+    case 'skipped':
+      return BankStatementLineStatus.skipped;
+    case 'invalid':
+      return BankStatementLineStatus.invalid;
+    case 'manual':
+      return BankStatementLineStatus.manual;
+    case 'imported':
+      return BankStatementLineStatus.imported;
+    case 'ignored':
+      return BankStatementLineStatus.ignored;
+    default:
+      return BankStatementLineStatus.unmatched;
+  }
+}
+
 @Injectable()
 export class PaymentsService {
   constructor(
@@ -55,6 +84,8 @@ export class PaymentsService {
     private audit: AuditService,
     private mail: MailService,
     private journal: JournalService,
+    private posting: PostingService,
+    private periods: AccountingPeriodsService,
   ) {}
 
   async listPayments(
@@ -174,6 +205,12 @@ export class PaymentsService {
     });
     if (!apartment) throw new NotFoundException('Квартиру не знайдено');
 
+    await this.periods.assertAllowsMutation(
+      apartment.buildingId,
+      dto.date,
+      'payment',
+    );
+
     const payment = await this.prisma.$transaction(async (tx) => {
       // Row lock apartment + open accrual lines to prevent double-allocation races
       await tx.$queryRaw`SELECT id FROM "Apartment" WHERE id = ${dto.apartmentId} FOR UPDATE`;
@@ -207,7 +244,27 @@ export class PaymentsService {
         title: line.title,
       }));
 
-      const { allocations, advance } = planFifoAllocation(fifoLines, dto.amount);
+      let allocations;
+      let advance: number;
+      if (dto.allocations?.length) {
+        const manual = planManualAllocation(
+          fifoLines,
+          dto.amount,
+          dto.allocations.map((a) => ({
+            accrualLineId: a.accrualLineId,
+            amount: a.amount,
+          })),
+        );
+        if (manual.errors.length) {
+          throw new BadRequestException(manual.errors.join('; '));
+        }
+        allocations = manual.allocations;
+        advance = manual.advance;
+      } else {
+        const fifo = planFifoAllocation(fifoLines, dto.amount);
+        allocations = fifo.allocations;
+        advance = fifo.advance;
+      }
 
       const created = await tx.payment.create({
         data: {
@@ -252,42 +309,26 @@ export class PaymentsService {
       }
 
       const totalAllocated = roundMoney(allocations.reduce((s, a) => s + a.amount, 0));
-      const fundId = lockedLines[0]?.fundId ?? null;
+      const fundId =
+        lockedLines.find((l) => allocations.some((a) => a.accrualLineId === l.id))
+          ?.fundId ??
+        lockedLines[0]?.fundId ??
+        null;
 
-      await this.journal.write(
+      await this.posting.postPayment(
+        created.id,
+        dto.amount,
+        totalAllocated,
+        advance,
         {
-          type: JournalEntryType.payment,
-          refType: 'Payment',
-          refId: created.id,
-          description: `Платіж ${dto.amount} грн, кв. ${apartment.number}`,
           buildingId: apartment.buildingId,
           apartmentId: dto.apartmentId,
           fundId,
           createdById: userId,
-          lines: [
-            {
-              account: 'cash',
-              debit: dto.amount,
-              fundId,
-              apartmentId: dto.apartmentId,
-            },
-            {
-              account: 'receivable',
-              credit: totalAllocated,
-              fundId,
-              apartmentId: dto.apartmentId,
-            },
-            ...(advance > 0
-              ? [
-                  {
-                    account: 'advance',
-                    credit: advance,
-                    apartmentId: dto.apartmentId,
-                    fundId,
-                  },
-                ]
-              : []),
-          ],
+          valueDate: dto.date,
+          description: `Платіж ${dto.amount} грн, кв. ${apartment.number}${
+            dto.allocations?.length ? ' (ручна розноска)' : ''
+          }`,
         },
         tx,
       );
@@ -313,6 +354,12 @@ export class PaymentsService {
       actionLabel: 'Відкрити рахунок',
     }));
 
+    void domainEvents.emit('payment.allocated', {
+      paymentId: payment.id,
+      apartmentId: dto.apartmentId,
+      amount: dto.amount,
+    });
+
     return this.getPayment(payment.id, user);
   }
 
@@ -326,6 +373,12 @@ export class PaymentsService {
     });
     if (!payment) throw new NotFoundException('Платіж не знайдено');
     if (payment.isVoided) throw new BadRequestException('Платіж вже анульовано');
+
+    await this.periods.assertAllowsMutation(
+      payment.apartment.buildingId,
+      payment.date,
+      'void_payment',
+    );
 
     await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "Apartment" WHERE id = ${payment.apartmentId} FOR UPDATE`;
@@ -421,6 +474,8 @@ export class PaymentsService {
     csv: string,
     buildingId?: string,
     format?: string,
+    userId?: string,
+    sourceFileName?: string,
   ) {
     if (!csv?.trim()) {
       throw new BadRequestException('Порожній файл виписки');
@@ -451,11 +506,26 @@ export class PaymentsService {
       },
     });
 
+    const aliases = buildingId
+      ? await this.prisma.ibanApartmentAlias.findMany({
+          where: { buildingId },
+          select: { iban: true, apartmentId: true },
+        })
+      : [];
+    const aliasAptIds = [...new Set(aliases.map((a) => a.apartmentId))];
+    const aliasApts =
+      aliasAptIds.length > 0
+        ? await this.prisma.apartment.findMany({
+            where: { id: { in: aliasAptIds } },
+            select: { id: true, number: true },
+          })
+        : [];
+    const aptNum = new Map(aliasApts.map((a) => [a.id, a.number]));
+
     const { rows: parsed, format: usedFormat, detectedFormat } = parseBankStatement(
       csv,
       { format: fmt },
     );
-    // Enrich counterparty IBAN from purpose when column missing
     const withIban = parsed.map((r) => ({
       ...r,
       counterpartyIban:
@@ -472,6 +542,11 @@ export class PaymentsService {
         firstName: r.firstName,
         lastName: r.lastName,
         iban: r.iban,
+      })),
+      ibanAliases: aliases.map((a) => ({
+        iban: a.iban,
+        apartmentId: a.apartmentId,
+        apartmentNumber: aptNum.get(a.apartmentId) ?? '?',
       })),
     });
 
@@ -507,6 +582,36 @@ export class PaymentsService {
       };
     });
 
+    const rawHash = createHash('sha256').update(csv).digest('hex');
+    const statement = await this.prisma.bankStatement.create({
+      data: {
+        buildingId: buildingId ?? null,
+        format: usedFormat,
+        sourceFileName: sourceFileName ?? null,
+        rawHash,
+        status: BankStatementStatus.preview,
+        lineCount: enriched.length,
+        importedById: userId ?? null,
+        lines: {
+          create: enriched.map((row) => ({
+            lineNo: row.line,
+            date: row.date ? new Date(row.date) : null,
+            amount: row.amount,
+            reference: row.reference ?? '',
+            counterpartyIban: row.counterpartyIban ?? null,
+            extractedApartment: row.extractedApartment,
+            raw: row.raw?.slice(0, 2000) ?? '',
+            status: mapLineStatus(row.status),
+            matchMethod: row.matchMethod ?? null,
+            confidence: row.confidence ?? null,
+            apartmentId: row.apartmentId,
+            message: row.message ?? null,
+          })),
+        },
+      },
+      include: { lines: { orderBy: { lineNo: 'asc' } } },
+    });
+
     const summary = {
       total: enriched.length,
       matched: enriched.filter((r) => r.status === 'matched').length,
@@ -521,12 +626,139 @@ export class PaymentsService {
     };
 
     return {
-      rows: enriched,
+      statementId: statement.id,
+      rows: enriched.map((row, i) => ({
+        ...row,
+        lineId: statement.lines[i]?.id,
+        confidence: row.confidence ?? null,
+        matchMethod: row.matchMethod ?? null,
+        candidates: row.candidates ?? [],
+      })),
       summary,
       format: usedFormat,
       detectedFormat,
       formats: STATEMENT_FORMATS,
     };
+  }
+
+  /** Ignore a bank statement line (won't import). */
+  async ignoreStatementLine(lineId: string, user: AuthUser) {
+    const line = await this.prisma.bankStatementLine.findUnique({
+      where: { id: lineId },
+    });
+    if (!line) throw new NotFoundException('Рядок виписки не знайдено');
+    if (line.paymentId) {
+      throw new BadRequestException('Рядок уже імпортовано');
+    }
+    const updated = await this.prisma.bankStatementLine.update({
+      where: { id: lineId },
+      data: {
+        status: BankStatementLineStatus.ignored,
+        message: 'Проігноровано вручну',
+        apartmentId: null,
+        confidence: null,
+        matchMethod: null,
+      },
+    });
+    await this.audit.log({
+      userId: user.id,
+      action: 'bank_statement.line_ignore',
+      entityType: 'BankStatementLine',
+      entityId: lineId,
+      payload: {},
+    });
+    return updated;
+  }
+
+  /** Unmatched / not-imported lines for the last N days. */
+  async unmatchedStatementReport(buildingId?: string, days = 30) {
+    const since = new Date();
+    since.setDate(since.getDate() - Math.min(Math.max(days, 1), 90));
+    const lines = await this.prisma.bankStatementLine.findMany({
+      where: {
+        paymentId: null,
+        status: {
+          in: [
+            BankStatementLineStatus.unmatched,
+            BankStatementLineStatus.matched,
+            BankStatementLineStatus.manual,
+          ],
+        },
+        createdAt: { gte: since },
+        ...(buildingId ? { statement: { buildingId } } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+      include: {
+        statement: { select: { id: true, format: true, importedAt: true, buildingId: true } },
+      },
+    });
+    return {
+      days,
+      since: since.toISOString(),
+      count: lines.length,
+      totalAmount: roundMoney(
+        lines.reduce((s, l) => s + (l.amount != null ? Number(l.amount) : 0), 0),
+      ),
+      lines,
+    };
+  }
+
+  /** Manual assign apartment on a preview line; learns IBAN alias. */
+  async assignStatementLine(
+    lineId: string,
+    apartmentId: string,
+    user: AuthUser,
+  ) {
+    const line = await this.prisma.bankStatementLine.findUnique({
+      where: { id: lineId },
+      include: { statement: true },
+    });
+    if (!line) throw new NotFoundException('Рядок виписки не знайдено');
+    if (line.paymentId) {
+      throw new BadRequestException('Рядок уже імпортовано як платіж');
+    }
+
+    const apartment = await this.prisma.apartment.findUnique({
+      where: { id: apartmentId },
+    });
+    if (!apartment) throw new NotFoundException('Квартиру не знайдено');
+
+    const iban = normalizeIban(line.counterpartyIban);
+    const buildingId = line.statement.buildingId ?? apartment.buildingId;
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.bankStatementLine.update({
+        where: { id: lineId },
+        data: {
+          apartmentId,
+          status: BankStatementLineStatus.manual,
+          matchMethod: 'manual',
+          confidence: 1,
+          message: 'Призначено вручну',
+        },
+      });
+      if (iban && buildingId) {
+        await tx.ibanApartmentAlias.upsert({
+          where: {
+            buildingId_iban: { buildingId, iban },
+          },
+          create: { buildingId, iban, apartmentId },
+          update: { apartmentId },
+        });
+      }
+      return u;
+    });
+
+    await this.audit.log({
+      userId: user.id,
+      action: 'bank_statement.line_assign',
+      entityType: 'BankStatementLine',
+      entityId: lineId,
+      payload: { apartmentId, iban },
+    });
+
+    return updated;
   }
 
   async importPayments(dto: ImportPaymentsDto, user: AuthUser) {
@@ -552,12 +784,81 @@ export class PaymentsService {
           user,
         );
         created.push(payment.id);
+
+        if (row.lineId) {
+          const line = await this.prisma.bankStatementLine.findUnique({
+            where: { id: row.lineId },
+          });
+          if (line && !line.paymentId) {
+            await this.prisma.bankStatementLine.update({
+              where: { id: row.lineId },
+              data: {
+                paymentId: payment.id,
+                status: BankStatementLineStatus.imported,
+                apartmentId: row.apartmentId,
+              },
+            });
+            // Learn IBAN from successful import
+            const iban = normalizeIban(line.counterpartyIban);
+            const apt = await this.prisma.apartment.findUnique({
+              where: { id: row.apartmentId },
+              select: { buildingId: true },
+            });
+            if (iban && apt) {
+              await this.prisma.ibanApartmentAlias.upsert({
+                where: {
+                  buildingId_iban: { buildingId: apt.buildingId, iban },
+                },
+                create: {
+                  buildingId: apt.buildingId,
+                  iban,
+                  apartmentId: row.apartmentId,
+                },
+                update: { apartmentId: row.apartmentId },
+              });
+            }
+          }
+        }
       } catch (err) {
         errors.push({
           index: i,
           message: err instanceof Error ? err.message : 'Помилка імпорту',
         });
       }
+    }
+
+    if (dto.statementId) {
+      const remaining = await this.prisma.bankStatementLine.count({
+        where: {
+          statementId: dto.statementId,
+          status: {
+            in: [
+              BankStatementLineStatus.matched,
+              BankStatementLineStatus.manual,
+              BankStatementLineStatus.unmatched,
+            ],
+          },
+          paymentId: null,
+        },
+      });
+      const imported = await this.prisma.bankStatementLine.count({
+        where: {
+          statementId: dto.statementId,
+          status: BankStatementLineStatus.imported,
+        },
+      });
+      await this.prisma.bankStatement.update({
+        where: { id: dto.statementId },
+        data: {
+          status:
+            imported > 0 && remaining === 0
+              ? BankStatementStatus.committed
+              : imported > 0
+                ? BankStatementStatus.partial
+                : BankStatementStatus.preview,
+          committedAt: remaining === 0 && imported > 0 ? new Date() : undefined,
+        },
+      });
     }
 
     await this.audit.log({
@@ -569,6 +870,7 @@ export class PaymentsService {
         requested: dto.rows.length,
         created: created.length,
         errors: errors.length,
+        statementId: dto.statementId ?? null,
       },
     });
 
@@ -577,6 +879,7 @@ export class PaymentsService {
       failed: errors.length,
       paymentIds: created,
       errors,
+      statementId: dto.statementId ?? null,
     };
   }
 

@@ -117,7 +117,8 @@ export class AuthService {
       }
     }
 
-    const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    const email = dto.email.trim().toLowerCase();
+    const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) throw new BadRequestException('Email вже зареєстрований');
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
@@ -125,7 +126,7 @@ export class AuthService {
     const user = await this.prisma.$transaction(async (tx) => {
       const created = await tx.user.create({
         data: {
-          email: dto.email,
+          email,
           passwordHash,
           firstName: dto.firstName,
           lastName: dto.lastName,
@@ -178,14 +179,15 @@ export class AuthService {
   }
 
   async login(dto: LoginDto, meta: SessionMeta = {}) {
-    const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    const email = dto.email.trim().toLowerCase();
+    const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) {
-      await this.auditLoginFailure(dto.email, 'unknown_user');
+      await this.auditLoginFailure(email, 'unknown_user');
       throw new UnauthorizedException('Невірний email або пароль');
     }
 
     if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
-      await this.auditLoginFailure(dto.email, 'locked', user.id);
+      await this.auditLoginFailure(email, 'locked', user.id);
       throw new UnauthorizedException(
         `Обліковий запис тимчасово заблоковано до ${user.lockedUntil.toISOString()}. Спробуйте пізніше.`,
       );
@@ -193,7 +195,7 @@ export class AuthService {
 
     const valid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!valid) {
-      await this.recordFailedLogin(user.id, dto.email);
+      await this.recordFailedLogin(user.id, email);
       throw new UnauthorizedException('Невірний email або пароль');
     }
 
@@ -211,10 +213,10 @@ export class AuthService {
     } catch (err) {
       if (err instanceof UnauthorizedException) {
         const msg = err.message;
-        if (msg.includes('заблоковано')) await this.auditLoginFailure(dto.email, 'blocked', user.id);
-        else if (msg.includes('підтвердження')) await this.auditLoginFailure(dto.email, 'pending', user.id);
-        else if (msg.includes('деактивовано')) await this.auditLoginFailure(dto.email, 'tenant_inactive', user.id);
-        else await this.auditLoginFailure(dto.email, 'login_denied', user.id);
+        if (msg.includes('заблоковано')) await this.auditLoginFailure(email, 'blocked', user.id);
+        else if (msg.includes('підтвердження')) await this.auditLoginFailure(email, 'pending', user.id);
+        else if (msg.includes('деактивовано')) await this.auditLoginFailure(email, 'tenant_inactive', user.id);
+        else await this.auditLoginFailure(email, 'login_denied', user.id);
       }
       throw err;
     }
@@ -223,7 +225,7 @@ export class AuthService {
     if (activeUser.totpEnabled && totpSecret) {
       if (dto.code) {
         if (!verifyTotp(dto.code, totpSecret)) {
-          await this.auditLoginFailure(dto.email, 'bad_2fa', activeUser.id);
+          await this.auditLoginFailure(email, 'bad_2fa', activeUser.id);
           throw new UnauthorizedException('Невірний код 2FA');
         }
         return this.completeLogin(activeUser, meta);

@@ -111,14 +111,40 @@ export class MeetingsService {
     );
     const signedCount = meeting.signatures.filter((s) => s.status === 'signed').length;
 
+    // Eligible weight for by_area / one_per_apartment (building apartments)
+    let eligibleWeight = participantWeight;
+    if (meeting.buildingId) {
+      if (meeting.voteWeight === VoteWeightMode.by_area) {
+        const areas = await this.prisma.apartment.aggregate({
+          where: { buildingId: meeting.buildingId },
+          _sum: { area: true },
+        });
+        eligibleWeight = areas._sum.area ?? participantWeight;
+      } else if (meeting.voteWeight === VoteWeightMode.one_per_apartment) {
+        eligibleWeight = await this.prisma.apartment.count({
+          where: { buildingId: meeting.buildingId },
+        });
+      }
+    }
+    const quorumPercent = meeting.quorumPercent ? Number(meeting.quorumPercent) : null;
+    const participationPercent =
+      eligibleWeight > 0
+        ? Math.round((participantWeight / eligibleWeight) * 1000) / 10
+        : 0;
+    const quorumMet =
+      quorumPercent == null ? true : participationPercent >= quorumPercent;
+
     return {
       ...meeting,
       agendaItems: agenda,
       stats: {
         participants: meeting.participants.length,
         participantWeight,
+        eligibleWeight,
+        participationPercent,
         signedCount,
-        quorumPercent: meeting.quorumPercent ? Number(meeting.quorumPercent) : null,
+        quorumPercent,
+        quorumMet,
       },
     };
   }
@@ -165,6 +191,27 @@ export class MeetingsService {
     return meeting;
   }
 
+  /** Allowed lifecycle: draft→scheduled→open→closed; any→cancelled (except closed). */
+  private assertStatusTransition(from: MeetingStatus, to: MeetingStatus) {
+    if (from === to) return;
+    const allowed: Record<MeetingStatus, MeetingStatus[]> = {
+      [MeetingStatus.draft]: [MeetingStatus.scheduled, MeetingStatus.cancelled],
+      [MeetingStatus.scheduled]: [
+        MeetingStatus.open,
+        MeetingStatus.cancelled,
+        MeetingStatus.draft,
+      ],
+      [MeetingStatus.open]: [MeetingStatus.closed, MeetingStatus.cancelled],
+      [MeetingStatus.closed]: [], // terminal unless super reopens via cancelled path not allowed
+      [MeetingStatus.cancelled]: [MeetingStatus.draft],
+    };
+    if (!allowed[from]?.includes(to)) {
+      throw new BadRequestException(
+        `Перехід статусу ${from} → ${to} заборонено. Дозволено: ${(allowed[from] ?? []).join(', ') || 'немає'}`,
+      );
+    }
+  }
+
   async setStatus(id: string, status: MeetingStatus, user: AuthUser) {
     if (!MANAGE_ROLES.includes(user.role as UserRole)) {
       throw new ForbiddenException();
@@ -172,17 +219,24 @@ export class MeetingsService {
     const meeting = await this.prisma.meeting.findUnique({ where: { id } });
     if (!meeting) throw new NotFoundException('Збори не знайдено');
 
+    this.assertStatusTransition(meeting.status, status);
+
     const updated = await this.prisma.meeting.update({
       where: { id },
       data: { status },
     });
+
+    // Auto-build protocol text when closing
+    if (status === MeetingStatus.closed) {
+      await this.buildProtocol(id, user);
+    }
 
     await this.audit.log({
       userId: user.id,
       action: 'meeting.status',
       entityType: 'Meeting',
       entityId: id,
-      payload: { status },
+      payload: { status, previous: meeting.status },
     });
 
     return updated;
@@ -360,6 +414,9 @@ export class MeetingsService {
       `Статус: ${data.status}`,
       data.scheduledAt ? `Дата: ${new Date(data.scheduledAt).toISOString()}` : '',
       `Учасників: ${data.stats.participants}, підписів: ${data.stats.signedCount}`,
+      data.stats.quorumPercent != null
+        ? `Кворум: ${data.stats.participationPercent}% / ${data.stats.quorumPercent}% (${data.stats.quorumMet ? 'є' : 'немає'})`
+        : `Явка: ${data.stats.participationPercent}%`,
       '',
       'ПОРЯДОК ДЕННИЙ / ГОЛОСУВАННЯ:',
     ];
@@ -379,5 +436,46 @@ export class MeetingsService {
       where: { id },
       data: { protocolText },
     });
+  }
+
+  /** PDF buffer of saved protocol (builds text first if missing). */
+  async protocolPdf(id: string, user: AuthUser): Promise<{ buffer: Buffer; filename: string }> {
+    let meeting = await this.prisma.meeting.findUnique({ where: { id } });
+    if (!meeting) throw new NotFoundException('Збори не знайдено');
+    if (!meeting.protocolText) {
+      await this.buildProtocol(id, user);
+      meeting = await this.prisma.meeting.findUnique({ where: { id } });
+    }
+    if (!meeting?.protocolText) {
+      throw new BadRequestException('Не вдалося сформувати протокол');
+    }
+
+    const PDFDocument = (await import('pdfkit')).default;
+    const { registerPdfFonts, usePdfFont } = await import('../../common/utils/pdf-font');
+
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    registerPdfFonts(doc);
+    usePdfFont(doc, 'Regular');
+    const chunks: Buffer[] = [];
+    doc.on('data', (c: Buffer) => chunks.push(c));
+
+    const done = new Promise<Buffer>((resolve, reject) => {
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+    });
+
+    doc.fontSize(16).text('ПРОТОКОЛ ЗБОРІВ', { align: 'center' });
+    doc.moveDown();
+    doc.fontSize(11).text(meeting.protocolText, { align: 'left', lineGap: 4 });
+    doc.moveDown(2);
+    doc.fontSize(9).fillColor('#666').text(
+      `Згенеровано: ${new Date().toISOString()} · Мій дім`,
+      { align: 'center' },
+    );
+    doc.end();
+
+    const buffer = await done;
+    const safe = meeting.title.replace(/[^\wа-яА-ЯіІїЇєЄ0-9-]+/g, '_').slice(0, 40);
+    return { buffer, filename: `protocol-${safe || id}.pdf` };
   }
 }

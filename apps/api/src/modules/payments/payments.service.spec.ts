@@ -1,9 +1,11 @@
 import { NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { AccountingPeriodsService } from '../accounting-periods/accounting-periods.service';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { JournalService } from '../journal/journal.service';
+import { PostingService } from '../journal/posting.service';
 import { PaymentsService } from './payments.service';
 
 describe('PaymentsService', () => {
@@ -35,6 +37,12 @@ describe('PaymentsService', () => {
   const audit = { log: jest.fn() };
   const mail = { notifyResidentsOfApartments: jest.fn().mockResolvedValue(undefined) };
   const journal = { write: jest.fn().mockResolvedValue({}) };
+  const posting = {
+    postPayment: jest.fn().mockResolvedValue({}),
+  };
+  const periods = {
+    assertAllowsMutation: jest.fn().mockResolvedValue({ period: '2026-01', status: 'open' }),
+  };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -46,6 +54,8 @@ describe('PaymentsService', () => {
         { provide: AuditService, useValue: audit },
         { provide: MailService, useValue: mail },
         { provide: JournalService, useValue: journal },
+        { provide: PostingService, useValue: posting },
+        { provide: AccountingPeriodsService, useValue: periods },
       ],
     }).compile();
 

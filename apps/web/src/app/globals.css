@@ -187,6 +187,44 @@ label {
   font-size: 0.875rem;
 }
 
+/* Password field with show/hide eye */
+.password-field {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+}
+
+.password-field-input {
+  width: 100%;
+  padding-right: 2.75rem !important;
+}
+
+.password-field-toggle {
+  position: absolute;
+  right: 0.25rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2.5rem;
+  height: 2.5rem;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+}
+
+.password-field-toggle:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.password-field-toggle[aria-pressed='true'] {
+  color: var(--primary);
+}
+
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -284,6 +322,53 @@ label {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Who is signed in — always visible in the top bar (drawer may be collapsed) */
+.app-header-identity {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 14rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.05rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  line-height: 1.2;
+}
+
+.app-header-identity-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.app-header-identity-role {
+  font-size: 0.7rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.onboarding-banner-security {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+}
+
+.onboarding-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  flex-shrink: 0;
 }
 
 .app-menu-btn {
@@ -462,7 +547,10 @@ label {
   box-shadow: 4px 0 24px rgba(15, 23, 42, 0.18);
 }
 
-.app-drawer.open .app-drawer-user,
+.app-drawer.open .app-drawer-user {
+  display: flex;
+}
+
 .app-drawer.open .nav-group-label,
 .app-drawer.open .app-drawer-link-label {
   display: block;
@@ -486,6 +574,23 @@ label {
   margin-bottom: 1rem;
   padding-bottom: 0.75rem;
   border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.app-drawer-user-name {
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-drawer-user-role {
+  font-size: 0.75rem;
+  color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -568,6 +673,17 @@ label {
   border-bottom: 1px solid var(--border);
 }
 
+/* Narrow phones: keep identity but shrink so actions still fit */
+@media (max-width: 480px) {
+  .app-header-identity {
+    max-width: 6.5rem;
+  }
+
+  .app-header-identity-role {
+    display: none;
+  }
+}
+
 /* Desktop: expandable sticky sidebar; burger always visible */
 @media (min-width: 1024px) {
   .app-shell {
@@ -577,6 +693,10 @@ label {
 
   .app-header {
     width: 100%;
+  }
+
+  .app-header-identity {
+    max-width: 16rem;
   }
 
   .app-drawer-backdrop {
@@ -594,7 +714,10 @@ label {
   }
 
   /* Expanded desktop: show labels */
-  .app-drawer:not(.collapsed) .app-drawer-user,
+  .app-drawer:not(.collapsed) .app-drawer-user {
+    display: flex;
+  }
+
   .app-drawer:not(.collapsed) .nav-group-label,
   .app-drawer:not(.collapsed) .app-drawer-link-label {
     display: block;
@@ -1863,6 +1986,91 @@ label {
 
 .resident-details-toggle {
   margin-bottom: 0.25rem;
+}
+
+.transparency-story-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+}
+
+@media (max-width: 720px) {
+  .transparency-story-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.transparency-story-card {
+  background: var(--surface-2);
+  border-radius: var(--radius, 12px);
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border, transparent);
+}
+
+.transparency-story-label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 0.25rem;
+}
+
+.transparency-story-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.transparency-story-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.transparency-rank-list {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.transparency-rank-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.crew-job-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.crew-job-card {
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  background: var(--surface-2, #f8fafc);
+}
+
+.crew-job-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.crew-btn {
+  min-height: 48px;
+  min-width: 44%;
+  flex: 1;
+  font-size: 1rem;
+}
+
+.crew-btn-done {
+  background: var(--success, #16a34a);
+  border-color: var(--success, #16a34a);
+  color: #fff;
 }
 
 .pending-approval-card {

@@ -118,6 +118,120 @@ export class BuildingService {
     };
   }
 
+  /**
+   * Portfolio KPIs for УК multi-building: debt, open SLA requests, collection %.
+   */
+  async getPortfolioSummary(tenantId?: string | null) {
+    const buildings = await this.prisma.building.findMany({
+      where: tenantId ? { tenantId } : undefined,
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        address: true,
+        _count: { select: { apartments: true } },
+      },
+    });
+
+    const items = await Promise.all(
+      buildings.map(async (b) => {
+        const aptIds = (
+          await this.prisma.apartment.findMany({
+            where: { buildingId: b.id },
+            select: { id: true },
+          })
+        ).map((a) => a.id);
+
+        const openLines =
+          aptIds.length === 0
+            ? []
+            : await this.prisma.accrualLine.findMany({
+                where: {
+                  apartmentId: { in: aptIds },
+                  status: { in: ['open', 'partially_paid', 'overdue'] },
+                },
+                select: { amount: true, paidAmount: true },
+              });
+
+        let debt = 0;
+        let billed = 0;
+        let paid = 0;
+        for (const l of openLines) {
+          const amt = Number(l.amount);
+          const p = Number(l.paidAmount);
+          billed += amt;
+          paid += p;
+          debt += Math.max(0, amt - p);
+        }
+
+        // Closed/paid lines for collection rate (period-agnostic snapshot)
+        const paidLines =
+          aptIds.length === 0
+            ? []
+            : await this.prisma.accrualLine.findMany({
+                where: {
+                  apartmentId: { in: aptIds },
+                  status: 'paid',
+                },
+                select: { amount: true, paidAmount: true },
+                take: 5000,
+              });
+        for (const l of paidLines) {
+          billed += Number(l.amount);
+          paid += Number(l.paidAmount);
+        }
+
+        const openRequests = await this.prisma.request.count({
+          where: {
+            status: { in: ['new', 'in_progress'] },
+            OR: [{ buildingId: b.id }, { buildingId: null }],
+          },
+        });
+        const overdueRequests = await this.prisma.request.count({
+          where: {
+            status: { in: ['new', 'in_progress'] },
+            dueAt: { lt: new Date() },
+            OR: [{ buildingId: b.id }, { buildingId: null }],
+          },
+        });
+
+        const collectionRate =
+          billed > 0 ? Math.round((Math.min(paid, billed) / billed) * 1000) / 10 : 100;
+
+        return {
+          buildingId: b.id,
+          name: b.name,
+          address: b.address,
+          apartments: b._count.apartments,
+          debt: Math.round(debt * 100) / 100,
+          openRequests,
+          overdueRequests,
+          collectionRate,
+        };
+      }),
+    );
+
+    const totals = items.reduce(
+      (acc, i) => {
+        acc.debt += i.debt;
+        acc.openRequests += i.openRequests;
+        acc.overdueRequests += i.overdueRequests;
+        acc.apartments += i.apartments;
+        return acc;
+      },
+      { debt: 0, openRequests: 0, overdueRequests: 0, apartments: 0 },
+    );
+
+    return {
+      buildings: items,
+      totals: {
+        ...totals,
+        debt: Math.round(totals.debt * 100) / 100,
+        buildingCount: items.length,
+      },
+    };
+  }
+
   async updateBuildingProfile(
     dto: { name?: string; address?: string; edrpou?: string | null },
     userId: string,
@@ -187,6 +301,10 @@ export class BuildingService {
       locale: json.locale ?? DEFAULT_BUILDING_SETTINGS.locale,
       slaHoursByCategory: json.slaHoursByCategory ?? {},
       features: json.features ?? {},
+      journalSot: !!json.finance?.journalSot,
+      strictBankRec: !!json.finance?.strictBankRec,
+      defaultCashFlowSource: json.finance?.defaultCashFlowSource ?? 'legacy',
+      finance: json.finance ?? {},
     };
   }
 
@@ -224,6 +342,21 @@ export class BuildingService {
         : {}),
       ...(dto.expenseDualApprovalThreshold !== undefined
         ? { expenseDualApprovalThreshold: dto.expenseDualApprovalThreshold }
+        : {}),
+      ...((dto.journalSot !== undefined ||
+        dto.strictBankRec !== undefined ||
+        dto.defaultCashFlowSource !== undefined)
+        ? {
+            finance: {
+              ...(dto.journalSot !== undefined ? { journalSot: dto.journalSot } : {}),
+              ...(dto.strictBankRec !== undefined
+                ? { strictBankRec: dto.strictBankRec }
+                : {}),
+              ...(dto.defaultCashFlowSource !== undefined
+                ? { defaultCashFlowSource: dto.defaultCashFlowSource }
+                : {}),
+            },
+          }
         : {}),
     };
 
@@ -269,6 +402,10 @@ export class BuildingService {
       metersReadingDeadlineDay: json.metersReadingDeadlineDay ?? 5,
       locale: json.locale ?? DEFAULT_BUILDING_SETTINGS.locale,
       slaHoursByCategory: json.slaHoursByCategory ?? {},
+      journalSot: !!json.finance?.journalSot,
+      strictBankRec: !!json.finance?.strictBankRec,
+      defaultCashFlowSource: json.finance?.defaultCashFlowSource ?? 'legacy',
+      finance: json.finance ?? {},
     };
   }
 

@@ -1,9 +1,12 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { AccrualLineStatus } from '@prisma/client';
+import { AccrualLineStatus, FundType, JournalEntryType } from '@prisma/client';
 import { roundMoney } from '../../common/utils/money';
+import { calcDailyPenalty, daysOverdue } from '../../common/utils/penalty';
 import { PrismaService } from '../../prisma/prisma.service';
 import { markOverdueAccrualLines } from '../../common/utils/mark-overdue';
 import { parseBuildingSettings } from '../building/building-settings';
+import { JournalService } from '../journal/journal.service';
+import { PostingService } from '../journal/posting.service';
 import { MailService } from '../mail/mail.service';
 import { CreateReminderDto } from './dto/create-reminder.dto';
 
@@ -14,6 +17,8 @@ export class RemindersService {
   constructor(
     private prisma: PrismaService,
     private mail: MailService,
+    private journal: JournalService,
+    private posting: PostingService,
   ) {}
 
   list(includeSent = false) {
@@ -54,11 +59,129 @@ export class RemindersService {
    * Process due custom reminders + generate debt due emails.
    * Called by worker and optionally by API "run now".
    */
-  async processDue(): Promise<{ customSent: number; debtSent: number; markedOverdue: number }> {
+  async processDue(): Promise<{
+    customSent: number;
+    debtSent: number;
+    markedOverdue: number;
+    penaltyLines: number;
+  }> {
     const markedOverdue = await markOverdueAccrualLines(this.prisma);
     const customSent = await this.sendDueCustomReminders();
     const debtSent = await this.sendDebtReminders(false);
-    return { customSent, debtSent, markedOverdue };
+    const penaltyLines = await this.processDailyPenalties();
+    return { customSent, debtSent, markedOverdue, penaltyLines };
+  }
+
+  /**
+   * Daily пеня on overdue accrual debt when building.settings.penalty.enabled.
+   * Idempotent per apartment+day via accrual title.
+   */
+  async processDailyPenalties(): Promise<number> {
+    const buildings = await this.prisma.building.findMany({
+      select: { id: true, settings: true },
+    });
+    let createdLines = 0;
+    const period = new Date().toISOString().slice(0, 7);
+    const dayKey = new Date().toISOString().slice(0, 10);
+
+    for (const building of buildings) {
+      const settings = parseBuildingSettings(building.settings);
+      const pen = settings.penalty;
+      if (!pen?.enabled) continue;
+      const annual = pen.annualRatePercent ?? 0;
+      if (annual <= 0) continue;
+      const grace = pen.graceDays ?? 0;
+
+      let fundId = pen.fundId ?? null;
+      if (!fundId) {
+        const fund = await this.prisma.fund.findFirst({
+          where: { buildingId: building.id, type: FundType.maintenance },
+          select: { id: true },
+        });
+        fundId = fund?.id ?? null;
+      }
+      if (!fundId) continue;
+
+      const title = `Пеня ${dayKey}`;
+      const existing = await this.prisma.accrual.findFirst({
+        where: { fundId, period, title },
+      });
+      if (existing) continue; // already ran today for this fund
+
+      const apts = await this.prisma.apartment.findMany({
+        where: { buildingId: building.id },
+        select: { id: true },
+      });
+      const lines: { apartmentId: string; amount: number }[] = [];
+
+      for (const apt of apts) {
+        const open = await this.prisma.accrualLine.findMany({
+          where: {
+            apartmentId: apt.id,
+            status: {
+              in: [
+                AccrualLineStatus.open,
+                AccrualLineStatus.partially_paid,
+                AccrualLineStatus.overdue,
+              ],
+            },
+            dueDate: { not: null, lt: new Date() },
+            // exclude existing penalty lines from base debt (title starts with Пеня)
+            accrual: { title: { not: { startsWith: 'Пеня ' } } },
+          },
+          select: { amount: true, paidAmount: true, dueDate: true },
+        });
+        let debt = 0;
+        let maxDays = 0;
+        for (const l of open) {
+          const rem = roundMoney(Number(l.amount) - Number(l.paidAmount));
+          if (rem > 0) {
+            debt += rem;
+            if (l.dueDate) maxDays = Math.max(maxDays, daysOverdue(l.dueDate));
+          }
+        }
+        const amount = calcDailyPenalty(debt, {
+          annualRatePercent: annual,
+          graceDays: grace,
+          daysOverdue: maxDays,
+          dailyCap: pen.dailyCap,
+        });
+        if (amount > 0) lines.push({ apartmentId: apt.id, amount });
+      }
+
+      if (!lines.length) continue;
+
+      const total = roundMoney(lines.reduce((s, l) => s + l.amount, 0));
+      await this.prisma.$transaction(async (tx) => {
+        const accrual = await tx.accrual.create({
+          data: { fundId: fundId!, period, title },
+        });
+        await tx.accrualLine.createMany({
+          data: lines.map((l) => ({
+            accrualId: accrual.id,
+            apartmentId: l.apartmentId,
+            amount: l.amount,
+            status: AccrualLineStatus.open,
+            dueDate: new Date(),
+          })),
+        });
+        await this.posting.postPenalty(
+          accrual.id,
+          total,
+          {
+            buildingId: building.id,
+            fundId: fundId!,
+            description: title,
+          },
+          tx,
+        );
+      });
+      createdLines += lines.length;
+      this.logger.log(
+        `penalty ${building.id} ${dayKey}: ${lines.length} lines, total=${total}`,
+      );
+    }
+    return createdLines;
   }
 
   /** Force email to all current debtors (board action from reports). */

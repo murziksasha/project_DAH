@@ -5,12 +5,16 @@ services:
     environment:
       CORS_ORIGIN: ${CORS_ORIGIN:-https://localhost}
       REDIS_URL: ${REDIS_URL:-none}
+      KEP_ALLOW_MOCK: ${KEP_ALLOW_MOCK:-false}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      NODE_ENV: production
     restart: always
     # Do not publish MinIO/Postgres/Redis ports in prod — only via this overlay on host firewall
 
   worker:
     environment:
       REDIS_URL: ${REDIS_URL:-none}
+      NODE_ENV: production
     restart: always
 
   web:

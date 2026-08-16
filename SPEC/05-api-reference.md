@@ -273,6 +273,31 @@ Tenant scope: `X-Tenant-Id` (super_admin) / JWT tenant.
 | GET | `/accruals` | JWT | Список нарахувань |
 | GET | `/accruals/:id` | JWT | Деталі |
 | GET | `/accruals/my-account` | JWT | Особовий рахунок (resident) |
+
+### Accounting (глибока бухгалтерія)
+
+| Method | Path | Auth | Опис |
+|--------|------|------|------|
+| GET | `/journal` | finance read | Список проводок |
+| GET | `/journal/reconcile` | finance read | Dual-run + TB reconcile |
+| GET | `/journal/trial-balance` | finance read | ОСВ / trial balance |
+| GET | `/journal/account-card` | finance read | Картка рахунку |
+| GET | `/journal/coa` | finance read | План рахунків |
+| GET | `/accounting/ar-aging` | finance read | AR aging |
+| GET | `/accounting/ap-aging` | finance read | AP aging |
+| GET | `/accounting/apartments/:id/statement` | finance read | Виписка квартири |
+| POST | `/accounting/write-offs` | manage finance | Списання боргу (pending) |
+| POST | `/accounting/write-offs/:id/approve` | manage finance | Approve write-off |
+| GET/POST | `/accounting/tariffs` | finance | Service tariffs |
+| GET/POST | `/accounting/supplier-invoices` | finance | Рахунки постачальників |
+| POST | `/accounting/supplier-invoices/:id/approve` | manage finance | Approve invoice |
+| POST | `/accounting/supplier-invoices/pay` | manage finance | Оплата рахунку |
+| GET/POST | `/accounting/bank-reconciliations` | finance | Звірка банку |
+| POST | `/accounting/bank-reconciliations/:id/close` | manage finance | Закрити звірку |
+| GET | `/accounting/cash-book` | finance read | Касова книга |
+| POST | `/accounting/periods/close-snapshot` | manage finance | Close pack JSON |
+| GET | `/accounting/budget/plan-fact-encumbrance` | finance read | Бюджет + AP commitments |
+| GET | `/accounting/coa-export-map` | finance read | CoA → external/1C codes |
 | GET | `/accruals/apartments/:id/account` | admin | Рахунок квартири |
 | GET | `/accruals/apartments/:id/statement.xlsx` | admin / own resident | Excel-виписка |
 | POST | `/accruals/preview` | write | Попередній розрахунок сум |

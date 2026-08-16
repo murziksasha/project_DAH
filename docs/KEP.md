@@ -47,7 +47,24 @@ API_PUBLIC_URL=https://your-domain/api
 4. Webhook Diia → `POST /api/kep/webhook`  
    Headers: `X-Kep-Secret: <KEP_WEBHOOK_SECRET>` або HMAC `X-Kep-Signature: sha256=…`
 
+5. **Prod checklist:** `GET /api/kep/status` → `productionReady: true`, `mockAllowed: false`.  
+   У `docker-compose.prod.yml` / `.env.production` завжди `KEP_ALLOW_MOCK=false`.
+
 Без credentials `diia` **деградує** до mock authorize URL (лише dev).
+
+## Meeting lifecycle + protocol PDF
+
+| Статус | Далі |
+|--------|------|
+| `draft` | → `scheduled` \| `cancelled` |
+| `scheduled` | → `open` \| `cancelled` \| `draft` |
+| `open` | → `closed` (авто-протокол) \| `cancelled` |
+| `closed` | terminal |
+| `cancelled` | → `draft` |
+
+- `POST /api/meetings/:id/protocol` — зберегти текст протоколу  
+- `GET /api/meetings/:id/protocol.pdf` — PDF для архіву / КЕП  
+- `GET /api/meetings/:id` → `stats.quorumMet`, `participationPercent`, `eligibleWeight`
 
 ## CAdES / токен
 

@@ -38,6 +38,8 @@ Use before exposing the instance to the internet (200–300 users, low concurren
 - [ ] Body limits: API 25m, backups 512m (shipped configs)
 - [ ] Security headers present (HSTS on TLS vhost)
 - [ ] Firewall: only 80/443 public
+- [ ] **KeenDNS / laptop host:** do **not** port-forward `5432`, `9000`, `9001`, `3001` — only nginx `WEB_PORT` / 80 / 443
+- [ ] Windows native: see [KEENDNS-WINDOWS.md](./KEENDNS-WINDOWS.md); prefer `npm run backup:native` + offsite copy
 
 ## Backups
 

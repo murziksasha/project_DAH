@@ -9,6 +9,7 @@ import { useI18n } from '@/components/LocaleProvider';
 import { NotificationBell } from '@/components/NotificationBell';
 import { OnboardingBanner } from '@/components/OnboardingBanner';
 import { MeterQueueFlusher } from '@/components/MeterQueueFlusher';
+import { RequestQueueFlusher } from '@/components/RequestQueueFlusher';
 import { OrgMembershipSwitcher } from '@/components/OrgMembershipSwitcher';
 import { ResidentApartmentSwitcher } from '@/components/ResidentApartmentSwitcher';
 import { ResidentBottomNav } from '@/components/ResidentBottomNav';
@@ -25,6 +26,7 @@ import {
 } from '@/lib/comfort';
 import { groupLabel, navLabelForHref, type Locale } from '@/lib/i18n';
 import { getNavGroups, getShellTitle, type NavGroup } from '@/lib/nav-config';
+import { roleLabel } from '@/lib/org-labels';
 import { applyTheme, getStoredTheme, toggleTheme, type ThemeMode } from '@/lib/theme';
 
 const NAV_COLLAPSED_KEY = 'dah-nav-collapsed';
@@ -221,6 +223,7 @@ export default function AppShell({ children }: AppShellProps) {
           : t('boardCabinet');
   const shellFallback = getShellTitle(user.role, orgType);
   const userLabel = `${user.firstName} ${user.lastName}`.trim() || user.email;
+  const roleDisplay = roleLabel(user.role, orgType);
   const desktopCollapsed = !navExpanded;
   const iconOnly = isDesktop ? desktopCollapsed : !mobileOpen;
   const menuOpenVisual = isDesktop ? navExpanded : mobileOpen;
@@ -282,6 +285,14 @@ export default function AppShell({ children }: AppShellProps) {
           <span className="app-brand">{t('appName')}</span>
           <span className="app-header-sub">{title || shellFallback}</span>
         </div>
+        <div
+          className="app-header-identity"
+          title={`${userLabel} · ${roleDisplay}${user.email ? ` · ${user.email}` : ''}`}
+          aria-label={`${t('signedInAs')}: ${userLabel}, ${roleDisplay}`}
+        >
+          <span className="app-header-identity-name">{userLabel}</span>
+          <span className="app-header-identity-role">{roleDisplay}</span>
+        </div>
         <div className="app-header-actions">
           <OrgMembershipSwitcher />
           <BuildingSwitcher />
@@ -342,7 +353,10 @@ export default function AppShell({ children }: AppShellProps) {
             .filter(Boolean)
             .join(' ')}
         >
-          <p className="app-drawer-user">{userLabel}</p>
+          <div className="app-drawer-user">
+            <span className="app-drawer-user-name">{userLabel}</span>
+            <span className="app-drawer-user-role">{roleDisplay}</span>
+          </div>
           <NavGroups
             groups={navGroups}
             pathname={pathname}
@@ -380,6 +394,7 @@ export default function AppShell({ children }: AppShellProps) {
       {isResident && (
         <>
           <MeterQueueFlusher />
+          <RequestQueueFlusher />
           <ResidentTour />
           <Suspense fallback={null}>
             <ResidentBottomNav />

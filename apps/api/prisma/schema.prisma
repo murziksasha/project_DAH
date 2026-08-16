@@ -80,12 +80,71 @@ enum JournalEntryType {
   void_payment
   void_expense
   opening
+  fund_transfer
+  penalty
+  accrual_reverse
+  adjustment
+  write_off
+  supplier_invoice
+  supplier_payment
+  bank_fee
+}
+
+enum LedgerAccountType {
+  asset
+  liability
+  equity
+  income
+  expense
+  off_balance
+}
+
+enum SupplierInvoiceStatus {
+  draft
+  approved
+  partially_paid
+  paid
+  voided
+}
+
+enum BankReconciliationStatus {
+  open
+  balanced
+  closed
+}
+
+enum DebtWriteOffStatus {
+  pending
+  approved
+  voided
 }
 
 enum VoteWeightMode {
   one_per_user
   one_per_apartment
   by_area
+}
+
+enum AccountingPeriodStatus {
+  open
+  soft_closed
+  locked
+}
+
+enum BankStatementStatus {
+  preview
+  committed
+  partial
+}
+
+enum BankStatementLineStatus {
+  matched
+  unmatched
+  skipped
+  invalid
+  manual
+  imported
+  ignored
 }
 
 /** ОСББ or managing company (УК) — same product «Мій дім». */
@@ -288,10 +347,20 @@ model Building {
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
-  apartments  Apartment[]
-  bankAccounts BankAccount[]
-  funds       Fund[]
-  suppliers   Supplier[]
+  apartments            Apartment[]
+  bankAccounts          BankAccount[]
+  funds                 Fund[]
+  suppliers             Supplier[]
+  accountingPeriods     AccountingPeriod[]
+  bankStatements        BankStatement[]
+  ibanAliases           IbanApartmentAlias[]
+  budgetLines           BudgetLine[]
+  serviceTariffs        ServiceTariff[]
+  supplierInvoices      SupplierInvoice[]
+  bankReconciliations   BankReconciliation[]
+  debtWriteOffs         DebtWriteOff[]
+  periodCloseSnapshots  PeriodCloseSnapshot[]
+  ledgerAccounts        LedgerAccount[]
 
   @@index([tenantId])
 }
@@ -317,6 +386,7 @@ model Apartment {
   reminders      Reminder[]
   pollVotes      PollVote[]
   meters         Meter[]
+  debtWriteOffs  DebtWriteOff[]
 
   @@unique([buildingId, number])
 }
@@ -380,7 +450,8 @@ model BankAccount {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  funds Fund[]
+  funds            Fund[]
+  reconciliations  BankReconciliation[]
 }
 
 model Fund {
@@ -398,6 +469,11 @@ model Fund {
   expenses         Expense[]
   accrualTemplates AccrualTemplate[]
   accruals         Accrual[]
+  budgetLines      BudgetLine[]
+  transfersFrom    FundTransfer[] @relation("TransferFrom")
+  transfersTo      FundTransfer[] @relation("TransferTo")
+  serviceTariffs   ServiceTariff[]
+  supplierInvoices SupplierInvoice[]
 }
 
 model ExpenseCategory {
@@ -406,7 +482,52 @@ model ExpenseCategory {
   code      String   @unique
   createdAt DateTime @default(now())
 
-  expenses Expense[]
+  expenses         Expense[]
+  budgetLines      BudgetLine[]
+  supplierInvoices SupplierInvoice[]
+}
+
+/** Annual / monthly budget line for plan vs actual reports. */
+model BudgetLine {
+  id            String           @id @default(cuid())
+  buildingId    String
+  building      Building         @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  fundId        String?
+  fund          Fund?            @relation(fields: [fundId], references: [id], onDelete: SetNull)
+  categoryId    String?
+  category      ExpenseCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  /// Calendar year e.g. 2026
+  year          Int
+  /// 1–12 or null = whole year
+  month         Int?
+  plannedAmount Decimal          @db.Decimal(12, 2)
+  notes         String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([buildingId, year])
+  @@index([fundId])
+  @@index([categoryId])
+}
+
+/** Move money between funds of the same building (journal dual entry). */
+model FundTransfer {
+  id          String   @id @default(cuid())
+  fromFundId  String
+  fromFund    Fund     @relation("TransferFrom", fields: [fromFundId], references: [id])
+  toFundId    String
+  toFund      Fund     @relation("TransferTo", fields: [toFundId], references: [id])
+  amount      Decimal  @db.Decimal(12, 2)
+  date        DateTime
+  description String?
+  isVoided    Boolean  @default(false)
+  voidReason  String?
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([fromFundId, date])
+  @@index([toFundId, date])
 }
 
 model Supplier {
@@ -421,7 +542,9 @@ model Supplier {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  expenses Expense[]
+  expenses  Expense[]
+  invoices  SupplierInvoice[]
+  payments  SupplierPayment[]
 }
 
 model Expense {
@@ -635,39 +758,312 @@ model PollVote {
   @@index([pollId, apartmentId])
 }
 
-/// Immutable financial journal (v1.0 accounting foundation).
+/// Product chart of accounts (GL-1). Codes also used as JournalLine.account.
+model LedgerAccount {
+  id           String            @id @default(cuid())
+  buildingId   String?
+  building     Building?         @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  /// e.g. cash, receivable, 1000
+  code         String
+  name         String
+  type         LedgerAccountType
+  isControl    Boolean           @default(false)
+  isActive     Boolean           @default(true)
+  parentId     String?
+  parent       LedgerAccount?    @relation("LedgerAccountTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children     LedgerAccount[]   @relation("LedgerAccountTree")
+  /// Optional map to external / 1C account code
+  externalCode String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  journalLines JournalLine[]
+
+  @@unique([buildingId, code])
+  @@index([code])
+}
+
+/// Immutable financial journal (v1.0+ deep accounting).
 model JournalEntry {
-  id          String           @id @default(cuid())
-  type        JournalEntryType
-  buildingId  String?
-  apartmentId String?
-  fundId      String?
-  refType     String
-  refId       String
-  description String?
-  createdById String?
-  createdAt   DateTime         @default(now())
+  id              String           @id @default(cuid())
+  type            JournalEntryType
+  buildingId      String?
+  apartmentId     String?
+  fundId          String?
+  refType         String
+  refId           String
+  /// Unique posting key to prevent double-post (refType:refId:type[:suffix])
+  idempotencyKey  String?          @unique
+  description     String?
+  /// Business date of the operation (defaults to createdAt date)
+  valueDate       DateTime?
+  /// YYYY-MM derived from valueDate
+  period          String?
+  /// Sequential number per building + calendar year
+  entryNo         Int?
+  reversesId      String?
+  reverses        JournalEntry?    @relation("JournalReverse", fields: [reversesId], references: [id], onDelete: SetNull)
+  reversedBy      JournalEntry[]   @relation("JournalReverse")
+  createdById     String?
+  createdAt       DateTime         @default(now())
 
   lines JournalLine[]
 
   @@index([refType, refId])
   @@index([type, createdAt])
   @@index([buildingId, createdAt])
+  @@index([buildingId, period])
+  @@index([buildingId, entryNo])
 }
 
 model JournalLine {
-  id          String       @id @default(cuid())
-  entryId     String
-  entry       JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
-  /// Logical account code: receivable | cash | advance | expense | fund_balance
-  account     String
-  apartmentId String?
-  fundId      String?
-  debit       Decimal      @default(0) @db.Decimal(14, 2)
-  credit      Decimal      @default(0) @db.Decimal(14, 2)
+  id             String         @id @default(cuid())
+  entryId        String
+  entry          JournalEntry   @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  /// Logical account code: receivable | cash | advance | expense | fund_balance | payable | ...
+  account        String
+  accountId      String?
+  ledgerAccount  LedgerAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  apartmentId    String?
+  fundId         String?
+  supplierId     String?
+  bankAccountId  String?
+  categoryId     String?
+  serviceId      String?
+  debit          Decimal        @default(0) @db.Decimal(14, 2)
+  credit         Decimal        @default(0) @db.Decimal(14, 2)
 
   @@index([entryId])
   @@index([account, apartmentId])
+  @@index([account, fundId])
+  @@index([accountId])
+  @@index([supplierId])
+  @@index([bankAccountId])
+}
+
+/** Recurring service / tariff for mass accruals (GL-3). */
+model ServiceTariff {
+  id            String              @id @default(cuid())
+  buildingId    String
+  building      Building            @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  fundId        String
+  fund          Fund                @relation(fields: [fundId], references: [id], onDelete: Cascade)
+  name          String
+  distribution  AccrualDistribution @default(by_area)
+  rate          Decimal?            @db.Decimal(12, 4)
+  fixedAmount   Decimal?            @db.Decimal(12, 2)
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  isActive      Boolean             @default(true)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([buildingId, isActive])
+  @@index([fundId])
+}
+
+/** Supplier invoice (AP) — GL-4. */
+model SupplierInvoice {
+  id             String                @id @default(cuid())
+  buildingId     String
+  building       Building              @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  supplierId     String
+  supplier       Supplier              @relation(fields: [supplierId], references: [id])
+  fundId         String
+  fund           Fund                  @relation(fields: [fundId], references: [id])
+  categoryId     String?
+  category       ExpenseCategory?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  number         String?
+  amount         Decimal               @db.Decimal(12, 2)
+  paidAmount     Decimal               @default(0) @db.Decimal(12, 2)
+  date           DateTime
+  dueDate        DateTime?
+  description    String?
+  documentKey    String?
+  status         SupplierInvoiceStatus @default(draft)
+  isVoided       Boolean               @default(false)
+  voidReason     String?
+  createdById    String
+  approvedAt     DateTime?
+  approvedById   String?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  paymentAllocations SupplierPaymentAllocation[]
+
+  @@index([buildingId, date])
+  @@index([supplierId, status])
+  @@index([fundId])
+}
+
+model SupplierPayment {
+  id          String   @id @default(cuid())
+  supplierId  String
+  supplier    Supplier @relation(fields: [supplierId], references: [id])
+  amount      Decimal  @db.Decimal(12, 2)
+  date        DateTime
+  source      PaymentSource @default(bank)
+  reference   String?
+  description String?
+  isVoided    Boolean  @default(false)
+  voidReason  String?
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  allocations SupplierPaymentAllocation[]
+
+  @@index([supplierId, date])
+}
+
+model SupplierPaymentAllocation {
+  id         String          @id @default(cuid())
+  paymentId  String
+  payment    SupplierPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  invoiceId  String
+  invoice    SupplierInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amount     Decimal         @db.Decimal(12, 2)
+
+  @@index([paymentId])
+  @@index([invoiceId])
+}
+
+/** Bank reconciliation session (GL-2). */
+model BankReconciliation {
+  id               String                   @id @default(cuid())
+  buildingId       String
+  building         Building                 @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  bankAccountId    String
+  bankAccount      BankAccount              @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+  /// YYYY-MM
+  period           String
+  statementBalance Decimal                  @db.Decimal(14, 2)
+  glBalance        Decimal?                 @db.Decimal(14, 2)
+  status           BankReconciliationStatus @default(open)
+  notes            String?
+  closedAt         DateTime?
+  closedById       String?
+  createdById      String
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  @@unique([bankAccountId, period])
+  @@index([buildingId, period])
+}
+
+/** Bad-debt write-off (GL-3). */
+model DebtWriteOff {
+  id            String             @id @default(cuid())
+  buildingId    String
+  building      Building           @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  apartmentId   String
+  apartment     Apartment          @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+  accrualLineId String?
+  amount        Decimal            @db.Decimal(12, 2)
+  reason        String
+  status        DebtWriteOffStatus @default(pending)
+  createdById   String
+  approvedById  String?
+  approvedAt    DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@index([buildingId, status])
+  @@index([apartmentId])
+}
+
+/** Immutable snapshot at period close (GL-6). */
+model PeriodCloseSnapshot {
+  id          String   @id @default(cuid())
+  buildingId  String
+  building    Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  period      String
+  payload     Json
+  createdById String
+  createdAt   DateTime @default(now())
+
+  @@index([buildingId, period])
+}
+
+/** Monthly accounting period lock per building (YYYY-MM). */
+model AccountingPeriod {
+  id         String                 @id @default(cuid())
+  buildingId String
+  building   Building               @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  /// Format YYYY-MM
+  period     String
+  status     AccountingPeriodStatus @default(open)
+  closedAt   DateTime?
+  closedById String?
+  notes      String?
+  createdAt  DateTime               @default(now())
+  updatedAt  DateTime               @updatedAt
+
+  @@unique([buildingId, period])
+  @@index([buildingId, status])
+}
+
+/** Persisted bank statement import batch. */
+model BankStatement {
+  id             String              @id @default(cuid())
+  buildingId     String?
+  building       Building?           @relation(fields: [buildingId], references: [id], onDelete: SetNull)
+  format         String
+  sourceFileName String?
+  rawHash        String?
+  status         BankStatementStatus @default(preview)
+  lineCount      Int                 @default(0)
+  importedById   String?
+  importedAt     DateTime            @default(now())
+  committedAt    DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  lines BankStatementLine[]
+
+  @@index([buildingId, importedAt])
+  @@index([rawHash])
+}
+
+model BankStatementLine {
+  id                 String                  @id @default(cuid())
+  statementId        String
+  statement          BankStatement           @relation(fields: [statementId], references: [id], onDelete: Cascade)
+  lineNo             Int
+  date               DateTime?
+  amount             Decimal?                @db.Decimal(12, 2)
+  reference          String                  @default("")
+  counterpartyIban   String?
+  extractedApartment String?
+  raw                String                  @default("")
+  status             BankStatementLineStatus @default(unmatched)
+  matchMethod        String?
+  confidence         Float?
+  apartmentId        String?
+  paymentId          String?
+  message            String?
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  @@unique([statementId, lineNo])
+  @@index([statementId, status])
+  @@index([paymentId])
+  @@index([apartmentId])
+  @@index([createdAt])
+}
+
+/** Learned IBAN → apartment mapping from manual matches. */
+model IbanApartmentAlias {
+  id          String   @id @default(cuid())
+  buildingId  String
+  building    Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  iban        String
+  apartmentId String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([buildingId, iban])
+  @@index([iban])
 }
 
 model AuditLog {

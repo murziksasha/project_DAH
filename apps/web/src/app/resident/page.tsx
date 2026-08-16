@@ -23,12 +23,19 @@ import {
   countQueuedMeterReadings,
   METER_QUEUE_EVENT,
 } from '@/lib/meter-offline-queue';
+import {
+  countQueuedRequests,
+  enqueueRequestDraft,
+  isBrowserOffline,
+  REQUEST_QUEUE_EVENT,
+} from '@/lib/request-offline-queue';
 import { AccountTab, type ResidentAccount } from './_components/AccountTab';
 import { PaySheet } from './_components/PaySheet';
 import {
   ResidentActions,
   type ResidentAction,
 } from './_components/ResidentActions';
+import { TransparencyStories } from './_components/TransparencyStories';
 
 type Tab =
   | 'home'
@@ -212,8 +219,10 @@ export default function ResidentPage() {
   const [highlightRequestId, setHighlightRequestId] = useState<string | null>(null);
   const [accountStartExpanded, setAccountStartExpanded] = useState(false);
   const [meterQueueCount, setMeterQueueCount] = useState(0);
+  const [requestQueueCount, setRequestQueueCount] = useState(0);
   const transparencyLoaded = useRef(false);
   const newsMarked = useRef(false);
+  const payDeepLinked = useRef(false);
 
   const setTabAndUrl = useCallback((next: Tab, opts?: { newRequest?: boolean }) => {
     setTab(next);
@@ -260,7 +269,11 @@ export default function ResidentPage() {
       setFocusNewRequest(true);
       if (next === 'home' && !reqId) next = 'requests';
     }
-    if (params.get('pay') === '1' || params.get('paid') === '1') next = 'account';
+    if (params.get('pay') === '1') {
+      payDeepLinked.current = true;
+      next = 'home';
+    }
+    if (params.get('paid') === '1') next = 'account';
     if (params.get('year') || params.get('month')) {
       setAccountStartExpanded(true);
       if (next === 'home') next = 'account';
@@ -494,16 +507,26 @@ export default function ResidentPage() {
     const token = getToken();
     if (!token) return;
     setError('');
+    const body = {
+      title: reqTitle,
+      description: reqDesc,
+      category: reqCategory,
+      photoKeys: reqPhotos.map((p) => p.key),
+    };
+    if (isBrowserOffline()) {
+      enqueueRequestDraft({ ...body, apartmentId });
+      setRequestQueueCount(countQueuedRequests());
+      setCommsMessage(t('residentRequestQueued'));
+      setReqTitle('');
+      setReqDesc('');
+      setReqPhotos([]);
+      return;
+    }
     try {
       await apiFetch('/communications/requests', {
         method: 'POST',
         token,
-        body: JSON.stringify({
-          title: reqTitle,
-          description: reqDesc,
-          category: reqCategory,
-          photoKeys: reqPhotos.map((p) => p.key),
-        }),
+        body: JSON.stringify(body),
       });
       setCommsMessage(t('residentRequestSent'));
       setReqTitle('');
@@ -512,6 +535,16 @@ export default function ResidentPage() {
       const updated = await apiFetch<RequestItem[]>('/communications/requests', { token });
       setRequests(updated);
     } catch (err) {
+      // Network failure → queue draft
+      if (!navigator.onLine || /network|fetch|failed/i.test(String(err))) {
+        enqueueRequestDraft({ ...body, apartmentId });
+        setRequestQueueCount(countQueuedRequests());
+        setCommsMessage(t('residentRequestQueued'));
+        setReqTitle('');
+        setReqDesc('');
+        setReqPhotos([]);
+        return;
+      }
       setError(err instanceof Error ? err.message : t('error'));
     }
   }
@@ -694,6 +727,29 @@ export default function ResidentPage() {
     [requests],
   );
 
+  // Deep-link: /resident?pay=1 → open Pay sheet once account loaded
+  useEffect(() => {
+    if (!payDeepLinked.current || loading || !account) return;
+    if ((account.summary?.debt ?? 0) > 0 || true) {
+      setPayOpen(true);
+      payDeepLinked.current = false;
+      const url = new URL(window.location.href);
+      url.searchParams.delete('pay');
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, [loading, account]);
+
+  useEffect(() => {
+    const syncReqQ = () => setRequestQueueCount(countQueuedRequests());
+    syncReqQ();
+    window.addEventListener(REQUEST_QUEUE_EVENT, syncReqQ);
+    window.addEventListener('online', syncReqQ);
+    return () => {
+      window.removeEventListener(REQUEST_QUEUE_EVENT, syncReqQ);
+      window.removeEventListener('online', syncReqQ);
+    };
+  }, []);
+
   const homeActions: ResidentAction[] = useMemo(() => {
     const list: ResidentAction[] = [];
     if (meterQueueCount > 0) {
@@ -706,13 +762,23 @@ export default function ResidentPage() {
         href: '/resident/meters',
       });
     }
+    if (requestQueueCount > 0) {
+      list.push({
+        id: 'request-queue',
+        kind: 'request',
+        title: t('residentActionRequestQueue', { count: requestQueueCount }),
+        subtitle: t('residentActionRequestQueueSub'),
+        primary: meterQueueCount === 0,
+        onClick: () => setTabAndUrl('requests'),
+      });
+    }
     if (debt > 0) {
       list.push({
         id: 'pay',
         kind: 'pay',
         title: t('residentActionPay', { amount: formatMoney(debt) }),
         subtitle: t('residentActionPaySub'),
-        primary: meterQueueCount === 0,
+        primary: meterQueueCount === 0 && requestQueueCount === 0,
         onClick: () => setPayOpen(true),
       });
     }
@@ -767,6 +833,7 @@ export default function ResidentPage() {
     debt,
     metersNeedReading,
     meterQueueCount,
+    requestQueueCount,
     openPolls,
     openRequests,
     pinnedAnn,
@@ -1022,7 +1089,14 @@ export default function ResidentPage() {
 
       {tab === 'building' && !transparencyLoading && transparency && (
         <section>
-          <div className="grid-2" style={{ marginBottom: '1rem' }}>
+          <TransparencyStories
+            totalExpenses={transparency.expenseSummary.total}
+            totalIncome={transparency.cashFlow.totalIncome}
+            netFlow={transparency.cashFlow.netFlow}
+            byCategory={transparency.expenseSummary.byCategory}
+            fundBalances={transparency.cashFlow.fundBalances}
+          />
+          <div className="grid-2" style={{ marginBottom: '1rem', marginTop: '1rem' }}>
             <StatCard
               label={t('residentOrgExpenses')}
               value={formatMoney(transparency.expenseSummary.total)}

@@ -21,6 +21,7 @@ export function CrewDashboard() {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const token = getToken();
@@ -46,10 +47,47 @@ export function CrewDashboard() {
     void load();
   }, [load]);
 
+  async function markDone(id: string) {
+    const token = getToken();
+    if (!token) return;
+    setBusyId(id);
+    setError('');
+    try {
+      await apiFetch(`/communications/requests/${id}`, {
+        method: 'PATCH',
+        token,
+        body: JSON.stringify({ status: 'done' }),
+      });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('error'));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function markProgress(id: string) {
+    const token = getToken();
+    if (!token) return;
+    setBusyId(id);
+    try {
+      await apiFetch(`/communications/requests/${id}`, {
+        method: 'PATCH',
+        token,
+        body: JSON.stringify({ status: 'in_progress' }),
+      });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('error'));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   const open = items.filter((i) => i.status !== 'done');
 
   return (
-    <main>
+    <main className="crew-mobile">
       <PageHeader title={t('dashCrewTitle')} description={t('dashCrewDesc')} />
       {error && <p className="error">{error}</p>}
       <div className="quick-actions">
@@ -66,13 +104,33 @@ export function CrewDashboard() {
         ) : open.length === 0 ? (
           <p style={{ color: 'var(--muted)' }}>{t('dispatchEmpty')}</p>
         ) : (
-          <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 8 }}>
-            {open.slice(0, 8).map((i) => (
-              <li key={i.id} style={{ borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
-                <strong>{i.title}</strong>
-                <div style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
+          <ul className="crew-job-list">
+            {open.slice(0, 12).map((i) => (
+              <li key={i.id} className="crew-job-card">
+                <strong style={{ fontSize: '1.05rem' }}>{i.title}</strong>
+                <div style={{ fontSize: '0.9rem', color: 'var(--muted)', margin: '0.35rem 0' }}>
                   {i.priority} · {i.category}
                   {i.dueAt ? ` · ${formatDateUk(i.dueAt)}` : ''}
+                </div>
+                <div className="crew-job-actions">
+                  {i.status === 'new' && (
+                    <button
+                      type="button"
+                      className="btn crew-btn"
+                      disabled={busyId === i.id}
+                      onClick={() => void markProgress(i.id)}
+                    >
+                      {t('commsStatusProgress')}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="btn crew-btn crew-btn-done"
+                    disabled={busyId === i.id}
+                    onClick={() => void markDone(i.id)}
+                  >
+                    {t('commsStatusDone')}
+                  </button>
                 </div>
               </li>
             ))}
