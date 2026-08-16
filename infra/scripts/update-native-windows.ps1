@@ -1,7 +1,7 @@
 # One-shot update on Windows native host (no Docker, no systemd):
 #   stop stack -> install -> prisma generate -> build -> migrate -> start stack
 #
-# Does NOT run git pull — update the tree yourself first (git pull / copy / rsync),
+# Does NOT run git pull - update the tree yourself first (git pull / copy / rsync),
 # then: npm run update:native:win
 #
 # Stack is stopped BEFORE generate/build so Windows can replace
@@ -142,7 +142,7 @@ function Invoke-PreUpdateDump {
   $user = $EnvMap["POSTGRES_USER"]
   $db = $EnvMap["POSTGRES_DB"]
   $pass = $EnvMap["POSTGRES_PASSWORD"]
-  # Note: $Host is a read-only automatic variable in PowerShell — never use it as a name
+  # Note: $Host is a read-only automatic variable in PowerShell - never use it as a name
   $pgHost = "127.0.0.1"
   $port = "5432"
 
@@ -252,7 +252,7 @@ if (-not $SkipGenerate) {
   Write-Step "prisma generate (db:generate)"
   npm run db:generate -w @dah/api
   if ($LASTEXITCODE -ne 0) {
-    Write-Host "    prisma generate failed — often EPERM if node still holds query_engine DLL"
+    Write-Host "    prisma generate failed - often EPERM if node still holds query_engine DLL"
     Write-Host "    retry after forced stop..."
     if (-not $SkipStop) {
       Invoke-StopStack -Root $DahRoot -Port $WebPort
@@ -260,13 +260,7 @@ if (-not $SkipGenerate) {
       npm run db:generate -w @dah/api
     }
     if ($LASTEXITCODE -ne 0) {
-      throw @"
-db:generate failed (often EPERM on Windows when API/worker still run).
-  1) npm run stop:native:win
-  2) Close other node terminals using this repo
-  3) npm run db:generate -w @dah/api
-  4) npm run update:native:win  (or continue build/migrate/start)
-"@
+      throw "db:generate failed (often EPERM on Windows when API/worker still run). 1) npm run stop:native:win  2) Close other node terminals using this repo  3) npm run db:generate -w @dah/api  4) npm run update:native:win"
     }
   }
 } else {
