@@ -282,6 +282,31 @@ export class BackupsService {
     }
   }
 
+  /**
+   * Resolve pg_dump binary: PG_DUMP_PATH / PATH / common Windows PostgreSQL installs.
+   * Missing dump must not crash the worker via unhandled spawn rejection.
+   */
+  private resolvePgDumpBin(): string {
+    const configured =
+      this.config.get<string>('PG_DUMP_PATH')?.trim() ||
+      process.env.PG_DUMP_PATH?.trim();
+    if (configured) return configured;
+
+    if (process.platform === 'win32') {
+      const pf = process.env['ProgramFiles'] || 'C:\\Program Files';
+      const pf86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+      const versions = ['17', '16', '15', '14', '13', '12'];
+      for (const root of [pf, pf86]) {
+        for (const ver of versions) {
+          const candidate = path.join(root, 'PostgreSQL', ver, 'bin', 'pg_dump.exe');
+          if (fs.existsSync(candidate)) return candidate;
+        }
+      }
+      return 'pg_dump.exe';
+    }
+    return 'pg_dump';
+  }
+
   /** Live pg_dump | gzip → target file. */
   private async runPgDump(targetGz: string): Promise<number> {
     const db = this.parseDatabaseUrl();
@@ -300,9 +325,11 @@ export class BackupsService {
       '--no-acl',
     ];
 
-    const child = spawn('pg_dump', args, {
+    const pgDumpBin = this.resolvePgDumpBin();
+    const child = spawn(pgDumpBin, args, {
       env: { ...process.env, PGPASSWORD: db.password },
       stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
     });
 
     let stderr = '';
@@ -310,13 +337,13 @@ export class BackupsService {
       stderr += chunk.toString();
     });
 
-    const exitPromise = new Promise<number>((resolve, reject) => {
+    // Always settle (never reject) so a failed spawn cannot become an unhandledRejection
+    // that kills the worker while pipeline() is still racing.
+    const spawnState: { err: Error | null } = { err: null };
+    const exitPromise = new Promise<number>((resolve) => {
       child.on('error', (err) => {
-        reject(
-          new ServiceUnavailableException(
-            `pg_dump failed to start: ${err.message}. Is postgresql-client installed?`,
-          ),
-        );
+        spawnState.err = err;
+        resolve(127);
       });
       child.on('close', (code) => resolve(code ?? 1));
     });
@@ -324,29 +351,49 @@ export class BackupsService {
     const gzip = createGzip();
     const out = fs.createWriteStream(targetGz);
 
-    try {
-      await pipeline(child.stdout!, gzip, out);
-      const code = await exitPromise;
-      if (code !== 0) {
-        try {
-          await fsp.unlink(targetGz);
-        } catch {
-          /* ignore */
-        }
-        throw new ServiceUnavailableException(
-          `pg_dump exited ${code}: ${stderr.trim() || 'unknown error'}`,
-        );
-      }
-      const st = await fsp.stat(targetGz);
-      return st.size;
-    } catch (err) {
+    const fail = async (message: string): Promise<never> => {
       try {
         await fsp.unlink(targetGz);
       } catch {
         /* ignore */
       }
+      throw new ServiceUnavailableException(message);
+    };
+
+    try {
+      if (!child.stdout) {
+        await exitPromise;
+        return await fail(
+          `pg_dump failed to start (${pgDumpBin}): ${spawnState.err?.message ?? 'no stdout'}. ` +
+            'Install PostgreSQL client tools or set PG_DUMP_PATH.',
+        );
+      }
+
+      await pipeline(child.stdout, gzip, out);
+      const code = await exitPromise;
+
+      if (spawnState.err) {
+        return await fail(
+          `pg_dump failed to start (${pgDumpBin}): ${spawnState.err.message}. ` +
+            'Install PostgreSQL client tools or set PG_DUMP_PATH.',
+        );
+      }
+      if (code !== 0) {
+        return await fail(`pg_dump exited ${code}: ${stderr.trim() || 'unknown error'}`);
+      }
+      const st = await fsp.stat(targetGz);
+      return st.size;
+    } catch (err) {
       if (err instanceof ServiceUnavailableException) throw err;
-      throw new ServiceUnavailableException(
+      // Drain exit so spawn error cannot leak as unhandledRejection
+      await exitPromise.catch(() => undefined);
+      if (spawnState.err) {
+        return await fail(
+          `pg_dump failed to start (${pgDumpBin}): ${spawnState.err.message}. ` +
+            'Install PostgreSQL client tools or set PG_DUMP_PATH.',
+        );
+      }
+      return await fail(
         `pg_dump pipeline failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
