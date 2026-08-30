@@ -75,6 +75,8 @@ npm run update:native:win    # install → build → migrate → restart (git pu
 npm run status:native:win    # порти / health / Task
 npm run backup:native        # pg_dump без Docker
 npm run smoke:native:win
+npm run uninstall:native:win                 # stop + Task + firewall
+npm run uninstall:native:win -- -FullWipe -ConfirmYes  # снос Postgres/Node/nginx/репо
 
 # docs/NATIVE-HOST-WINDOWS.md
 # KeenDNS (напр. dim.properservice.keenetic.pro): docs/KEENDNS-WINDOWS.md

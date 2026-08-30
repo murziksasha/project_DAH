@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Windows native uninstall
+- `npm run uninstall:native:win` — stop stack, unregister **DAH-Native-Stack**, remove DAH firewall, NSSM/pm2 if present
+- `-FullWipe -ConfirmYes` — also PostgreSQL + Node.js products, nginx prefix, minio-data, delayed delete of repo
+- `npx dah-native uninstall` (win32) → `infra/scripts/uninstall-native-windows.ps1`
+- `install-native-windows.ps1 -Unregister` still does not stop processes; prefer uninstall
+
 ### Journal SoT cutover path
 - `settings.finance.journalSot` + env `JOURNAL_SOT` override
 - `GET /finance/sot-status`; funds/account/cash-flow read projectors when ON

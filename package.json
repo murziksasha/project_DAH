@@ -30,6 +30,7 @@
     "restart:native:win": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/restart-dah-windows-stack.ps1",
     "update:native:win": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/update-native-windows.ps1",
     "status:native:win": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/status-dah-windows-stack.ps1",
+    "uninstall:native:win": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/uninstall-native-windows.ps1",
     "smoke:native:win": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/smoke-native-windows.ps1",
     "backup:native": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/backup.ps1 -NativeOnly",
     "backup:win": "powershell -NoProfile -ExecutionPolicy Bypass -File infra/scripts/backup.ps1",

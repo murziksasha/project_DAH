@@ -6,6 +6,7 @@
  *   npx dah-native install
  *   npx dah-install-native
  *   npx dah-native update
+ *   npx dah-native uninstall
  *   npm run install:native
  *
  * Env (install): DAH_ROOT, RUN_USER, WEB_PORT, SKIP_NGINX
@@ -29,16 +30,20 @@ function usage(code = 0) {
     'dah-native — native host helpers (Linux + systemd, no Docker)',
     '',
     'Commands:',
-    '  install   Linux: systemd+nginx | Windows: install-native-windows.ps1 (Scheduled Task)',
-    '  update    install → generate → build → migrate → restart',
-    '            (win: no git pull — update tree yourself; linux: bash may still pull)',
-    '  help      Show this help',
+    '  install     Linux: systemd+nginx | Windows: install-native-windows.ps1 (Scheduled Task)',
+    '  update      install → generate → build → migrate → restart',
+    '              (win: no git pull — update tree yourself; linux: bash may still pull)',
+    '  uninstall   Windows: stop stack + unregister task + firewall',
+    '              (add -FullWipe -ConfirmYes to remove Postgres/Node/nginx/repo)',
+    '  help        Show this help',
     '',
     'Examples:',
     '  npx dah-native install',
     '  npx dah-install-native',
     '  npm run install:native:win          # Windows explicit',
     '  npm run update:native:win           # Windows rebuild + migrate + restart (no pull)',
+    '  npm run uninstall:native:win        # Windows stop + unregister (keep Postgres/Node)',
+    '  npm run uninstall:native:win -- -FullWipe -ConfirmYes',
     '  sudo npx dah-native install         # Linux',
     '  npx dah-native update',
     '',
@@ -155,6 +160,36 @@ function cmdInstall() {
   runBashScript(INSTALL_SH, { needRoot: true });
 }
 
+function runWinPs1(ps1, label) {
+  if (!existsSync(ps1)) {
+    console.error(`Missing ${ps1}`);
+    process.exit(1);
+  }
+  console.log(`Windows host → ${label}`);
+  console.log('Docs: docs/NATIVE-HOST-WINDOWS.md');
+  const extra = process.argv.slice(3);
+  const r = spawnSync(
+    'powershell.exe',
+    ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps1, ...extra],
+    { stdio: 'inherit', cwd: REPO_ROOT, env: process.env },
+  );
+  if (r.error) {
+    console.error(r.error.message);
+    process.exit(1);
+  }
+  process.exit(r.status === null ? 1 : r.status);
+}
+
+function cmdUninstall() {
+  if (process.platform !== 'win32') {
+    console.error('dah-native uninstall: Windows only.');
+    console.error('Linux: sudo systemctl disable --now dah.target  (see docs/NATIVE-HOST.md)');
+    process.exit(1);
+  }
+  const ps1 = join(REPO_ROOT, 'infra/scripts/uninstall-native-windows.ps1');
+  runWinPs1(ps1, 'infra/scripts/uninstall-native-windows.ps1');
+}
+
 function cmdUpdate() {
   // Windows: dedicated PowerShell update (stop → build → migrate → start).
   // Linux: bash update-native.sh (systemctl restart when units present).
@@ -192,6 +227,10 @@ switch (command) {
   case 'update':
   case 'u':
     cmdUpdate();
+    break;
+  case 'uninstall':
+  case 'remove':
+    cmdUninstall();
     break;
   case 'help':
   case '-h':
