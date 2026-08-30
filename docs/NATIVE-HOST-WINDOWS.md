@@ -9,6 +9,8 @@
 | Команди | `npm run install:native:win` · `npx dah-native install` (на win32 → цей .ps1) |
 | Оновлення | **`npm run update:native:win`** (або `npx dah-native update` на win32 → `.ps1`) |
 | Статус / stop | `npm run status:native:win` · `stop:native:win` · `restart:native:win` · `smoke:native:win` |
+| Зняти стек | `npm run uninstall:native:win` |
+| Повний снос | `npm run uninstall:native:win -- -FullWipe -ConfirmYes` |
 | Backup без Docker | `npm run backup:native` |
 | Автозапуск | Scheduled Task **`DAH-Native-Stack`** (At startup + At logon) |
 | KeenDNS | [KEENDNS-WINDOWS.md](./KEENDNS-WINDOWS.md) |
@@ -73,11 +75,42 @@ npm run install:native:win
 7. Одразу піднімає MinIO + API + worker (+ nginx, якщо знайдено)  
 
 Логи: `logs\native-windows\`  
-Зняти:  
+
+Зняти стек (процеси + задача **DAH-Native-Stack** + firewall; PostgreSQL / Node / папка лишаються):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File infra\scripts\install-native-windows.ps1 -Unregister
+npm run uninstall:native:win
 ```
+
+Повний снос машини (незворотньо: Postgres, Node.js, nginx prefix, `minio-data`, відкладене видалення репо):
+
+```powershell
+npm run uninstall:native:win -- -FullWipe -ConfirmYes
+```
+
+Прапорці: `-SkipOsPackages` (лишити Postgres/Node), `-SkipDeleteRepo` (лишити папку).  
+Лог: `%TEMP%\dah-uninstall.log`. `-Unregister` у install-скрипті **не** стопає процеси — користуйтесь `uninstall:native:win`.
+
+Для `-FullWipe` краще **не** через `npm` (інакше `node.exe` тримає файли). Адмінський PowerShell:
+
+```powershell
+cd C:\miy_dim
+powershell -NoProfile -ExecutionPolicy Bypass -File infra\scripts\uninstall-native-windows.ps1 -FullWipe -ConfirmYes
+# закрийте IDE / Explorer на C:\miy_dim; папка зникне через кілька секунд (%TEMP%\dah-wipe-repo.log)
+```
+
+Перевірка:
+
+```powershell
+Get-ScheduledTask -TaskName DAH-Native-Stack -ErrorAction SilentlyContinue
+Get-NetFirewallRule -DisplayName "DAH Web 3000","DAH API 3001" -ErrorAction SilentlyContinue
+Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+  Where-Object { $_.LocalPort -in 3000,3001,9000,9001,5432 }
+Get-Service | Where-Object { $_.Name -like 'postgresql*' -or $_.Name -like 'DAH-*' }
+Test-Path C:\miy_dim
+```
+
+KeenDNS / port-forward на роутері скрипт **не** знімає.
 
 Ручний старт стеку (без перевстановлення задачі):
 
@@ -597,6 +630,8 @@ npm run backup:native
 [ ] (опційно) KeenDNS + TLS
 [ ] Оновлення: npm run update:native:win
 [ ] Backup: npm run backup:native
+[ ] Зняти стек: npm run uninstall:native:win
+[ ] Повний снос: npm run uninstall:native:win -- -FullWipe -ConfirmYes
 [ ] (опційно) KeenDNS: docs/KEENDNS-WINDOWS.md
 ```
 
@@ -611,6 +646,8 @@ npm run backup:native
 | Поставити «служби ОС» | `npx dah-native install` | `npm run install:native:win` (Task **DAH-Native-Stack**) |
 | Оновлення | `npm run update:native` | **`npm run update:native:win`** |
 | Статус / stop | systemctl status/stop | `status:native:win` / `stop:native:win` |
+| Зняти стек | `systemctl disable --now dah.target` | **`npm run uninstall:native:win`** |
+| Повний снос | (вручну apt + каталоги) | **`npm run uninstall:native:win -- -FullWipe -ConfirmYes`** |
 | Backup | `backup.sh` | **`npm run backup:native`** (або Docker `npm run backup`) |
 | Інфра БД/S3 | apt + minio binary | PostgreSQL service + `tools\minio.exe` (або `docker:infra`) |
 | Web proxy | nginx unit з install-скрипта | nginx + `dah-windows.conf` (з template) |
