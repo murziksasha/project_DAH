@@ -16,13 +16,23 @@ export function toMinor(major: number | string): Minor {
     if (!trimmed || !/^-?\d+(\.\d+)?$/.test(trimmed)) {
       throw new Error('Invalid money value');
     }
-    const n = Number(trimmed);
-    if (!Number.isFinite(n)) throw new Error('Invalid money value');
-    return Math.round(n * 100);
+    return decimalStringToMinor(trimmed);
   }
   if (!Number.isFinite(major)) throw new Error('Invalid money value');
-  // Normalize via toFixed to reduce float noise (e.g. 1.005, 10.05)
-  return Math.round(Number(major.toFixed(4)) * 100);
+  // toFixed(6) removes binary float noise (1.005 → "1.005000", 0.1+0.2 → "0.300000"),
+  // then rounding is done on decimal digits (half away from zero), not on floats.
+  return decimalStringToMinor(major.toFixed(6));
+}
+
+/** Exact half-away-from-zero rounding of a decimal string to 2 dp, in minor units. */
+function decimalStringToMinor(value: string): Minor {
+  const negative = value.startsWith('-');
+  const [intPart, fracPart = ''] = (negative ? value.slice(1) : value).split('.');
+  const frac = (fracPart + '000').slice(0, 3);
+  let minor = Number(intPart) * 100 + Number(frac.slice(0, 2));
+  if (Number(frac[2]) >= 5) minor += 1;
+  if (!Number.isSafeInteger(minor)) throw new Error('Invalid money value');
+  return negative && minor !== 0 ? -minor : minor;
 }
 
 /** Convert minor units to major (hryvnia) number for display/API. */

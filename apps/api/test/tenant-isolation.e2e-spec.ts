@@ -2,6 +2,8 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { runUnscoped, runWithTenantScope } from '../src/common/tenant-context/tenant-context';
+import { PrismaService } from '../src/prisma/prisma.service';
 import {
   disconnectTestDatabase,
   resetTestDatabase,
@@ -354,6 +356,38 @@ describe('Tenant isolation (e2e)', () => {
     });
   });
 
+  describe('Phase 2.1 automatic tenant scope (Prisma extension)', () => {
+    it('queries without explicit tenant filter only see the request tenant', async () => {
+      const prisma = app.get(PrismaService);
+      const tA = a.building.tenantId;
+      await runWithTenantScope(tA, async () => {
+        const buildings = await prisma.building.findMany();
+        expect(buildings.map((x) => x.id)).toEqual([a.building.id]);
+        expect(await prisma.reminder.findUnique({ where: { id: b.reminder.id } })).toBeNull();
+        expect(await prisma.meeting.count()).toBe(0);
+        await expect(
+          prisma.bankStatement.update({ where: { id: b.statement.id }, data: { lineCount: 99 } }),
+        ).rejects.toThrow();
+        const r = await prisma.reminder.create({
+          data: { type: 'custom', title: 'auto-scoped', dueAt: new Date('2099-01-01') },
+        });
+        expect(r.tenantId).toBe(tA);
+        // nested transaction client is scoped too
+        const inTx = await prisma.$transaction((tx) => tx.building.count());
+        expect(inTx).toBe(1);
+      });
+      const st = await testPrisma.bankStatement.findUnique({ where: { id: b.statement.id } });
+      expect(st?.lineCount).toBe(1);
+    });
+
+    it('explicit opt-out (runUnscoped) and no context see all organizations', async () => {
+      const prisma = app.get(PrismaService);
+      const all = await runUnscoped(() => prisma.building.count());
+      expect(all).toBe(2);
+      expect(await prisma.building.count()).toBe(2);
+    });
+  });
+
   describe('H4 backups', () => {
     it('organization roles cannot list whole-install backups on a shared install', async () => {
       await http().get('/api/backups').set('Authorization', `Bearer ${chairA}`).expect(403);
@@ -377,7 +411,7 @@ describe('Tenant isolation (e2e)', () => {
         .post('/api/building/apartments/import')
         .set('Authorization', `Bearer ${chairA}`)
         .send({ csv: 'number,entrance,floor,area\n1,1,1,10', buildingId: b.building.id })
-        .expect(403);
+        .expect((r) => expect([403, 404]).toContain(r.status));
       expect(await testPrisma.apartment.count({ where: { buildingId: b.building.id } })).toBe(1);
     });
   });

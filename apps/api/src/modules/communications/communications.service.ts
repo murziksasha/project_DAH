@@ -227,7 +227,7 @@ export class CommunicationsService {
   async deleteAnnouncement(id: string, userId: string, tenantId?: string | null) {
     const announcement = await this.prisma.announcement.findUnique({ where: { id } });
     if (!announcement) throw new NotFoundException('Оголошення не знайдено');
-    if (tenantId && announcement.tenantId && announcement.tenantId !== tenantId) {
+    if (tenantId && announcement.tenantId !== tenantId) {
       throw new ForbiddenException('Немає доступу до оголошення іншої організації');
     }
     await this.prisma.announcement.delete({ where: { id } });
@@ -643,9 +643,8 @@ export class CommunicationsService {
   }
 
   async listPolls(userId?: string, tenantId?: string | null) {
-    const where: Prisma.PollWhereInput = tenantId
-      ? { OR: [{ tenantId }, { tenantId: null }] }
-      : {};
+    // M8: rows without tenant are not shared across organizations
+    const where: Prisma.PollWhereInput = tenantId ? { tenantId } : {};
     const polls = await this.prisma.poll.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -705,7 +704,7 @@ export class CommunicationsService {
       },
     });
     if (!poll) throw new NotFoundException('Опитування не знайдено');
-    if (tenantId && poll.tenantId && poll.tenantId !== tenantId) {
+    if (tenantId && poll.tenantId !== tenantId) {
       throw new NotFoundException('Опитування не знайдено');
     }
 
@@ -771,7 +770,7 @@ export class CommunicationsService {
       include: { options: true },
     });
     if (!poll) throw new NotFoundException('Опитування не знайдено');
-    if (tenantId && poll.tenantId && poll.tenantId !== tenantId) {
+    if (tenantId && poll.tenantId !== tenantId) {
       throw new ForbiddenException('Немає доступу до опитування іншої організації');
     }
     if (!poll.isActive) throw new BadRequestException('Опитування закрито');
@@ -841,7 +840,7 @@ export class CommunicationsService {
   async closePoll(id: string, userId: string, tenantId?: string | null) {
     const poll = await this.prisma.poll.findUnique({ where: { id } });
     if (!poll) throw new NotFoundException('Опитування не знайдено');
-    if (tenantId && poll.tenantId && poll.tenantId !== tenantId) {
+    if (tenantId && poll.tenantId !== tenantId) {
       throw new ForbiddenException('Немає доступу до опитування іншої організації');
     }
     const stats = await this.pollStats(id, poll.voteWeight, poll.quorumPercent);

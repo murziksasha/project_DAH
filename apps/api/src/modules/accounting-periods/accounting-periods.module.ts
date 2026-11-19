@@ -1,4 +1,4 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
 import { AccountingPeriodsController } from './accounting-periods.controller';
 import { AccountingPeriodsService } from './accounting-periods.service';

@@ -254,7 +254,6 @@ export default function OpsPage() {
           : `Journal reconcile: ${res.mismatchCount} розбіжностей (див. консоль)`,
       );
       if (!res.ok) {
-        // eslint-disable-next-line no-console
         console.info('journal mismatches', res.mismatches);
       }
     } catch (err) {

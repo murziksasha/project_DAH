@@ -1,12 +1,10 @@
 import { beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  clearQueuedForApartment,
   countQueuedMeterReadings,
   enqueueMeterReading,
   flushMeterOfflineQueue,
   listQueuedMeterReadings,
-  removeQueuedMeterReading,
 } from './meter-offline-queue';
 
 class MemoryStorage implements Storage {
@@ -79,7 +77,7 @@ describe('meter-offline-queue', () => {
   });
 
   it('flushes successfully and removes uploaded readings', async () => {
-    const r1 = enqueueMeterReading({
+    enqueueMeterReading({
       meterId: 'meter-1',
       meterName: 'Холодна вода',
       apartmentId: 'apt-1',
@@ -110,7 +108,7 @@ describe('meter-offline-queue', () => {
       value: 100,
     });
 
-    const poster = async (meterId: string, body: any) => {
+    const poster = async (_meterId: string, _body: any) => {
       // Simulate delay during which another reading is enqueued
       await new Promise((r) => setTimeout(r, 10));
       enqueueMeterReading({

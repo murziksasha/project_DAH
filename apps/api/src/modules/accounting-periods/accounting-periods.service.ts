@@ -264,15 +264,11 @@ export class AccountingPeriodsService {
         : this.periodKeyFromDate(dateOrPeriod);
 
     if (txClient && typeof txClient.$queryRaw === 'function') {
-      try {
-        await txClient.$queryRaw`
-          SELECT id FROM "AccountingPeriod"
-          WHERE "buildingId" = ${buildingId} AND "period" = ${period}
-          FOR UPDATE
-        `;
-      } catch {
-        /* mock fallback */
-      }
+      await txClient.$queryRaw`
+        SELECT id FROM "AccountingPeriod"
+        WHERE "buildingId" = ${buildingId} AND "period" = ${period}
+        FOR UPDATE
+      `;
     }
 
     const row = await client.accountingPeriod.findUnique({

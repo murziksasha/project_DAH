@@ -44,7 +44,6 @@ class DomainEventBus {
       try {
         await h(payload);
       } catch (err) {
-        // eslint-disable-next-line no-console
         console.error(
           JSON.stringify({
             level: 'error',

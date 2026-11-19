@@ -28,6 +28,8 @@ import { SelectTenantDto } from './dto/select-tenant.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { Disable2faDto, Enable2faDto, Verify2faDto } from './dto/two-factor.dto';
+import { ForgotPasswordDto, ResetPasswordDto } from './dto/password-reset.dto';
+import { EmailNotifyDto, RejectUserDto, SmsLoginRequestDto, SmsLoginVerifyDto } from './dto/sms-login.dto';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -62,13 +64,13 @@ export class AuthController {
 
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('password/forgot')
-  forgotPassword(@Body() body: { email: string }) {
+  forgotPassword(@Body() body: ForgotPasswordDto) {
     return this.auth.requestPasswordReset(body.email);
   }
 
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('password/reset')
-  resetPassword(@Body() body: { token: string; newPassword: string }) {
+  resetPassword(@Body() body: ResetPasswordDto) {
     return this.auth.resetPasswordWithToken(body.token, body.newPassword);
   }
 
@@ -118,14 +120,14 @@ export class AuthController {
 
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('login/sms/request')
-  requestSmsLogin(@Body() body: { phone: string }) {
+  requestSmsLogin(@Body() body: SmsLoginRequestDto) {
     return this.auth.requestSmsLogin(body.phone);
   }
 
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('login/sms/verify')
   async verifySmsLogin(
-    @Body() body: { phone: string; code: string },
+    @Body() body: SmsLoginVerifyDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -273,7 +275,7 @@ export class AuthController {
   @ApiBearerAuth()
   @UseGuards(AuthGuard('jwt'))
   @Patch('email-notify')
-  emailNotify(@CurrentUser() user: AuthUser, @Body() body: { enabled: boolean }) {
+  emailNotify(@CurrentUser() user: AuthUser, @Body() body: EmailNotifyDto) {
     return this.auth.setEmailNotify(user.id, Boolean(body.enabled));
   }
 
@@ -313,7 +315,7 @@ export class AuthController {
   @Patch('reject/:id')
   reject(
     @Param('id') id: string,
-    @Body() body: { reason?: string },
+    @Body() body: RejectUserDto,
     @CurrentUser() user: AuthUser,
   ) {
     return this.auth.rejectUser(id, user.id, body?.reason);

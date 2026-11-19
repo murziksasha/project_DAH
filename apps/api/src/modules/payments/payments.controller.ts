@@ -22,10 +22,7 @@ import {
   ImportPaymentsDto,
   ImportPreviewDto,
 } from './dto/import-payments.dto';
-import {
-  CreateOnlinePaymentIntentDto,
-  OnlinePaymentWebhookDto,
-} from './dto/online-payment.dto';
+import { CreateOnlinePaymentIntentDto } from './dto/online-payment.dto';
 import { OnlinePaymentsService } from './online-payments.service';
 import { VoidPaymentDto } from './dto/void-payment.dto';
 import { PaymentsService } from './payments.service';
@@ -33,7 +30,6 @@ import { TenantAccessService } from '../../common/tenant-access/tenant-access.se
 
 const WRITE_ROLES = [UserRole.chairman, UserRole.accountant, UserRole.board];
 const REPORT_ROLES = [...WRITE_ROLES, UserRole.auditor, UserRole.super_admin];
-const READ_ROLES = [...REPORT_ROLES];
 
 @ApiTags('payments')
 @Controller('payments')

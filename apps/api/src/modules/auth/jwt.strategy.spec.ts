@@ -25,6 +25,9 @@ describe('JwtStrategy - Session & Revocation Validation', () => {
     tenantId: 'tenant-1',
     apartmentId: 'apt-1',
     apartmentLinks: [{ apartmentId: 'apt-1', isPrimary: true }],
+    memberships: [
+      { tenantId: 'tenant-1', role: UserRole.resident, status: UserStatus.active, tenant: { isActive: true } },
+    ],
   };
 
   const activeTenant = {
@@ -80,7 +83,7 @@ describe('JwtStrategy - Session & Revocation Validation', () => {
     };
     const inactiveStrategy = createStrategy(inactivePrisma);
     await expect(
-      strategy.validate({ sub: 'user-1', typ: 'access', sid: 'session-1' }),
+      inactiveStrategy.validate({ sub: 'user-1', typ: 'access', sid: 'session-1' }),
     ).rejects.toThrow(UnauthorizedException);
   });
 
@@ -156,7 +159,7 @@ describe('JwtStrategy - Session & Revocation Validation', () => {
 
   it('rejects user without active tenantMembership (no permissive fallback to user.role)', async () => {
     const prisma = {
-      user: { findUnique: jest.fn().mockResolvedValue(baseUser) },
+      user: { findUnique: jest.fn().mockResolvedValue({ ...baseUser, memberships: [] }) },
       authSession: {
         findUnique: jest.fn().mockResolvedValue({
           userId: 'user-1',
@@ -201,5 +204,32 @@ describe('JwtStrategy - Session & Revocation Validation', () => {
     const user = await strategy.validate({ sub: 'super-admin-1', sid: 'session-super', typ: 'access' });
     expect(user.role).toBe(UserRole.super_admin);
     expect(user.tenantId).toBeNull();
+  });
+
+  it('rejects a deactivated organization', async () => {
+    const prisma = {
+      user: {
+        findUnique: jest.fn().mockResolvedValue({
+          ...baseUser,
+          memberships: [{ ...baseUser.memberships[0], tenant: { isActive: false } }],
+        }),
+      },
+      authSession: { findUnique: jest.fn().mockResolvedValue({ userId: 'user-1', revokedAt: null }) },
+    };
+    await expect(
+      createStrategy(prisma).validate({ sub: 'user-1', sid: 's', typ: 'access' }),
+    ).rejects.toThrow(/деактивовано/);
+  });
+
+  it('M18: two queries per request (user+memberships, session)', async () => {
+    const prisma = {
+      user: { findUnique: jest.fn().mockResolvedValue(baseUser) },
+      authSession: { findUnique: jest.fn().mockResolvedValue({ userId: 'user-1', revokedAt: null }) },
+      tenant: { findUnique: jest.fn() },
+      tenantMembership: { findUnique: jest.fn(), findFirst: jest.fn() },
+    };
+    await createStrategy(prisma).validate({ sub: 'user-1', sid: 's', typ: 'access' });
+    expect(prisma.tenant.findUnique).not.toHaveBeenCalled();
+    expect(prisma.tenantMembership.findUnique).not.toHaveBeenCalled();
   });
 });

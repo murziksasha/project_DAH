@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, HttpCode, ServiceUnavailableException, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
@@ -22,6 +22,22 @@ export class HealthController {
       timestamp: full.timestamp,
       ...(buildSha ? { buildSha } : {}),
     };
+  }
+
+  /** Liveness probe: the process answers (no dependencies). */
+  @Get('live')
+  @HttpCode(200)
+  live() {
+    return { status: 'ok', uptimeSeconds: Math.round(process.uptime()) };
+  }
+
+  /** Readiness probe: 503 until the database is reachable (for orchestrators / LB). */
+  @Get('ready')
+  async ready() {
+    if (!(await this.health.ready())) {
+      throw new ServiceUnavailableException({ status: 'down', db: 'down' });
+    }
+    return { status: 'ok' };
   }
 
   /** Full component status — staff only. */

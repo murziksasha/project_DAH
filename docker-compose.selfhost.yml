@@ -25,7 +25,8 @@ services:
     mem_limit: 512m
 
   minio:
-    image: minio/minio:latest
+    # M16: pin in production, e.g. MINIO_IMAGE=minio/minio:RELEASE.<date> (see docs/UPGRADE-phase2.md)
+    image: ${MINIO_IMAGE:-minio/minio:latest}
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -34,14 +35,15 @@ services:
     volumes:
       - dah_minio_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      # M16: `mc ready` works in current MinIO images (curl was removed from them); curl kept as fallback.
+      test: ["CMD-SHELL", "mc ready local >/dev/null 2>&1 || curl -fsS http://localhost:9000/minio/health/live"]
       interval: 10s
       timeout: 5s
       retries: 3
     mem_limit: 256m
 
   minio-init:
-    image: minio/mc:latest
+    image: ${MINIO_MC_IMAGE:-minio/mc:latest}
     depends_on:
       minio:
         condition: service_healthy
@@ -61,6 +63,17 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
+    user: "node"
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 200
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-dah}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-dah}
@@ -77,6 +90,8 @@ services:
       TRUST_PROXY: "1"
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
       REDIS_URL: none
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      LOG_FORMAT: ${LOG_FORMAT:-text}
       BACKUP_DIR: /backups
       BACKUP_STATUS_PATH: /backups/last-backup.json
       BACKUP_MAX_AGE_HOURS: ${BACKUP_MAX_AGE_HOURS:-192}
@@ -95,6 +110,11 @@ services:
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
     command: ["node", "dist/src/worker.js"]
+    user: "node"
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 200
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-dah}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-dah}
@@ -115,7 +135,7 @@ services:
       - ./backups:/backups
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
     mem_limit: 256m
 
   web:
@@ -125,6 +145,8 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       - api
     mem_limit: 128m

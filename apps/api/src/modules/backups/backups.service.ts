@@ -1,3 +1,4 @@
+import { APP_VERSION } from '../../common/version';
 import {
   BadRequestException,
   Injectable,
@@ -659,7 +660,7 @@ export class BackupsService {
           files: filesMeta.ok,
           filesBytes: filesMeta.filesBytes,
         },
-        appVersion: process.env.npm_package_version ?? null,
+        appVersion: APP_VERSION,
         ...(params.weekKey ? { weekKey: params.weekKey } : {}),
       };
       await this.writeManifest(dir, manifest);

@@ -492,4 +492,14 @@ describe('OnlinePaymentsService - Security & Signatures', () => {
       expect((s as any).payments.createPayment).not.toHaveBeenCalled();
     });
   });
+
+  describe('L12: provider status sandbox', () => {
+    it('counts as paid only in sandbox mode', () => {
+      const prod = createService({ NODE_ENV: 'production', ONLINE_PAYMENTS_SANDBOX: 'false' }) as any;
+      expect(prod.isPaidStatus('sandbox', ['success'])).toBe(false);
+      expect(prod.isPaidStatus('success', ['success'])).toBe(true);
+      const sb = createService({ NODE_ENV: 'development', ONLINE_PAYMENTS_SANDBOX: 'true' }) as any;
+      expect(sb.isPaidStatus('sandbox', ['success'])).toBe(true);
+    });
+  });
 });

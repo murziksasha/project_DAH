@@ -1,11 +1,14 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 import type { NextFunction, Request, Response } from 'express';
 import { assertProductionJwtSecret } from './common/config/jwt.config';
 import { RequestLoggingMiddleware } from './common/middleware/request-logging.middleware';
 import { AppModule } from './app.module';
+import { buildOpenApiDocument } from './openapi';
+import { createAppLogger } from './common/logging/json-logger';
+import { APP_VERSION } from './common/version';
 
 /** Lightweight security headers (helmet-equivalent without extra dep). */
 function securityHeaders(_req: Request, res: Response, next: NextFunction) {
@@ -33,10 +36,13 @@ function isSwaggerEnabled(): boolean {
 
 async function bootstrap() {
   assertProductionJwtSecret();
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { logger: createAppLogger() });
   const trustProxy = process.env.TRUST_PROXY ?? (process.env.NODE_ENV === 'production' ? '1' : '0');
   if (trustProxy === '1' || trustProxy === 'true') {
-    (app.getHttpAdapter().getInstance() as any).set('trust proxy', 1);
+    (app.getHttpAdapter().getInstance() as { set(key: string, value: unknown): void }).set(
+      'trust proxy',
+      1,
+    );
   }
   app.setGlobalPrefix('api');
   app.use(cookieParser());
@@ -61,13 +67,7 @@ async function bootstrap() {
   });
 
   if (isSwaggerEnabled()) {
-    const config = new DocumentBuilder()
-      .setTitle('Мій дім API')
-      .setDescription('API для управління ОСББ та управляючих компаній (УК)')
-      .setVersion('1.0.0')
-      .addBearerAuth()
-      .build();
-    SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, config));
+    SwaggerModule.setup('api/docs', app, buildOpenApiDocument(app));
   }
 
   const port = process.env.API_PORT ?? 3001;
@@ -75,8 +75,9 @@ async function bootstrap() {
   const host = process.env.API_HOST?.trim();
   if (host) await app.listen(port, host);
   else await app.listen(port);
-  // eslint-disable-next-line no-console
-  console.log(JSON.stringify({ level: 'info', msg: 'api_started', port: Number(port) }));
+  console.log(
+    JSON.stringify({ level: 'info', msg: 'api_started', port: Number(port), version: APP_VERSION }),
+  );
 }
 
 bootstrap();

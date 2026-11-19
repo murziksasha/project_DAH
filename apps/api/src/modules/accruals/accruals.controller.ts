@@ -25,6 +25,7 @@ import { TenantAccessService } from '../../common/tenant-access/tenant-access.se
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAccrualDto } from './dto/create-accrual.dto';
 import { CreateAccrualTemplateDto } from './dto/create-accrual-template.dto';
+import { CreditNoteDto, ReverseAccrualDto } from './dto/accrual-actions.dto';
 
 const WRITE_ROLES = [UserRole.chairman, UserRole.accountant, UserRole.board];
 const READ_ROLES: UserRole[] = [
@@ -213,7 +214,7 @@ export class AccrualsController {
   @Post(':id/reverse')
   async reverse(
     @Param('id') id: string,
-    @Body() body: { reason?: string },
+    @Body() body: ReverseAccrualDto,
     @CurrentUser() user: AuthUser,
     @TenantId() tenantId: string | null,
   ) {
@@ -226,7 +227,7 @@ export class AccrualsController {
   @Post('lines/:lineId/credit-note')
   async creditNote(
     @Param('lineId') lineId: string,
-    @Body() body: { amount: number; reason?: string },
+    @Body() body: CreditNoteDto,
     @CurrentUser() user: AuthUser,
     @TenantId() tenantId: string | null,
   ) {

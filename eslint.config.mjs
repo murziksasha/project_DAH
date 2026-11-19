@@ -39,6 +39,11 @@ export default tseslint.config(
     },
   },
   {
+    // Test doubles/mocks: `any` is accepted in specs (production code still warns).
+    files: ['**/*.spec.ts', '**/*.e2e-spec.ts', '**/test/**/*.ts'],
+    rules: { '@typescript-eslint/no-explicit-any': 'off' },
+  },
+  {
     files: ['apps/web/**/*.tsx', 'apps/web/**/*.ts'],
     plugins: { 'react-hooks': reactHooks, '@next/next': nextPlugin },
     rules: {

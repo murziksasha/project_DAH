@@ -39,7 +39,6 @@ const resA: AuthUser = { id: 'u2', email: 'r', role: UserRole.resident, tenantId
 const root: AuthUser = { id: 'u0', email: 's', role: UserRole.super_admin, tenantId: null };
 
 describe('TenantAccessService (C1–C6)', () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const svc = new TenantAccessService(prisma as any);
 
   it('effective tenant: users pinned to JWT tenant, super_admin may override', () => {

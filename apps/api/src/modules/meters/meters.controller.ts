@@ -11,13 +11,14 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { MeterType, UserRole } from '@prisma/client';
+import { UserRole } from '@prisma/client';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MetersService } from './meters.service';
+import { CreateMeterDto, MeterReadingDto } from './dto/meter.dto';
 
 const WRITE = [UserRole.chairman, UserRole.accountant, UserRole.board, UserRole.super_admin];
 
@@ -52,14 +53,7 @@ export class MetersController {
   @Roles(...WRITE)
   @Post()
   create(
-    @Body()
-    body: {
-      apartmentId: string;
-      type: MeterType;
-      name: string;
-      unit?: string;
-      serialNumber?: string;
-    },
+    @Body() body: CreateMeterDto,
     @CurrentUser() user: AuthUser,
   ) {
     return this.meters.createMeter(body, user.id);
@@ -70,7 +64,7 @@ export class MetersController {
   @Post(':id/readings')
   addReading(
     @Param('id') id: string,
-    @Body() body: { period: string; value: number },
+    @Body() body: MeterReadingDto,
     @CurrentUser() user: AuthUser,
   ) {
     return this.meters.addReading(id, body, user.id);
@@ -80,7 +74,7 @@ export class MetersController {
   @Post(':id/readings/self')
   async selfReading(
     @Param('id') id: string,
-    @Body() body: { period: string; value: number },
+    @Body() body: MeterReadingDto,
     @CurrentUser() user: AuthUser,
   ) {
     const row = await this.prisma.meter.findUnique({ where: { id } });

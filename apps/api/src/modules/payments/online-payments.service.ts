@@ -375,7 +375,7 @@ export class OnlinePaymentsService implements OnModuleInit {
       return { ok: true, pending: true, orderId: order.orderId };
     }
 
-    if (!['success', 'sandbox', 'paid'].includes(st)) {
+    if (!this.isPaidStatus(st, ['success', 'paid'])) {
       if (['failure', 'error', 'reversed'].includes(st)) {
         await this.markOrderFailed(order.orderId, st);
       }
@@ -444,7 +444,7 @@ export class OnlinePaymentsService implements OnModuleInit {
     };
 
     const status = String(body.transactionStatus ?? body.status ?? '').toLowerCase();
-    if (!['approved', 'success', 'paid', 'sandbox'].includes(status)) {
+    if (!this.isPaidStatus(status, ['approved', 'success', 'paid'])) {
       if (['declined', 'failed', 'expired', 'refunded'].includes(status)) {
         await this.markOrderFailed(order.orderId, status);
       }
@@ -529,7 +529,7 @@ export class OnlinePaymentsService implements OnModuleInit {
     }
 
     const status = (body.status ?? 'success').toLowerCase();
-    if (status !== 'success' && status !== 'sandbox' && status !== 'paid') {
+    if (!this.isPaidStatus(status, ['success', 'paid'])) {
       await this.markOrderFailed(order.orderId, status);
       return { ok: false, message: `Ігноровано статус ${status}` };
     }
@@ -706,6 +706,12 @@ export class OnlinePaymentsService implements OnModuleInit {
     if (a.length !== b.length || !timingSafeEqual(a, b)) {
       throw new BadRequestException('Невірний підпис webhook');
     }
+  }
+
+  /** L12: provider status `sandbox` counts as paid only in sandbox mode. */
+  private isPaidStatus(status: string, paid: string[]): boolean {
+    if (paid.includes(status)) return true;
+    return status === 'sandbox' && this.isSandbox();
   }
 
   async sandboxComplete(dto: CreateOnlinePaymentIntentDto, user: AuthUser) {

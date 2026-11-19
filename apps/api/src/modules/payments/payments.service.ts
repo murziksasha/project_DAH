@@ -253,21 +253,13 @@ export class PaymentsService {
       // 2. Order lock if reference matches an online order
       if (dto.reference) {
         if (typeof tx.$queryRaw === 'function') {
-          try {
-            await tx.$queryRaw`SELECT id FROM "OnlinePaymentOrder" WHERE "orderId" = ${dto.reference} FOR UPDATE`;
-          } catch {
-            /* mock fallback */
-          }
+          await tx.$queryRaw`SELECT id FROM "OnlinePaymentOrder" WHERE "orderId" = ${dto.reference} FOR UPDATE`;
         }
       }
 
       // 3. Apartment row lock
       if (typeof tx.$queryRaw === 'function') {
-        try {
-          await tx.$queryRaw`SELECT id FROM "Apartment" WHERE id = ${dto.apartmentId} FOR UPDATE`;
-        } catch {
-          /* mock fallback */
-        }
+        await tx.$queryRaw`SELECT id FROM "Apartment" WHERE id = ${dto.apartmentId} FOR UPDATE`;
       }
 
       // 4. Open accrual lines row lock
@@ -282,30 +274,26 @@ export class PaymentsService {
       }> = [];
 
       if (typeof tx.$queryRaw === 'function') {
-        try {
-          lockedLines = await tx.$queryRaw<
-            Array<{
-              id: string;
-              amount: Prisma.Decimal;
-              paidAmount: Prisma.Decimal;
-              dueDate: Date | null;
-              period: string;
-              title: string;
-              fundId: string;
-            }>
-          >`
-            SELECT al.id, al.amount, al."paidAmount", al."dueDate",
-                   a.period, a.title, a."fundId"
-            FROM "AccrualLine" al
-            JOIN "Accrual" a ON a.id = al."accrualId"
-            WHERE al."apartmentId" = ${dto.apartmentId}
-              AND al.status IN ('open', 'partially_paid', 'overdue')
-            ORDER BY al."dueDate" ASC NULLS LAST, al."createdAt" ASC
-            FOR UPDATE OF al
-          `;
-        } catch {
-          /* mock fallback */
-        }
+        lockedLines = await tx.$queryRaw<
+          Array<{
+            id: string;
+            amount: Prisma.Decimal;
+            paidAmount: Prisma.Decimal;
+            dueDate: Date | null;
+            period: string;
+            title: string;
+            fundId: string;
+          }>
+        >`
+          SELECT al.id, al.amount, al."paidAmount", al."dueDate",
+                 a.period, a.title, a."fundId"
+          FROM "AccrualLine" al
+          JOIN "Accrual" a ON a.id = al."accrualId"
+          WHERE al."apartmentId" = ${dto.apartmentId}
+            AND al.status IN ('open', 'partially_paid', 'overdue')
+          ORDER BY al."dueDate" ASC NULLS LAST, al."createdAt" ASC
+          FOR UPDATE OF al
+        `;
       }
 
       if (!lockedLines.length) {
@@ -558,11 +546,7 @@ export class PaymentsService {
 
       // 2. Lock payment row to prevent concurrent void
       if (typeof tx.$queryRaw === 'function') {
-        try {
-          await tx.$queryRaw`SELECT id FROM "Payment" WHERE id = ${id} FOR UPDATE`;
-        } catch {
-          /* mock fallback */
-        }
+        await tx.$queryRaw`SELECT id FROM "Payment" WHERE id = ${id} FOR UPDATE`;
       }
 
       const freshPayment = await tx.payment.findUnique({
@@ -575,11 +559,7 @@ export class PaymentsService {
 
       // 3. Lock apartment row
       if (typeof tx.$queryRaw === 'function') {
-        try {
-          await tx.$queryRaw`SELECT id, "advanceBalance" FROM "Apartment" WHERE id = ${payment.apartmentId} FOR UPDATE`;
-        } catch {
-          /* mock fallback */
-        }
+        await tx.$queryRaw`SELECT id, "advanceBalance" FROM "Apartment" WHERE id = ${payment.apartmentId} FOR UPDATE`;
       }
 
       // 4. Lock and re-read current accrual lines to avoid using stale snapshots
@@ -592,30 +572,26 @@ export class PaymentsService {
       }> = [];
 
       if (lineIds.length && typeof tx.$queryRaw === 'function') {
-        try {
-          lockedLines = await tx.$queryRaw<
-            Array<{
-              id: string;
-              amount: Prisma.Decimal;
-              paidAmount: Prisma.Decimal;
-              dueDate: Date | null;
-            }>
-          >`
-            SELECT id, amount, "paidAmount", "dueDate"
-            FROM "AccrualLine"
-            WHERE id IN (${Prisma.join(lineIds)})
-            FOR UPDATE
-          `;
-        } catch {
-          /* mock fallback */
-        }
+        lockedLines = await tx.$queryRaw<
+          Array<{
+            id: string;
+            amount: Prisma.Decimal;
+            paidAmount: Prisma.Decimal;
+            dueDate: Date | null;
+          }>
+        >`
+          SELECT id, amount, "paidAmount", "dueDate"
+          FROM "AccrualLine"
+          WHERE id IN (${Prisma.join(lineIds)})
+          FOR UPDATE
+        `;
       }
 
       if (lineIds.length && !lockedLines.length) {
         lockedLines = await tx.accrualLine.findMany({
           where: { id: { in: lineIds } },
           select: { id: true, amount: true, paidAmount: true, dueDate: true },
-        }) as any;
+        });
       }
 
       for (const alloc of freshPayment.allocations) {

@@ -1,5 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { AccrualLineStatus, FundType, JournalEntryType, Prisma } from '@prisma/client';
+import { AccrualLineStatus, FundType, Prisma } from '@prisma/client';
 import { roundMoney } from '../../common/utils/money';
 import { calcDailyPenalty, daysOverdue } from '../../common/utils/penalty';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -9,6 +9,7 @@ import { JournalService } from '../journal/journal.service';
 import { PostingService } from '../journal/posting.service';
 import { MailService } from '../mail/mail.service';
 import { CreateReminderDto } from './dto/create-reminder.dto';
+import { runExclusive } from '../../common/jobs/job-lock';
 
 @Injectable()
 export class RemindersService {
@@ -90,12 +91,25 @@ export class RemindersService {
     debtSent: number;
     markedOverdue: number;
     penaltyLines: number;
+    skipped?: boolean;
   }> {
-    const markedOverdue = await markOverdueAccrualLines(this.prisma);
-    const customSent = await this.sendDueCustomReminders(tenantId);
-    const debtSent = await this.sendDebtReminders(false, tenantId);
-    const penaltyLines = await this.processDailyPenalties(tenantId);
-    return { customSent, debtSent, markedOverdue, penaltyLines };
+    // M9: one run at a time per scope (worker vs manual `process`, several workers).
+    const lease = await runExclusive(
+      this.prisma,
+      `reminders_scan:${tenantId ?? 'all'}`,
+      30 * 60 * 1000,
+      async () => {
+        const markedOverdue = await markOverdueAccrualLines(this.prisma);
+        const customSent = await this.sendDueCustomReminders(tenantId);
+        const debtSent = await this.sendDebtReminders(false, tenantId);
+        const penaltyLines = await this.processDailyPenalties(tenantId);
+        return { customSent, debtSent, markedOverdue, penaltyLines };
+      },
+    );
+    if (lease.skipped) {
+      return { customSent: 0, debtSent: 0, markedOverdue: 0, penaltyLines: 0, skipped: true };
+    }
+    return lease.result;
   }
 
   /**
@@ -184,30 +198,36 @@ export class RemindersService {
       if (!lines.length) continue;
 
       const total = roundMoney(lines.reduce((s, l) => s + l.amount, 0));
-      await this.prisma.$transaction(async (tx) => {
-        const accrual = await tx.accrual.create({
-          data: { fundId: fundId!, period, title },
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          const accrual = await tx.accrual.create({
+            data: { fundId: fundId!, period, title },
+          });
+          await tx.accrualLine.createMany({
+            data: lines.map((l) => ({
+              accrualId: accrual.id,
+              apartmentId: l.apartmentId,
+              amount: l.amount,
+              status: AccrualLineStatus.open,
+              dueDate: new Date(),
+            })),
+          });
+          await this.posting.postPenalty(
+            accrual.id,
+            total,
+            {
+              buildingId: building.id,
+              fundId: fundId!,
+              description: title,
+            },
+            tx,
+          );
         });
-        await tx.accrualLine.createMany({
-          data: lines.map((l) => ({
-            accrualId: accrual.id,
-            apartmentId: l.apartmentId,
-            amount: l.amount,
-            status: AccrualLineStatus.open,
-            dueDate: new Date(),
-          })),
-        });
-        await this.posting.postPenalty(
-          accrual.id,
-          total,
-          {
-            buildingId: building.id,
-            fundId: fundId!,
-            description: title,
-          },
-          tx,
-        );
-      });
+      } catch (e) {
+        // Unique (fundId, period, title): a concurrent run already created today's penalty.
+        if ((e as { code?: string })?.code === 'P2002') continue;
+        throw e;
+      }
       createdLines += lines.length;
       this.logger.log(
         `penalty ${building.id} ${dayKey}: ${lines.length} lines, total=${total}`,

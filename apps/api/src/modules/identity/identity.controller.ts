@@ -4,6 +4,7 @@ import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { clearAuthCookies, setAuthCookies } from '../auth/auth-cookies';
 import { IdentityService } from './identity.service';
+import { IdentityAuthorizeDto, IdentityCallbackDto } from './dto/identity.dto';
 
 @ApiTags('identity')
 @Controller('identity')
@@ -22,14 +23,14 @@ export class IdentityController {
 
   @Throttle({ default: { limit: 20, ttl: 60000 } })
   @Post('authorize')
-  authorize(@Body() body: { returnTo?: string }) {
+  authorize(@Body() body: IdentityAuthorizeDto) {
     return this.identity.startAuthorize(body.returnTo);
   }
 
   @Throttle({ default: { limit: 20, ttl: 60000 } })
   @Post('callback')
   async callback(
-    @Body() body: { code?: string; state: string; phone?: string; email?: string },
+    @Body() body: IdentityCallbackDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {

@@ -54,7 +54,7 @@
     "typecheck": "npm run build -w @dah/shared && npm run build -w @dah/money && npm run build -w @dah/api-client && npm run db:generate -w @dah/api && npm run typecheck:api && npm run typecheck:web",
     "test": "npm run test -w @dah/api",
     "test:cov": "npm run test:cov -w @dah/api",
-    "test:unit": "npm run test -w @dah/shared && npm run test -w @dah/money && npm run test -w @dah/api && npm run test -w @dah/web",
+    "test:unit": "npm run test -w @dah/shared && npm run test -w @dah/money && npm run test -w @dah/api-client && npm run openapi:check -w @dah/api && npm run test -w @dah/api && npm run test -w @dah/web",
     "test:e2e": "npm run test:e2e -w @dah/api",
     "test:e2e:web": "npm run test:e2e -w @dah/web",
     "test:all": "npm run test:unit && npm run test:e2e -w @dah/api",

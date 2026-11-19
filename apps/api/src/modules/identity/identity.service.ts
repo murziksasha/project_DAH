@@ -228,7 +228,7 @@ export class IdentityService {
     claims: { issuer?: string; subject?: string; email?: string; phone?: string },
     meta: SessionMeta,
   ) {
-    let user =
+    const user =
       (claims.email
         ? await this.prisma.user.findUnique({ where: { email: claims.email } })
         : null) ??

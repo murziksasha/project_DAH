@@ -7,14 +7,17 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
 COPY package.json package-lock.json* ./
 COPY packages/shared/package.json ./packages/shared/
+COPY packages/money/package.json ./packages/money/
 COPY apps/web/package.json ./apps/web/
 
-RUN npm install --workspace=@dah/shared --workspace=@dah/web
+RUN npm install --workspace=@dah/shared --workspace=@dah/money --workspace=@dah/web
 
 COPY packages/shared ./packages/shared
+COPY packages/money ./packages/money
 COPY apps/web ./apps/web
 
 RUN npm run build -w @dah/shared
+RUN npm run build -w @dah/money
 RUN npm run build -w @dah/web
 
 # Static export → lightweight nginx (no Node runtime)

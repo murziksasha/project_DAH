@@ -6,6 +6,7 @@ import { CurrentUser, AuthUser } from '../../common/decorators/current-user.deco
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { TenantsService } from './tenants.service';
+import { CreateTenantDto, DeleteTenantDto, UpdateTenantDto } from './dto/tenant.dto';
 
 @ApiTags('tenants')
 @ApiBearerAuth()
@@ -32,15 +33,7 @@ export class TenantsController {
 
   @Post()
   create(
-    @Body()
-    body: {
-      name: string;
-      slug: string;
-      /** osbb | management_company */
-      orgType?: string;
-      chairmanEmail?: string;
-      chairmanPassword?: string;
-    },
+    @Body() body: CreateTenantDto,
     @CurrentUser() user: AuthUser,
   ) {
     return this.tenants.create(body, user.id);
@@ -49,7 +42,7 @@ export class TenantsController {
   @Patch(':id')
   update(
     @Param('id') id: string,
-    @Body() body: { name?: string; isActive?: boolean; orgType?: string },
+    @Body() body: UpdateTenantDto,
     @CurrentUser() user: AuthUser,
   ) {
     return this.tenants.update(id, body, user.id);
@@ -58,7 +51,7 @@ export class TenantsController {
   @Delete(':id')
   remove(
     @Param('id') id: string,
-    @Body() body: { confirmSlug?: string },
+    @Body() body: DeleteTenantDto,
     @CurrentUser() user: AuthUser,
   ) {
     return this.tenants.delete(id, body ?? {}, user.id);

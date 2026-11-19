@@ -803,4 +803,78 @@ export class JournalService {
         (reconcile.trialBalance?.balanced ?? false),
     };
   }
+
+  /** Days of consecutive readyForSot required before cutover (JOURNAL_SOT_STREAK_DAYS, default 30). */
+  static sotStreakDays(): number {
+    const n = Number(process.env.JOURNAL_SOT_STREAK_DAYS ?? 30);
+    return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 30;
+  }
+
+  /** Persist today's shadow-compare for a building (idempotent per UTC day). */
+  async recordShadowRun(buildingId: string, now = new Date()) {
+    const result = await this.shadowCompare(buildingId);
+    const day = now.toISOString().slice(0, 10);
+    const data = {
+      readyForSot: !!result.readyForSot,
+      reconcileOk: !!result.reconcileOk,
+      advancesOk: !!result.advancesOk,
+      mismatchCount: Number(result.mismatchCount ?? 0),
+    };
+    await this.prisma.journalShadowRun.upsert({
+      where: { buildingId_day: { buildingId, day } },
+      create: { buildingId, day, ...data },
+      update: data,
+    });
+    return { buildingId, day, ...data };
+  }
+
+  /** Daily job: shadow-compare every building (worker, under the journal_reconcile lease). */
+  async recordShadowRunsForAll(now = new Date()) {
+    const buildings = await this.prisma.building.findMany({ select: { id: true } });
+    const out: Array<{ buildingId: string; readyForSot: boolean; error?: string }> = [];
+    for (const b of buildings) {
+      try {
+        const r = await this.recordShadowRun(b.id, now);
+        out.push({ buildingId: b.id, readyForSot: r.readyForSot });
+      } catch (err) {
+        out.push({ buildingId: b.id, readyForSot: false, error: err instanceof Error ? err.message : String(err) });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Cutover readiness: consecutive UTC days (ending today or yesterday) with readyForSot.
+   * A missing day breaks the streak. Switching is a deliberate admin action
+   * (settings.finance.journalSot) — this only says whether it is safe.
+   */
+  async sotReadiness(buildingId: string, now = new Date()) {
+    const requiredDays = JournalService.sotStreakDays();
+    const runs = await this.prisma.journalShadowRun.findMany({
+      where: { buildingId },
+      orderBy: { day: 'desc' },
+      take: Math.max(requiredDays, 30) + 2,
+      select: { day: true, readyForSot: true, mismatchCount: true, reconcileOk: true, advancesOk: true },
+    });
+    const dayMs = 24 * 60 * 60 * 1000;
+    const today = now.toISOString().slice(0, 10);
+    const yesterday = new Date(now.getTime() - dayMs).toISOString().slice(0, 10);
+    let streakDays = 0;
+    if (runs.length && (runs[0].day === today || runs[0].day === yesterday)) {
+      let expected = runs[0].day;
+      for (const r of runs) {
+        if (r.day !== expected || !r.readyForSot) break;
+        streakDays += 1;
+        expected = new Date(Date.parse(`${expected}T00:00:00Z`) - dayMs).toISOString().slice(0, 10);
+      }
+    }
+    return {
+      buildingId,
+      requiredDays,
+      streakDays,
+      eligible: streakDays >= requiredDays,
+      lastRun: runs[0] ?? null,
+      history: runs.slice(0, 30),
+    };
+  }
 }

@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { UserRole, VoteWeightMode } from '@prisma/client';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { CommunicationsService } from './communications.service';
@@ -224,7 +224,7 @@ describe('CommunicationsService - Tenant Isolation & Offline Idempotency', () =>
       await service.listPolls('user-a', 'tenant-A');
       expect(prisma.poll.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { OR: [{ tenantId: 'tenant-A' }, { tenantId: null }] },
+          where: { tenantId: 'tenant-A' }, // M8: no cross-tenant NULL rows
         }),
       );
     });

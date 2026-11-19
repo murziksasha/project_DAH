@@ -14,9 +14,8 @@ export class DocumentsService {
   ) {}
 
   listAll(tenantId?: string | null) {
-    const where: Prisma.DocumentWhereInput = tenantId
-      ? { OR: [{ tenantId }, { tenantId: null }] }
-      : {};
+    // M8: documents without tenant are not shared across organizations
+    const where: Prisma.DocumentWhereInput = tenantId ? { tenantId } : {};
     return this.enrichDocuments(
       this.prisma.document.findMany({ where, orderBy: { createdAt: 'desc' } }),
     );
@@ -25,7 +24,7 @@ export class DocumentsService {
   listPublic(tenantId?: string | null) {
     const where: Prisma.DocumentWhereInput = {
       isPublic: true,
-      ...(tenantId ? { OR: [{ tenantId }, { tenantId: null }] } : {}),
+      ...(tenantId ? { tenantId } : {}),
     };
     return this.enrichDocuments(
       this.prisma.document.findMany({
@@ -67,7 +66,7 @@ export class DocumentsService {
   ) {
     const doc = await this.prisma.document.findUnique({ where: { id } });
     if (!doc) throw new NotFoundException('Документ не знайдено');
-    if (tenantId && doc.tenantId && doc.tenantId !== tenantId) {
+    if (tenantId && doc.tenantId !== tenantId) {
       throw new ForbiddenException('Немає доступу до документу іншої організації');
     }
     const updated = await this.prisma.document.update({
@@ -91,7 +90,7 @@ export class DocumentsService {
   async remove(id: string, userId: string, tenantId?: string | null) {
     const doc = await this.prisma.document.findUnique({ where: { id } });
     if (!doc) throw new NotFoundException('Документ не знайдено');
-    if (tenantId && doc.tenantId && doc.tenantId !== tenantId) {
+    if (tenantId && doc.tenantId !== tenantId) {
       throw new ForbiddenException('Немає доступу до документу іншої організації');
     }
     await this.storage.delete(doc.fileKey).catch(() => undefined);

@@ -22,7 +22,6 @@ describe('Finance deep accounting (e2e)', () => {
   let skip = false;
   let buildingId = '';
   let fundId = '';
-  let categoryId = '';
   let apartmentId = '';
 
   beforeAll(async () => {
@@ -65,7 +64,7 @@ describe('Finance deep accounting (e2e)', () => {
       .get('/api/finance/categories')
       .set('Authorization', `Bearer ${token}`);
     if (cats.status === 200 && Array.isArray(cats.body) && cats.body[0]) {
-      categoryId = cats.body[0].id;
+      expect(cats.body[0].id).toBeTruthy();
     }
 
     const apts = await request(app.getHttpServer())

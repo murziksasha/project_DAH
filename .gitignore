@@ -15,6 +15,7 @@ out/
 .env.*
 !.env.example
 !.env.product.example
+!.env.selfhost.example
 
 # Logs & OS
 *.log

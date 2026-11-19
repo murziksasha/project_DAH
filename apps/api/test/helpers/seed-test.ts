@@ -17,6 +17,7 @@ export async function resetTestDatabase() {
   await prisma.meetingAgendaItem.deleteMany().catch(() => undefined);
   await prisma.meeting.deleteMany().catch(() => undefined);
   await prisma.journalSequence.deleteMany().catch(() => undefined);
+  await prisma.workerJob.deleteMany().catch(() => undefined);
   await prisma.auditLog.deleteMany();
   await prisma.emailLog.deleteMany();
   await prisma.reminder.deleteMany();

@@ -25,6 +25,7 @@ import { UpdateBuildingDto } from './dto/update-building.dto';
 import { UpdateBuildingSettingsDto } from './dto/update-settings.dto';
 import { UpdateDocumentTemplatesDto } from './dto/update-document-templates.dto';
 import { ImportApartmentsCsvDto } from './dto/import-apartments-csv.dto';
+import { CreateBuildingDto } from './dto/create-building.dto';
 
 @ApiTags('building')
 @ApiBearerAuth()
@@ -47,7 +48,7 @@ export class BuildingController {
   @Roles(UserRole.super_admin, UserRole.chairman)
   @Post('create')
   createBuilding(
-    @Body() body: { name: string; address: string; edrpou?: string | null; tenantId?: string },
+    @Body() body: CreateBuildingDto,
     @CurrentUser() user: AuthUser,
   ) {
     // Only platform admin may create a building in another organization.

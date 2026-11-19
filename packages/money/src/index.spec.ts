@@ -19,6 +19,12 @@ describe('toMinor / toMajor', () => {
   it('rounds fractional major to nearest kopiika', () => {
     assert.equal(toMinor(1.999), 200);
     assert.equal(toMinor('1.994'), 199);
+    // L6: decimal (not float) half-up rounding
+    assert.equal(toMinor(1.005), 101);
+    assert.equal(toMinor('1.005'), 101);
+    assert.equal(toMinor(-1.005), -101);
+    assert.equal(toMinor('-0.001'), 0);
+    assert.equal(toMinor(1234567.895), 123456790);
   });
 });
 

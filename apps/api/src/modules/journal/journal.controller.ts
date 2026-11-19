@@ -80,6 +80,29 @@ export class JournalController {
     return this.journal.shadowCompare(id);
   }
 
+  /** Roadmap «Journal as SoT»: readiness streak of daily shadow-compare runs. */
+  @Get('sot-readiness')
+  async sotReadiness(
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+    @Query('buildingId') buildingId: string,
+  ) {
+    const id = await this.access.resolveBuilding(user, buildingId, tenantId);
+    return this.journal.sotReadiness(id);
+  }
+
+  /** Record today's shadow-compare now (otherwise the worker does it daily). */
+  @Post('shadow-runs')
+  @Roles(UserRole.chairman, UserRole.accountant, UserRole.super_admin)
+  async recordShadowRun(
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+    @Query('buildingId') buildingId: string,
+  ) {
+    const id = await this.access.resolveBuilding(user, buildingId, tenantId);
+    return this.journal.recordShadowRun(id);
+  }
+
   @Get('fund-balances')
   async fundBalances(
     @CurrentUser() user: AuthUser,

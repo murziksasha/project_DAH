@@ -100,7 +100,7 @@ export class KepService {
 
   async startSession(input: StartSignInput): Promise<StartSignResult> {
     this.assertEnabled();
-    let provider = input.provider ?? this.defaultProvider();
+    const provider = input.provider ?? this.defaultProvider();
     if (provider === 'mock' && !this.mockAllowed()) {
       throw new BadRequestException('Mock-підпис вимкнено (KEP_ALLOW_MOCK=false)');
     }

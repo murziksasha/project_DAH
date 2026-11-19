@@ -1,7 +1,25 @@
 /**
- * Lightweight shared API types for «Мій дім» web/admin clients.
- * Full OpenAPI codegen can replace this package later.
+ * Shared API types for «Мій дім» web/admin clients.
+ * L2/L9: `paths`/`components`/`operations` are generated from docs/api/openapi.json
+ * (`npm run codegen -w @dah/api-client`); hand-written helpers below stay for compatibility.
  */
+import type { paths } from './openapi';
+
+export type { paths, components, operations } from './openapi';
+
+/** Every documented API route, e.g. `'/api/health/ready'`. */
+export type ApiPath = keyof paths;
+
+/** HTTP methods available on a route. */
+export type ApiMethod<P extends ApiPath> = {
+  [M in keyof paths[P]]: paths[P][M] extends undefined | never ? never : M;
+}[keyof paths[P]] &
+  ('get' | 'post' | 'put' | 'patch' | 'delete');
+
+/** Type-safe route literal helper: `apiPath('/api/health/ready')` fails to compile for unknown routes. */
+export function apiPath<P extends ApiPath>(p: P): P {
+  return p;
+}
 
 export interface PageResult<T> {
   items: T[];

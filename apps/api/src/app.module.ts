@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { TenantScopeInterceptor } from './common/tenant-context/tenant-scope.interceptor';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AccrualsModule } from './modules/accruals/accruals.module';
 import { AuditModule } from './modules/audit/audit.module';
@@ -74,6 +75,9 @@ import { DeepAccountingModule } from './modules/deep-accounting/deep-accounting.
     MessengerModule,
     KepModule,
   ],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_INTERCEPTOR, useClass: TenantScopeInterceptor },
+  ],
 })
 export class AppModule {}

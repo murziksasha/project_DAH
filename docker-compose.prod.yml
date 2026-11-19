@@ -75,6 +75,9 @@ services:
       ONLINE_PAYMENTS_SANDBOX: ${ONLINE_PAYMENTS_SANDBOX:-false}
       GIT_SHA: ${GIT_SHA}
       BUILD_SHA: ${GIT_SHA}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      LOG_FORMAT: ${LOG_FORMAT:-text}
+      AUTH_CACHE_TTL_MS: ${AUTH_CACHE_TTL_MS:-0}
       TRUST_PROXY: "1"
 
   worker:
@@ -104,6 +107,9 @@ services:
       ONLINE_PAYMENTS_SANDBOX: ${ONLINE_PAYMENTS_SANDBOX:-false}
       GIT_SHA: ${GIT_SHA}
       BUILD_SHA: ${GIT_SHA}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      LOG_FORMAT: ${LOG_FORMAT:-text}
+      AUTH_CACHE_TTL_MS: ${AUTH_CACHE_TTL_MS:-0}
 
   web:
     image: miy-dim/web:${GIT_SHA:-prod}

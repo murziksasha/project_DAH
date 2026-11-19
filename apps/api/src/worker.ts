@@ -1,7 +1,10 @@
 import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
 import { WorkerModule } from './worker.module';
+import { createAppLogger } from './common/logging/json-logger';
 import { assertProductionSecrets } from './common/config/secrets.config';
+import { dailySlotDue, lastJobRun, runExclusive } from './common/jobs/job-lock';
+import { PrismaService } from './prisma/prisma.service';
 import { domainEvents } from './common/utils/domain-events';
 import { BackupsService } from './modules/backups/backups.service';
 import { JournalService } from './modules/journal/journal.service';
@@ -48,25 +51,25 @@ async function writeWorkerMarker(
   }
 }
 
-/** UTC day key YYYY-MM-DD for once-per-day guards. */
-function utcDayKey(d = new Date()): string {
-  return d.toISOString().slice(0, 10);
-}
-
 async function bootstrap() {
   assertProductionSecrets();
   const app = await NestFactory.createApplicationContext(WorkerModule, {
-    logger: ['error', 'warn', 'log'],
+    logger: createAppLogger(),
   });
   const reminders = app.get(RemindersService);
   const backups = app.get(BackupsService);
   const notifications = app.get(NotificationsService);
   const journal = app.get(JournalService);
+  const prisma = app.get(PrismaService);
+
+  /** M9: lease so that several workers never run one job concurrently. */
+  async function exclusive(job: string, ttlMs: number, fn: () => Promise<void>) {
+    const r = await runExclusive(prisma, job, ttlMs, fn);
+    if (r.skipped) logger.warn(`${job}: skipped (lease held by another process)`);
+  }
 
   const timers: NodeJS.Timeout[] = [];
-  let lastDailyKey = '';
-  let lastWeeklyKey = '';
-  let lastReconcileKey = '';
+  let clockBusy = false;
   let scanRunning = false;
   let slaRunning = false;
 
@@ -78,6 +81,10 @@ async function bootstrap() {
     scanRunning = true;
     try {
       const result = await reminders.processDue();
+      if (result.skipped) {
+        logger.warn(`reminders.scan (${reason}): skipped, another process is running it`);
+        return;
+      }
       logger.log(
         `reminders.scan (${reason}): custom=${result.customSent} debt=${result.debtSent} overdue=${result.markedOverdue} penalty=${result.penaltyLines}`,
       );
@@ -106,7 +113,11 @@ async function bootstrap() {
     }
     slaRunning = true;
     try {
-      const result = await notifications.processSlaAlerts();
+      const lease = await runExclusive(prisma, 'sla_scan', 30 * 60 * 1000, () =>
+        notifications.processSlaAlerts(),
+      );
+      if (lease.skipped) return;
+      const result = lease.result;
       logger.log(
         `sla.scan (${reason}): warned=${result.warned} breached=${result.breached} scanned=${result.scanned}`,
       );
@@ -127,12 +138,14 @@ async function bootstrap() {
 
   async function runWeeklyBackup(reason: string) {
     try {
-      const result = await backups.ensureWeeklyBackup({ source: 'schedule' });
-      logger.log(
-        result.skipped
-          ? `backups.weekly (${reason}): skipped (${result.weekKey} exists)`
-          : `backups.weekly (${reason}): created ${result.relativePath}`,
-      );
+      await exclusive('backup_weekly', 6 * 60 * 60 * 1000, async () => {
+        const result = await backups.ensureWeeklyBackup({ source: 'schedule' });
+        logger.log(
+          result.skipped
+            ? `backups.weekly (${reason}): skipped (${result.weekKey} exists)`
+            : `backups.weekly (${reason}): created ${result.relativePath}`,
+        );
+      });
     } catch (err) {
       logger.error(
         `backups.weekly failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -142,11 +155,13 @@ async function bootstrap() {
 
   async function runDailyBackup(reason: string) {
     try {
-      const result = await backups.createManualBackup({ source: 'schedule' });
-      logger.log(`backups.daily (${reason}): created ${result.relativePath ?? 'ok'}`);
-      await domainEvents.emit('backup.created', {
-        relativePath: result.relativePath,
-        sizeBytes: result.sizeBytes,
+      await exclusive('backup_daily', 6 * 60 * 60 * 1000, async () => {
+        const result = await backups.createManualBackup({ source: 'schedule' });
+        logger.log(`backups.daily (${reason}): created ${result.relativePath ?? 'ok'}`);
+        await domainEvents.emit('backup.created', {
+          relativePath: result.relativePath,
+          sizeBytes: result.sizeBytes,
+        });
       });
     } catch (err) {
       logger.error(
@@ -158,9 +173,21 @@ async function bootstrap() {
   /** Journal vs legacy fields — alert if mismatches (Package E SoT dual-run). */
   async function runJournalReconcile(reason: string) {
     try {
-      const result = await journal.reconcile();
+      const lease = await runExclusive(prisma, 'journal_reconcile', 60 * 60 * 1000, async () => {
+        const reconcile = await journal.reconcile();
+        // Roadmap «Journal as SoT»: per-building shadow-compare history (readiness streak).
+        const shadow = await journal.recordShadowRunsForAll().catch((err: unknown) => {
+          logger.warn(`journal shadow runs failed: ${err instanceof Error ? err.message : String(err)}`);
+          return [];
+        });
+        return { ...reconcile, shadowReady: shadow.filter((r) => r.readyForSot).length, shadowTotal: shadow.length };
+      });
+      if (lease.skipped) return;
+      const result = lease.result;
       if (result.ok) {
-        logger.log(`journal.reconcile (${reason}): ok`);
+        logger.log(
+          `journal.reconcile (${reason}): ok; shadow readyForSot ${result.shadowReady}/${result.shadowTotal}`,
+        );
         await writeWorkerMarker('journal_reconcile', 'ok', { reason });
       } else {
         logger.warn(
@@ -198,27 +225,30 @@ async function bootstrap() {
     }, SCAN_MS),
   );
 
-  // UTC clock: daily ~02:00, weekly ensure ~03:00 (same cadence as previous BullMQ cron).
+  // UTC clock with catch-up (M9): a slot missed while the worker was down runs on the
+  // next tick; the WorkerJob lease + lastRunAt make each slot run once across workers.
+  const DAILY_JOBS: Array<{ job: string; hourUtc: number; run: (reason: string) => Promise<void> }> = [
+    { job: 'backup_daily', hourUtc: 2, run: runDailyBackup },
+    { job: 'backup_weekly', hourUtc: 3, run: runWeeklyBackup },
+    { job: 'journal_reconcile', hourUtc: 4, run: runJournalReconcile },
+  ];
   timers.push(
     setInterval(() => {
-      const now = new Date();
-      const day = utcDayKey(now);
-      const hour = now.getUTCHours();
-      const min = now.getUTCMinutes();
-
-      if (hour === 2 && min === 0 && lastDailyKey !== day) {
-        lastDailyKey = day;
-        void runDailyBackup('cron');
-      }
-      if (hour === 3 && min === 0 && lastWeeklyKey !== day) {
-        lastWeeklyKey = day;
-        void runWeeklyBackup('cron');
-      }
-      // Journal reconcile ~04:00 UTC
-      if (hour === 4 && min === 0 && lastReconcileKey !== day) {
-        lastReconcileKey = day;
-        void runJournalReconcile('cron');
-      }
+      if (clockBusy) return;
+      clockBusy = true;
+      void (async () => {
+        try {
+          const now = new Date();
+          for (const j of DAILY_JOBS) {
+            const last = await lastJobRun(prisma, j.job);
+            if (dailySlotDue(now, j.hourUtc, last)) await j.run(last ? 'cron' : 'cron-first');
+          }
+        } catch (err) {
+          logger.error(`scheduler tick failed: ${err instanceof Error ? err.message : String(err)}`);
+        } finally {
+          clockBusy = false;
+        }
+      })();
     }, CLOCK_MS),
   );
 
