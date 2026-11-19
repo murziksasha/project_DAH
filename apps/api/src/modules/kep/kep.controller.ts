@@ -71,12 +71,15 @@ export class KepController {
     @Param('id') id: string,
     @Body() dto: CompleteKepSignDto,
   ) {
-    // Public complete for mock IdP page (and diia mock fallback deeplink)
-    const session = await this.kep.getSession(id);
+    // Public complete for mock IdP page (and diia mock fallback deeplink).
+    // Phase 3 review: check the flag before touching the DB (no session-existence oracle when
+    // mock is off), never accept client-supplied signature/certificate data here, and return
+    // only the status (the full session — refId, title, digest — is for the owner via JWT).
     if (!this.kep.mockAllowed()) {
       // Public (unauthenticated) completion exists only for the demo signer.
       throw new BadRequestException('Mock-підпис вимкнено (KEP_ALLOW_MOCK=false)');
     }
+    const session = await this.kep.getSession(id);
     if (session.provider !== 'mock') {
       // Real diia/cloud must use webhook or complete-auth with JWT
       const isDiiaMockDeeplink =
@@ -88,14 +91,11 @@ export class KepController {
         );
       }
     }
-    return this.kep.completeSession({
+    const done = await this.kep.completeSession({
       sessionId: id,
       code: dto.code ?? 'mock_ok',
-      signatureCms: dto.signatureCms,
-      certificateSubject: dto.certificateSubject,
-      certificateSerial: dto.certificateSerial,
-      providerPayload: dto.providerPayload,
     });
+    return { sessionId: done.sessionId, status: done.status, signed: done.signed };
   }
 
   @ApiBearerAuth()

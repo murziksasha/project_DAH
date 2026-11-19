@@ -304,6 +304,7 @@ export class DeepAccountingService {
     if (
       role !== UserRole.chairman &&
       role !== UserRole.accountant &&
+      role !== UserRole.board &&
       role !== UserRole.super_admin
     ) {
       throw new ForbiddenException('Недостатньо прав для approve write-off');

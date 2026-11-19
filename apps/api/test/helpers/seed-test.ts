@@ -6,9 +6,10 @@ import {
   UserRole,
   UserStatus,
 } from '@prisma/client';
+import { prismaPgAdapter } from '../../src/prisma/prisma-adapter';
 import * as bcrypt from 'bcrypt';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({ adapter: prismaPgAdapter() });
 
 export async function resetTestDatabase() {
   await prisma.meetingVote.deleteMany().catch(() => undefined);

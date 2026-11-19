@@ -1,3 +1,6 @@
+import { Permission } from '@dah/shared';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import {
   Body,
   Controller,
@@ -22,7 +25,6 @@ import { CreateRequestDto } from './dto/create-request.dto';
 import { UpdateRequestDto } from './dto/update-request.dto';
 import { VotePollDto } from './dto/vote-poll.dto';
 
-const WRITE_ROLES = [UserRole.chairman, UserRole.accountant, UserRole.board];
 const REQUEST_MANAGE_ROLES = [
   UserRole.chairman,
   UserRole.board,
@@ -67,8 +69,8 @@ export class CommunicationsController {
     return this.communications.markAnnouncementRead(user.id, id);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post('announcements')
   createAnnouncement(
     @Body() dto: CreateAnnouncementDto,

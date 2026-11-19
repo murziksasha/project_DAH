@@ -63,6 +63,10 @@ export interface BuildingSettingsJson {
    */
   finance?: {
     journalSot?: boolean;
+    /** Phase 3: audit trail of the Journal-SoT switch (POST /journal/sot). */
+    journalSotChangedAt?: string;
+    journalSotChangedBy?: string;
+    journalSotForced?: boolean;
     strictBankRec?: boolean;
     defaultCashFlowSource?: 'legacy' | 'journal' | 'both';
   };

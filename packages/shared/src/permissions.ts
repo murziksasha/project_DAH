@@ -9,6 +9,11 @@ export enum Permission {
   MANAGE_REQUESTS = 'manage_requests',
   /** Work on assigned requests only (crew). */
   WORK_REQUESTS = 'work_requests',
+  /**
+   * Finance actions reserved for chairman/accountant — SPEC/03 «Анулювання витрат/платежів»:
+   * board ❌. Voids, manual adjustments, year-end close, bank accounts, etc.
+   */
+  FINANCE_ADMIN = 'finance_admin',
 }
 
 const SUPER_ADMIN = 'super_admin';
@@ -35,11 +40,12 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     Permission.MANAGE_BUILDING,
     Permission.MANAGE_SETTINGS,
     Permission.MANAGE_FINANCE,
+    Permission.FINANCE_ADMIN,
     Permission.READ_FINANCE,
     Permission.MANAGE_REQUESTS,
     Permission.WORK_REQUESTS,
   ],
-  [ACCOUNTANT]: [Permission.MANAGE_FINANCE, Permission.READ_FINANCE],
+  [ACCOUNTANT]: [Permission.MANAGE_FINANCE, Permission.FINANCE_ADMIN, Permission.READ_FINANCE],
   [BOARD]: [
     Permission.MANAGE_FINANCE,
     Permission.READ_FINANCE,

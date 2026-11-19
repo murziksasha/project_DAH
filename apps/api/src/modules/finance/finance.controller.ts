@@ -13,14 +13,11 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
 import { Response } from 'express';
 import { Permission } from '@dah/shared';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
-import { RolesGuard } from '../../common/guards/roles.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { CreateBankAccountDto, UpdateBankAccountDto } from './dto/bank-account.dto';
 import { CreateBudgetLineDto, UpdateBudgetLineDto } from './dto/budget.dto';
@@ -38,13 +35,6 @@ import { FinanceService } from './finance.service';
 import { TenantAccessService } from '../../common/tenant-access/tenant-access.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
-const FINANCE_WRITE_ROLES = [UserRole.chairman, UserRole.accountant, UserRole.board];
-const FINANCE_READ_ROLES = [
-  ...FINANCE_WRITE_ROLES,
-  UserRole.auditor,
-  UserRole.super_admin,
-];
-
 @ApiTags('finance')
 @ApiBearerAuth()
 @UseGuards(AuthGuard('jwt'))
@@ -60,9 +50,8 @@ export class FinanceController {
     return this.access.effectiveTenantId(user, tenantId ?? null);
   }
 
-  @UseGuards(RolesGuard, PermissionsGuard)
-  @Roles(...FINANCE_READ_ROLES)
   @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('funds')
   listFunds(
     @Query('buildingId') buildingId?: string,
@@ -71,8 +60,8 @@ export class FinanceController {
     return this.finance.listFunds(buildingId, tenantId);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post('funds')
   createFund(
     @Body() dto: CreateFundDto,
@@ -82,8 +71,8 @@ export class FinanceController {
     return this.finance.createFund(dto, user.id, tenantId);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('bank-accounts')
   listBankAccounts(
     @Query('buildingId') buildingId?: string,
@@ -92,8 +81,8 @@ export class FinanceController {
     return this.finance.listBankAccounts(buildingId, tenantId);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.chairman, UserRole.accountant)
+  @RequirePermissions(Permission.FINANCE_ADMIN)
+  @UseGuards(PermissionsGuard)
   @Post('bank-accounts')
   createBankAccount(
     @Body() dto: CreateBankAccountDto,
@@ -103,8 +92,8 @@ export class FinanceController {
     return this.finance.createBankAccount(dto, user.id, tenantId);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.chairman, UserRole.accountant)
+  @RequirePermissions(Permission.FINANCE_ADMIN)
+  @UseGuards(PermissionsGuard)
   @Patch('bank-accounts/:id')
   async updateBankAccount(
     @Param('id') id: string,
@@ -121,8 +110,8 @@ export class FinanceController {
     return this.finance.updateBankAccount(id, dto, user.id);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.chairman, UserRole.accountant)
+  @RequirePermissions(Permission.FINANCE_ADMIN)
+  @UseGuards(PermissionsGuard)
   @Delete('bank-accounts/:id')
   deleteBankAccount(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.finance.deleteBankAccount(
@@ -132,8 +121,8 @@ export class FinanceController {
     );
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.chairman, UserRole.accountant)
+  @RequirePermissions(Permission.FINANCE_ADMIN)
+  @UseGuards(PermissionsGuard)
   @Patch('funds/:id')
   async updateFund(
     @Param('id') id: string,
@@ -148,15 +137,15 @@ export class FinanceController {
     return this.finance.updateFund(id, dto, user.id);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('categories')
   listCategories(@CurrentUser() user: AuthUser, @TenantId() tenantId?: string | null) {
     return this.finance.listCategories(this.scope(user, tenantId));
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post('categories')
   createCategory(
     @Body() dto: CreateCategoryDto,
@@ -166,8 +155,8 @@ export class FinanceController {
     return this.finance.createCategory(dto, this.scope(user, tenantId));
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Patch('categories/:id')
   updateCategory(
     @Param('id') id: string,
@@ -178,8 +167,8 @@ export class FinanceController {
     return this.finance.updateCategory(id, dto, this.scope(user, tenantId));
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.chairman, UserRole.accountant)
+  @RequirePermissions(Permission.FINANCE_ADMIN)
+  @UseGuards(PermissionsGuard)
   @Delete('categories/:id')
   deleteCategory(
     @Param('id') id: string,
@@ -189,8 +178,8 @@ export class FinanceController {
     return this.finance.deleteCategory(id, this.scope(user, tenantId));
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('suppliers')
   listSuppliers(
     @Query('buildingId') buildingId?: string,
@@ -199,8 +188,8 @@ export class FinanceController {
     return this.finance.listSuppliers(buildingId, tenantId);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post('suppliers')
   createSupplier(
     @Body() dto: CreateSupplierDto,
@@ -209,8 +198,8 @@ export class FinanceController {
     return this.finance.createSupplier(dto, tenantId);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Patch('suppliers/:id')
   updateSupplier(
     @Param('id') id: string,
@@ -221,8 +210,8 @@ export class FinanceController {
     return this.finance.updateSupplier(id, dto, this.scope(user, tenantId));
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('expenses')
   listExpenses(
     @Query('fundId') fundId?: string,
@@ -246,8 +235,8 @@ export class FinanceController {
     });
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('expenses/:id')
   getExpense(
     @Param('id') id: string,
@@ -257,23 +246,22 @@ export class FinanceController {
     return this.finance.getExpense(id, this.scope(user, tenantId));
   }
 
-  @UseGuards(RolesGuard, PermissionsGuard)
-  @Roles(...FINANCE_WRITE_ROLES)
   @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post('expenses')
   createExpense(@Body() dto: CreateExpenseDto, @CurrentUser() user: AuthUser) {
     return this.finance.createExpense(dto, user);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.chairman, UserRole.board, UserRole.accountant)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post('expenses/:id/approve')
   approveExpense(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.finance.approveExpense(id, user);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.chairman, UserRole.accountant)
+  @RequirePermissions(Permission.FINANCE_ADMIN)
+  @UseGuards(PermissionsGuard)
   @Patch('expenses/:id/void')
   voidExpense(
     @Param('id') id: string,
@@ -283,8 +271,8 @@ export class FinanceController {
     return this.finance.voidExpense(id, dto.reason, user);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('reports/cash-flow')
   cashFlow(
     @Query('from') from?: string,
@@ -300,8 +288,8 @@ export class FinanceController {
     return this.finance.getCashFlowReport(from, to, buildingId, tenantId, src);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('sot-status')
   async sotStatus(
     @CurrentUser() user: AuthUser,
@@ -313,8 +301,8 @@ export class FinanceController {
     );
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('reports/expenses-summary')
   expensesSummary(
     @Query('from') from?: string,
@@ -325,8 +313,8 @@ export class FinanceController {
     return this.finance.getExpensesSummary(from, to, buildingId, tenantId);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('reports/board.pdf')
   async boardReportPdf(
     @Query('from') from: string | undefined,
@@ -347,8 +335,8 @@ export class FinanceController {
   }
 
   /** ZIP of Excel (.xlsx) reports (cash-flow, debtors, expenses, 1C-style). */
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('reports/export-pack.zip')
   async exportPack(
     @Query('from') from: string | undefined,
@@ -370,8 +358,8 @@ export class FinanceController {
 
   // ── Budget ──────────────────────────────────────────────────────
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('budget')
   async listBudget(
     @CurrentUser() user: AuthUser,
@@ -383,8 +371,8 @@ export class FinanceController {
     return this.finance.listBudgetLines(buildingId, Number(year) || new Date().getFullYear());
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('budget/plan-fact')
   async budgetPlanFact(
     @CurrentUser() user: AuthUser,
@@ -399,9 +387,8 @@ export class FinanceController {
     );
   }
 
-  @UseGuards(RolesGuard, PermissionsGuard)
-  @Roles(...FINANCE_WRITE_ROLES)
   @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post('budget')
   async createBudget(
     @Body() dto: CreateBudgetLineDto,
@@ -414,9 +401,8 @@ export class FinanceController {
     return this.finance.createBudgetLine(dto, user.id);
   }
 
-  @UseGuards(RolesGuard, PermissionsGuard)
-  @Roles(...FINANCE_WRITE_ROLES)
   @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Patch('budget/:id')
   async updateBudget(
     @Param('id') id: string,
@@ -430,9 +416,8 @@ export class FinanceController {
     return this.finance.updateBudgetLine(id, dto, user.id);
   }
 
-  @UseGuards(RolesGuard, PermissionsGuard)
-  @Roles(...FINANCE_WRITE_ROLES)
   @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Delete('budget/:id')
   async deleteBudget(
     @Param('id') id: string,
@@ -445,8 +430,8 @@ export class FinanceController {
 
   // ── Fund transfers ──────────────────────────────────────────────
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('transfers')
   async listTransfers(
     @CurrentUser() user: AuthUser,
@@ -457,9 +442,8 @@ export class FinanceController {
     return this.finance.listFundTransfers(buildingId, this.scope(user, tenantId));
   }
 
-  @UseGuards(RolesGuard, PermissionsGuard)
-  @Roles(...FINANCE_WRITE_ROLES)
   @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post('transfers')
   async createTransfer(
     @Body() dto: CreateFundTransferDto,
@@ -471,9 +455,8 @@ export class FinanceController {
     return this.finance.createFundTransfer(dto, user.id);
   }
 
-  @UseGuards(RolesGuard, PermissionsGuard)
-  @Roles(UserRole.chairman, UserRole.accountant)
-  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @RequirePermissions(Permission.FINANCE_ADMIN)
+  @UseGuards(PermissionsGuard)
   @Patch('transfers/:id/void')
   async voidTransfer(
     @Param('id') id: string,

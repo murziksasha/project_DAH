@@ -2340,6 +2340,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/journal/sot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["JournalController_setSot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/journal/sot-readiness": {
         parameters: {
             query?: never;
@@ -3576,6 +3592,15 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        SetJournalSotDto: {
+            buildingId: string;
+            /** @description true = reads from journal projectors, false = legacy reads (rollback) */
+            enabled: boolean;
+            /** @description super_admin only: switch before the streak is reached */
+            force?: boolean;
+            /** @description Required with force (audited) */
+            reason?: string;
+        };
         UpdateExternalCodeDto: {
             externalCode?: Record<string, never> | null;
         };
@@ -7764,6 +7789,27 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    JournalController_setSot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetJournalSotDto"];
+            };
+        };
         responses: {
             201: {
                 headers: {

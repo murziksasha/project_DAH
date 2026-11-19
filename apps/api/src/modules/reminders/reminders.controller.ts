@@ -1,3 +1,6 @@
+import { Permission } from '@dah/shared';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
@@ -14,7 +17,7 @@ const WRITE = [UserRole.chairman, UserRole.accountant, UserRole.board];
 
 @ApiTags('reminders')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'), RolesGuard)
+@UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
 @Controller('reminders')
 export class RemindersController {
   constructor(
@@ -22,7 +25,7 @@ export class RemindersController {
     private access: TenantAccessService,
   ) {}
 
-  @Roles(...WRITE, UserRole.auditor, UserRole.super_admin)
+  @RequirePermissions(Permission.READ_FINANCE)
   @Get()
   list(
     @CurrentUser() user: AuthUser,
@@ -35,7 +38,7 @@ export class RemindersController {
     );
   }
 
-  @Roles(...WRITE)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
   @Post()
   async create(
     @Body() dto: CreateReminderDto,
@@ -47,7 +50,7 @@ export class RemindersController {
     return this.reminders.create(dto, user.id, scope);
   }
 
-  @Roles(...WRITE)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
   @Delete(':id')
   remove(
     @Param('id') id: string,
@@ -64,7 +67,7 @@ export class RemindersController {
     return this.reminders.processDue(this.access.effectiveTenantId(user, tenantId));
   }
 
-  @Roles(...WRITE)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
   @Post('notify-debtors')
   notifyDebtors(@CurrentUser() user: AuthUser, @TenantId() tenantId: string | null) {
     return this.reminders.notifyAllDebtors(this.access.effectiveTenantId(user, tenantId));

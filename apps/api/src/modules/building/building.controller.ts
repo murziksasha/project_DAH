@@ -1,3 +1,6 @@
+import { Permission } from '@dah/shared';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import {
   Body,
   Controller,
@@ -44,8 +47,8 @@ export class BuildingController {
     return this.building.listBuildings(user.role === 'super_admin' ? null : user.tenantId);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.super_admin, UserRole.chairman)
+  @RequirePermissions(Permission.MANAGE_BUILDING)
+  @UseGuards(PermissionsGuard)
   @Post('create')
   createBuilding(
     @Body() body: CreateBuildingDto,
@@ -111,14 +114,8 @@ export class BuildingController {
     );
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(
-    UserRole.super_admin,
-    UserRole.chairman,
-    UserRole.accountant,
-    UserRole.board,
-    UserRole.auditor,
-  )
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('ops-summary')
   opsSummary(@CurrentUser() user: AuthUser, @Query('buildingId') buildingId?: string) {
     return this.building.getOpsSummary(buildingId, user);
@@ -167,8 +164,8 @@ export class BuildingController {
     return this.building.updateDocumentTemplates(dto, user);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.super_admin, UserRole.chairman)
+  @RequirePermissions(Permission.MANAGE_BUILDING)
+  @UseGuards(PermissionsGuard)
   @Post('apartments')
   createApartment(@Body() dto: CreateApartmentDto, @CurrentUser() user: AuthUser) {
     return this.building.createApartment(
@@ -178,8 +175,8 @@ export class BuildingController {
     );
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.super_admin, UserRole.chairman)
+  @RequirePermissions(Permission.MANAGE_BUILDING)
+  @UseGuards(PermissionsGuard)
   @Post('apartments/import')
   importApartments(
     @Body() body: ImportApartmentsCsvDto,
@@ -188,8 +185,8 @@ export class BuildingController {
     return this.building.importApartmentsCsv(body.csv ?? '', user, body.buildingId);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.super_admin, UserRole.chairman)
+  @RequirePermissions(Permission.MANAGE_BUILDING)
+  @UseGuards(PermissionsGuard)
   @Patch('apartments/:id')
   updateApartment(
     @Param('id') id: string,
@@ -199,15 +196,15 @@ export class BuildingController {
     return this.building.updateApartment(id, dto, user);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.super_admin, UserRole.chairman)
+  @RequirePermissions(Permission.MANAGE_BUILDING)
+  @UseGuards(PermissionsGuard)
   @Delete('apartments/:id')
   deleteApartment(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.building.deleteApartment(id, user);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.super_admin, UserRole.chairman)
+  @RequirePermissions(Permission.MANAGE_BUILDING)
+  @UseGuards(PermissionsGuard)
   @Post('apartments/:apartmentId/residents')
   createResident(
     @Param('apartmentId') apartmentId: string,
@@ -217,8 +214,8 @@ export class BuildingController {
     return this.building.createResident(apartmentId, dto, user);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.super_admin, UserRole.chairman)
+  @RequirePermissions(Permission.MANAGE_BUILDING)
+  @UseGuards(PermissionsGuard)
   @Patch('residents/:id')
   updateResident(
     @Param('id') id: string,
@@ -228,8 +225,8 @@ export class BuildingController {
     return this.building.updateResident(id, dto, user);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.super_admin, UserRole.chairman)
+  @RequirePermissions(Permission.MANAGE_BUILDING)
+  @UseGuards(PermissionsGuard)
   @Delete('residents/:id')
   deleteResident(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.building.deleteResident(id, user);

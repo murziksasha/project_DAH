@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import {
   normalizeDocumentTemplatesConfig,
   type DocumentTemplatesConfig,
@@ -12,6 +12,7 @@ import {
 import { sortByApartmentNumber } from '../../common/utils/apartment-sort';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { JournalService } from '../journal/journal.service';
 import {
   DEFAULT_BUILDING_SETTINGS,
   mergeBuildingSettings,
@@ -29,6 +30,7 @@ export class BuildingService {
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
+    @Optional() private journal?: JournalService,
   ) {}
 
   getBuilding(buildingId?: string, tenantId?: string | null) {
@@ -398,6 +400,11 @@ export class BuildingService {
       if (!user.tenantId || building.tenantId !== user.tenantId) {
         throw new ForbiddenException('Немає доступу до будинку іншої організації');
       }
+    }
+
+    // Phase 3: enabling Journal-SoT via settings obeys the same readiness guard as POST /journal/sot.
+    if (dto.journalSot === true && this.journal) {
+      await this.journal.assertSotSwitchAllowed(building.id, true, { actorRole: user?.role });
     }
 
     const settingsPatch = {

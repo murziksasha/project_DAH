@@ -1,3 +1,6 @@
+import { Permission } from '@dah/shared';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Body, Controller, Get, Patch, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
@@ -25,14 +28,6 @@ class SetPeriodStatusDto {
   notes?: string;
 }
 
-const READ_ROLES = [
-  UserRole.chairman,
-  UserRole.accountant,
-  UserRole.board,
-  UserRole.auditor,
-  UserRole.super_admin,
-];
-
 const WRITE_ROLES = [UserRole.chairman, UserRole.accountant, UserRole.board, UserRole.super_admin];
 
 @ApiTags('finance-periods')
@@ -44,8 +39,8 @@ export class AccountingPeriodsController {
     private access: TenantAccessService,
   ) {}
 
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(...READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
   @Get()
   async list(@Query('buildingId') buildingId: string, @CurrentUser() user: AuthUser) {
     // L11: only periods of a building in the caller's organization
@@ -53,8 +48,8 @@ export class AccountingPeriodsController {
     return this.periods.list(id);
   }
 
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(...READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
   @Get('checklist')
   async checklist(
     @Query('buildingId') buildingId: string,

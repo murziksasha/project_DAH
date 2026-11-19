@@ -48,6 +48,41 @@ export interface RbacRow {
   auth: 'jwt' | 'public' | 'other';
   roles: string[];
   permissions: string[];
+  /** Guards actually applied (metadata without its guard is not enforced). */
+  rolesGuard?: boolean;
+  permissionsGuard?: boolean;
+}
+
+/** All roles that pass the guards of an endpoint (RolesGuard AND PermissionsGuard). */
+export function effectiveRoles(
+  r: RbacRow,
+  rolePermissions: Record<string, readonly string[]>,
+  allRoles: readonly string[],
+): string[] {
+  if (r.auth === 'public') return ['*public*'];
+  return allRoles
+    .filter((role) => {
+      const rolesOk = !(r.rolesGuard ?? true) || !r.roles.length || r.roles.includes(role);
+      const permsOk =
+        !(r.permissionsGuard ?? true) ||
+        !r.permissions.length ||
+        r.permissions.some((p) => (rolePermissions[role] ?? []).includes(p));
+      return rolesOk && permsOk;
+    })
+    .sort();
+}
+
+/** Stable map `METHOD route` → effective roles, committed for before/after diffs. */
+export function effectiveMatrix(
+  rows: RbacRow[],
+  rolePermissions: Record<string, readonly string[]>,
+  allRoles: readonly string[],
+): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const r of [...rows].sort((a, b) => a.route.localeCompare(b.route) || a.method.localeCompare(b.method))) {
+    out[`${r.method} ${r.route}`] = effectiveRoles(r, rolePermissions, allRoles);
+  }
+  return out;
 }
 
 /**
@@ -57,6 +92,7 @@ export interface RbacRow {
 export function renderRbacMatrix(
   rows: RbacRow[],
   rolePermissions: Record<string, readonly string[]>,
+  allRoles: readonly string[] = Object.keys(rolePermissions),
 ): string {
   const sorted = [...rows].sort((a, b) => a.route.localeCompare(b.route) || a.method.localeCompare(b.method));
   const allowedByPerms = (perms: string[]) =>
@@ -68,7 +104,7 @@ export function renderRbacMatrix(
   const authOnly: string[] = [];
   const lines = sorted.map((r) => {
     const permRoles = r.permissions.length ? allowedByPerms(r.permissions) : [];
-    if (r.roles.length && r.permissions.length) {
+    if (r.roles.length && r.permissions.length && (r.rolesGuard ?? true) && (r.permissionsGuard ?? true)) {
       const extra = permRoles.filter((x) => !r.roles.includes(x));
       if (extra.length) {
         drift.push(`| \`${r.method}\` | \`${r.route}\` | @Roles без: ${extra.join(', ')} |`);
@@ -77,7 +113,8 @@ export function renderRbacMatrix(
     if (r.auth === 'jwt' && !r.roles.length && !r.permissions.length) {
       authOnly.push(`| \`${r.method}\` | \`${r.route}\` | ${r.controller}.${r.handler} |`);
     }
-    return `| \`${r.method}\` | \`${r.route}\` | ${r.auth} | ${r.roles.join(', ') || '—'} | ${r.permissions.join(', ') || '—'} |`;
+    const eff = effectiveRoles(r, rolePermissions, allRoles);
+    return `| \`${r.method}\` | \`${r.route}\` | ${r.auth} | ${r.roles.join(', ') || '—'} | ${r.permissions.join(', ') || '—'} | ${eff.join(', ')} |`;
   });
   return [
     '# «Мій дім» — RBAC matrix',
@@ -101,8 +138,8 @@ export function renderRbacMatrix(
     '',
     '## Повна матриця',
     '',
-    '| Метод | Шлях | Auth | @Roles | @RequirePermissions |',
-    '|---|---|---|---|---|',
+    '| Метод | Шлях | Auth | @Roles | @RequirePermissions | Ефективно (хто проходить guard-и) |',
+    '|---|---|---|---|---|---|',
     ...lines,
     '',
   ].join('\n');

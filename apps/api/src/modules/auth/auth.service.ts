@@ -9,7 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { UserRole, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { createHash, randomBytes, randomUUID } from 'crypto';
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'crypto';
 import { resolveJwtSecret } from '../../common/config/jwt.config';
 import { assertPasswordStrength } from '../../common/utils/password-policy';
 import { openSecret, sealSecret } from '../../common/utils/secret-box';
@@ -112,9 +112,11 @@ export class AuthService {
     }
     if (settings.registrationInviteCode) {
       const code = (dto.inviteCode ?? '').trim();
-      if (!code || code !== settings.registrationInviteCode) {
+      if (!code || !inviteCodeMatches(code, settings.registrationInviteCode)) {
         throw new BadRequestException('Невірний код запрошення');
       }
+    } else if (this.registrationRequiresInvite()) {
+      throw new BadRequestException('Реєстрація можлива лише за кодом запрошення від правління');
     }
 
     const email = dto.email.trim().toLowerCase();
@@ -816,11 +818,19 @@ export class AuthService {
    * If any building has registrationInviteCode, inviteCode is required and filters that building.
    * Without invite config, returns apartments of the first building (single-OSBB mode).
    */
+  /** REGISTRATION_REQUIRE_INVITE=true: no open (invite-less) self-registration, no apartment list without a code. */
+  private registrationRequiresInvite(): boolean {
+    return this.config.get<string>('REGISTRATION_REQUIRE_INVITE', 'false') === 'true';
+  }
+
   async listApartmentsForRegistration(inviteCode?: string) {
-    const buildings = await this.prisma.building.findMany({
-      select: { id: true, settings: true, name: true },
-      orderBy: { createdAt: 'asc' },
-    });
+    // Phase 3 review: buildings with registration switched off are never listed publicly.
+    const buildings = (
+      await this.prisma.building.findMany({
+        select: { id: true, settings: true, name: true },
+        orderBy: { createdAt: 'asc' },
+      })
+    ).filter((b) => parseBuildingSettings(b.settings).registrationEnabled !== false);
 
     const withInvite = buildings.filter((b) => {
       const s = parseBuildingSettings(b.settings);
@@ -840,12 +850,18 @@ export class AuthService {
       }
       const matched = withInvite.filter((b) => {
         const s = parseBuildingSettings(b.settings);
-        return s.registrationInviteCode === code;
+        return inviteCodeMatches(code, s.registrationInviteCode ?? '');
       });
       if (!matched.length) {
         throw new BadRequestException('Невірний код запрошення');
       }
       buildingIds = matched.map((b) => b.id);
+    } else if (this.registrationRequiresInvite()) {
+      return {
+        requiresInvite: true as const,
+        apartments: [] as Array<{ id: string; entrance: number; number: string }>,
+        message: 'Реєстрація можлива лише за кодом запрошення від правління',
+      };
     } else {
       // No invite: only expose first building (limit enumeration for multi-building)
       const first = buildings[0];
@@ -1610,4 +1626,12 @@ export class AuthService {
       // never block login path on audit failure
     }
   }
+}
+
+/** Constant-time invite code comparison (no timing oracle on the public endpoints). */
+export function inviteCodeMatches(given: string, expected: string): boolean {
+  if (!expected) return false;
+  const a = createHash('sha256').update(given, 'utf8').digest();
+  const b = createHash('sha256').update(expected, 'utf8').digest();
+  return timingSafeEqual(a, b);
 }

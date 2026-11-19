@@ -96,6 +96,11 @@ Per-tenant каталог керує **чи можна призначати** р
 | Читання (funds, expenses, reports) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Створення витрат / постачальників | ❌ | ✅ | ✅ | ✅ | ❌ |
 | Анулювання витрат | ❌ | ❌ | ✅ | ✅ | ❌ |
+| Списання боргу: створення / approve (maker-checker: інший користувач) | ❌ | ✅ | ✅ | ✅ | ❌ |
+| Коригування журналу, закриття року, анулювання переказів, банківські рахунки | ❌ | ❌ | ✅ | ✅ | ❌ |
+
+Бекенд перевіряє permissions з `@dah/shared` (`MANAGE_FINANCE`, `FINANCE_ADMIN`, `READ_FINANCE`, …);
+ефективна матриця доступу — `docs/api/RBAC-MATRIX.md` / `docs/api/rbac-effective.json` (генерується, `npm run check` ловить розбіжності).
 
 ### Accruals & Payments
 

@@ -7,6 +7,7 @@ import { SessionsPanel } from '@/components/SessionsPanel';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { SkeletonCards } from '@/components/ui/Skeleton';
 import { apiFetch, getToken } from '@/lib/api';
+import type { ApiSchema } from '@/lib/api-types';
 import { logout } from '@/lib/auth';
 import { getStoredComfort, toggleComfort, type ComfortMode } from '@/lib/comfort';
 import {
@@ -152,7 +153,7 @@ export default function ResidentSecurityPage() {
       await apiFetch('/auth/change-password', {
         method: 'POST',
         token,
-        body: JSON.stringify({ currentPassword, newPassword }),
+        body: JSON.stringify({ currentPassword, newPassword } satisfies ApiSchema<'ChangePasswordDto'>),
       });
       setMessage(t('residentPasswordChanged'));
       setTimeout(() => logout(), 1200);

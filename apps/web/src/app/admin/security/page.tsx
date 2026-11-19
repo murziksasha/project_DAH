@@ -5,6 +5,7 @@ import { useI18n } from '@/components/LocaleProvider';
 import { SessionsPanel } from '@/components/SessionsPanel';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
+import type { ApiSchema } from '@/lib/api-types';
 import { logout, logoutAll } from '@/lib/auth';
 import {
   canUsePush,
@@ -195,7 +196,7 @@ export default function SecurityPage() {
         body: JSON.stringify({
           currentPassword,
           newPassword,
-        }),
+        } satisfies ApiSchema<'ChangePasswordDto'>),
       });
       setMessage(t('securityPasswordChanged'));
       setTimeout(() => logout(), 1200);

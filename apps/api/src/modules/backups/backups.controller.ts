@@ -1,3 +1,6 @@
+import { Permission } from '@dah/shared';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import {
   Controller,
   ForbiddenException,
@@ -23,13 +26,6 @@ import { BackupsService } from './backups.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /** Read/list/download: board + auditor */
-const READ_ROLES = [
-  UserRole.super_admin,
-  UserRole.chairman,
-  UserRole.board,
-  UserRole.accountant,
-  UserRole.auditor,
-] as const;
 
 /** Create/upload: no auditor, no resident */
 const WRITE_ROLES = [
@@ -41,7 +37,7 @@ const WRITE_ROLES = [
 
 @ApiTags('backups')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'), RolesGuard)
+@UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
 @Controller('backups')
 export class BackupsController {
   constructor(
@@ -64,14 +60,14 @@ export class BackupsController {
     }
   }
 
-  @Roles(...READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
   @Get('status')
   async status(@CurrentUser() user: AuthUser) {
     await this.assertInstallLevel(user);
     return this.backups.getStatus();
   }
 
-  @Roles(...READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
   @Get()
   async list(@CurrentUser() user: AuthUser) {
     await this.assertInstallLevel(user);
@@ -92,7 +88,7 @@ export class BackupsController {
     return this.backups.ensureWeeklyBackup({ source: 'api', userId: user.id });
   }
 
-  @Roles(UserRole.super_admin)
+  @RequirePermissions(Permission.MANAGE_SETUP)
   @Get(':kind/:id/download')
   async download(
     @Param('kind') kind: string,
@@ -107,7 +103,7 @@ export class BackupsController {
     createReadStream(dumpPath).pipe(res);
   }
 
-  @Roles(UserRole.super_admin)
+  @RequirePermissions(Permission.MANAGE_SETUP)
   @Post('upload')
   @ApiConsumes('multipart/form-data')
   @ApiBody({

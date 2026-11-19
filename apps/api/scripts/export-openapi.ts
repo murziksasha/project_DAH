@@ -11,7 +11,14 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { AppModule } from '../src/app.module';
 import { buildOpenApiDocument } from '../src/openapi';
-import { renderApiReference, renderRbacMatrix, RbacRow, stableOpenApi } from '../src/openapi-reference';
+import {
+  effectiveMatrix,
+  renderApiReference,
+  renderRbacMatrix,
+  RbacRow,
+  stableOpenApi,
+} from '../src/openapi-reference';
+import { UserRole } from '@prisma/client';
 import { GUARDS_METADATA, METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { RequestMethod } from '@nestjs/common';
 import { ROLE_PERMISSIONS } from '@dah/shared';
@@ -19,6 +26,8 @@ import { ROLES_KEY } from '../src/common/decorators/roles.decorator';
 import { PERMISSIONS_KEY } from '../src/common/decorators/permissions.decorator';
 
 type Ctor = new (...args: never[]) => unknown;
+
+const ALL_ROLES = Object.values(UserRole) as string[];
 
 function collectRbac(app: unknown): RbacRow[] {
   const container = (app as { container: { getModules(): Map<string, { controllers: Map<unknown, { metatype: Ctor }> }> } }).container;
@@ -55,6 +64,8 @@ function collectRbac(app: unknown): RbacRow[] {
             auth,
             roles: [...roles].sort(),
             permissions: [...permissions].sort(),
+            rolesGuard: guards.includes('RolesGuard'),
+            permissionsGuard: guards.includes('PermissionsGuard'),
           });
         }
       }
@@ -68,11 +79,14 @@ async function main() {
   const app = await NestFactory.create(AppModule, { preview: true, logger: false, abortOnError: false });
   app.setGlobalPrefix('api');
   const doc = stableOpenApi(buildOpenApiDocument(app));
+  const rbac = collectRbac(app);
+  if (process.env.RBAC_DUMP) writeFileSync(process.env.RBAC_DUMP, JSON.stringify(rbac, null, 2));
   const outDir = resolve(__dirname, '../../../docs/api');
   const files: Record<string, string> = {
     'openapi.json': JSON.stringify(doc, null, 2) + '\n',
     'API-REFERENCE.md': renderApiReference(doc),
-    'RBAC-MATRIX.md': renderRbacMatrix(collectRbac(app), ROLE_PERMISSIONS),
+    'RBAC-MATRIX.md': renderRbacMatrix(rbac, ROLE_PERMISSIONS, ALL_ROLES),
+    'rbac-effective.json': JSON.stringify(effectiveMatrix(rbac, ROLE_PERMISSIONS, ALL_ROLES), null, 2) + '\n',
   };
   const check = process.argv.includes('--check');
   let stale = false;

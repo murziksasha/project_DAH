@@ -1,3 +1,6 @@
+import { Permission } from '@dah/shared';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
@@ -62,14 +65,8 @@ export class CopilotController {
     };
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(
-    UserRole.dispatcher,
-    UserRole.chairman,
-    UserRole.board,
-    UserRole.crew,
-    UserRole.super_admin,
-  )
+  @RequirePermissions(Permission.WORK_REQUESTS)
+  @UseGuards(PermissionsGuard)
   @Post('classify-request')
   classify(@Body() dto: ClassifyRequestDto) {
     if (!this.copilot.isEnabled()) {

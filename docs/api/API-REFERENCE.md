@@ -3,7 +3,7 @@
 > Згенеровано з OpenAPI (`npm run openapi:export -w @dah/api`). Не редагуйте вручну.
 > Машиночитна специфікація: [`openapi.json`](./openapi.json). 🔒 — потрібен Bearer JWT.
 
-Усього endpoints: **266**.
+Усього endpoints: **267**.
 
 ## accounting
 
@@ -255,6 +255,7 @@
 | `GET` | `/api/journal/reconcile` | 🔒 |  |
 | `GET` | `/api/journal/shadow-compare` | 🔒 |  |
 | `POST` | `/api/journal/shadow-runs` | 🔒 |  |
+| `POST` | `/api/journal/sot` | 🔒 |  |
 | `GET` | `/api/journal/sot-readiness` | 🔒 |  |
 | `GET` | `/api/journal/trial-balance` | 🔒 |  |
 | `GET` | `/api/journal/{id}` | 🔒 |  |

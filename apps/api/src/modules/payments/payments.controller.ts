@@ -1,3 +1,6 @@
+import { Permission } from '@dah/shared';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import {
   Body,
   Controller,
@@ -11,11 +14,9 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { UserRole } from '@prisma/client';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../common/guards/roles.guard';
+
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import {
   AssignStatementLineDto,
@@ -27,9 +28,6 @@ import { OnlinePaymentsService } from './online-payments.service';
 import { VoidPaymentDto } from './dto/void-payment.dto';
 import { PaymentsService } from './payments.service';
 import { TenantAccessService } from '../../common/tenant-access/tenant-access.service';
-
-const WRITE_ROLES = [UserRole.chairman, UserRole.accountant, UserRole.board];
-const REPORT_ROLES = [...WRITE_ROLES, UserRole.auditor, UserRole.super_admin];
 
 @ApiTags('payments')
 @Controller('payments')
@@ -79,9 +77,9 @@ export class PaymentsController {
     return this.online.sandboxComplete(dto, user);
   }
 
+  @RequirePermissions(Permission.READ_FINANCE)
   @ApiBearerAuth()
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(...REPORT_ROLES)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
   @Get('reports/debtors')
   debtors(
     @Query('buildingId') buildingId?: string,
@@ -116,8 +114,8 @@ export class PaymentsController {
     });
   }
 
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
   @Get('preview/allocation')
   preview(
     @Query('apartmentId') apartmentId: string,
@@ -127,15 +125,15 @@ export class PaymentsController {
     return this.payments.previewAllocation(apartmentId, Number(amount), user);
   }
 
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
   @Post()
   create(@Body() dto: CreatePaymentDto, @CurrentUser() user: AuthUser) {
     return this.payments.createPayment(dto, user);
   }
 
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
   @Post('import/preview')
   async importPreview(
     @Body() dto: ImportPreviewDto,
@@ -154,8 +152,8 @@ export class PaymentsController {
     );
   }
 
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
   @Patch('import/lines/:lineId')
   assignLine(
     @Param('lineId') lineId: string,
@@ -171,8 +169,8 @@ export class PaymentsController {
     );
   }
 
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
   @Patch('import/lines/:lineId/ignore')
   ignoreLine(
     @Param('lineId') lineId: string,
@@ -186,8 +184,8 @@ export class PaymentsController {
     );
   }
 
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(...REPORT_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
   @Get('import/unmatched')
   async unmatchedReport(
     @CurrentUser() user: AuthUser,
@@ -203,8 +201,8 @@ export class PaymentsController {
     );
   }
 
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
   @Post('import')
   importCommit(
     @Body() dto: ImportPaymentsDto,
@@ -220,8 +218,8 @@ export class PaymentsController {
     return this.payments.getPayment(id, user);
   }
 
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(UserRole.chairman, UserRole.accountant)
+  @RequirePermissions(Permission.FINANCE_ADMIN)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
   @Patch(':id/void')
   void(@Param('id') id: string, @Body() dto: VoidPaymentDto, @CurrentUser() user: AuthUser) {
     return this.payments.voidPayment(id, dto.reason, user);

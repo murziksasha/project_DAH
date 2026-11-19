@@ -31,6 +31,67 @@ export class IdentityService {
     return this.config.get('IDENTITY_ENABLED', 'false') === 'true';
   }
 
+  /** Max outstanding authorize states (memory bound for the public POST /identity/authorize). */
+  static readonly MAX_PENDING = 10_000;
+
+  /**
+   * Mock IdP (passwordless login by email/phone) — never in production.
+   * IDENTITY_ALLOW_MOCK=true|false overrides the default (allowed outside NODE_ENV=production).
+   */
+  mockAllowed(): boolean {
+    if ((this.config.get<string>('NODE_ENV') ?? process.env.NODE_ENV) === 'production') return false;
+    const flag = this.config.get<string>('IDENTITY_ALLOW_MOCK');
+    if (flag === 'false') return false;
+    return true;
+  }
+
+  /** The mock authorize page is served only when the mock IdP is the active, enabled provider. */
+  mockPageAllowed(): boolean {
+    return (
+      this.isEnabled() && this.config.get('IDENTITY_PROVIDER', 'mock') === 'mock' && this.mockAllowed()
+    );
+  }
+
+  private redirectUri(): string {
+    return (
+      this.config.get('IDENTITY_REDIRECT_URI') ??
+      `${this.config.get('APP_URL', 'http://localhost:3000')}/login?identity=callback`
+    );
+  }
+
+  /** redirect_uri of the mock page: http(s) only and same origin as the configured callback / APP_URL. */
+  isAllowedRedirect(uri: string): boolean {
+    let target: URL;
+    try {
+      target = new URL(uri);
+    } catch {
+      return false;
+    }
+    if (target.protocol !== 'http:' && target.protocol !== 'https:') return false;
+    const origins = new Set<string>();
+    for (const u of [this.redirectUri(), this.config.get<string>('APP_URL', 'http://localhost:3000')]) {
+      try {
+        origins.add(new URL(u).origin);
+      } catch {
+        /* ignore malformed config */
+      }
+    }
+    return origins.has(target.origin);
+  }
+
+  private prunePending(now = Date.now()) {
+    for (const [k, v] of this.pending) if (v.exp < now) this.pending.delete(k);
+    while (this.pending.size >= IdentityService.MAX_PENDING) {
+      const oldest = this.pending.keys().next().value;
+      if (oldest === undefined) break;
+      this.pending.delete(oldest);
+    }
+  }
+
+  pendingCount(): number {
+    return this.pending.size;
+  }
+
   status() {
     return {
       enabled: this.isEnabled(),
@@ -51,8 +112,12 @@ export class IdentityService {
   startAuthorize(returnTo?: string) {
     this.assertEnabled();
     const provider = this.config.get('IDENTITY_PROVIDER', 'mock');
+    if (provider === 'mock' && !this.mockAllowed()) {
+      throw new ServiceUnavailableException('Mock identity вимкнено (production / IDENTITY_ALLOW_MOCK=false)');
+    }
     const state = randomUUID();
     const nonce = randomUUID();
+    this.prunePending();
     this.pending.set(state, {
       exp: Date.now() + 10 * 60 * 1000,
       nonce,
@@ -207,7 +272,7 @@ export class IdentityService {
     body: { phone?: string; email?: string; code?: string },
     meta: SessionMeta = {},
   ) {
-    if (this.config.get('NODE_ENV') === 'production') {
+    if (!this.mockAllowed()) {
       throw new BadRequestException('Mock identity заборонено в production');
     }
     let email = body.email ? body.email.trim().toLowerCase() : undefined;

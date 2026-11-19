@@ -11,12 +11,9 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
 import { Permission } from '@dah/shared';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
-import { RolesGuard } from '../../common/guards/roles.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { TenantAccessService } from '../../common/tenant-access/tenant-access.service';
@@ -35,19 +32,9 @@ import {
   YearEndDto,
 } from './dto/deep-accounting.dto';
 
-const READ = [
-  UserRole.chairman,
-  UserRole.accountant,
-  UserRole.board,
-  UserRole.auditor,
-  UserRole.super_admin,
-];
-const WRITE = [UserRole.chairman, UserRole.accountant, UserRole.board];
-
 @ApiTags('accounting')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
-@RequirePermissions(Permission.READ_FINANCE)
+@UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('accounting')
 export class DeepAccountingController {
   constructor(
@@ -73,7 +60,7 @@ export class DeepAccountingController {
   }
 
   // AR
-  @Roles(...READ)
+  @RequirePermissions(Permission.READ_FINANCE)
   @Get('ar-aging')
   async arAging(
     @CurrentUser() user: AuthUser,
@@ -84,7 +71,7 @@ export class DeepAccountingController {
     return this.svc.arAging(await this.building(user, tenantId, buildingId), asOf);
   }
 
-  @Roles(...READ)
+  @RequirePermissions(Permission.READ_FINANCE)
   @Get('apartments/:apartmentId/statement')
   async apartmentStatement(
     @CurrentUser() user: AuthUser,
@@ -98,7 +85,7 @@ export class DeepAccountingController {
   }
 
   // Write-offs
-  @Roles(...READ)
+  @RequirePermissions(Permission.READ_FINANCE)
   @Get('write-offs')
   async listWriteOffs(
     @CurrentUser() user: AuthUser,
@@ -108,7 +95,6 @@ export class DeepAccountingController {
     return this.svc.listWriteOffs(await this.building(user, tenantId, buildingId));
   }
 
-  @Roles(...WRITE)
   @RequirePermissions(Permission.MANAGE_FINANCE)
   @Post('write-offs')
   async createWriteOff(
@@ -129,7 +115,8 @@ export class DeepAccountingController {
     return this.svc.createWriteOff(body, user.id);
   }
 
-  @Roles(UserRole.chairman, UserRole.accountant, UserRole.super_admin)
+  // M15: SPEC/05 «write-offs/:id/approve — manage finance»; SPEC/03 board = «Фінанси».
+  // Maker-checker (approver ≠ creator) stays in the service.
   @RequirePermissions(Permission.MANAGE_FINANCE)
   @Post('write-offs/:id/approve')
   async approveWriteOff(
@@ -147,7 +134,7 @@ export class DeepAccountingController {
   }
 
   // Tariffs
-  @Roles(...READ)
+  @RequirePermissions(Permission.READ_FINANCE)
   @Get('tariffs')
   async listTariffs(
     @CurrentUser() user: AuthUser,
@@ -157,7 +144,6 @@ export class DeepAccountingController {
     return this.svc.listTariffs(await this.building(user, tenantId, buildingId));
   }
 
-  @Roles(...WRITE)
   @RequirePermissions(Permission.MANAGE_FINANCE)
   @Post('tariffs')
   async createTariff(
@@ -170,7 +156,6 @@ export class DeepAccountingController {
     return this.svc.createTariff(body, user.id);
   }
 
-  @Roles(...WRITE)
   @RequirePermissions(Permission.MANAGE_FINANCE)
   @Patch('tariffs/:id')
   async updateTariff(
@@ -189,7 +174,7 @@ export class DeepAccountingController {
   }
 
   // AP
-  @Roles(...READ)
+  @RequirePermissions(Permission.READ_FINANCE)
   @Get('supplier-invoices')
   async listInvoices(
     @CurrentUser() user: AuthUser,
@@ -200,7 +185,6 @@ export class DeepAccountingController {
     return this.svc.listInvoices(await this.building(user, tenantId, buildingId), status);
   }
 
-  @Roles(...WRITE)
   @RequirePermissions(Permission.MANAGE_FINANCE)
   @Post('supplier-invoices')
   async createInvoice(
@@ -216,7 +200,6 @@ export class DeepAccountingController {
     return this.svc.createInvoice(body, user.id);
   }
 
-  @Roles(...WRITE)
   @RequirePermissions(Permission.MANAGE_FINANCE)
   @Post('supplier-invoices/:id/approve')
   async approveInvoice(
@@ -233,7 +216,6 @@ export class DeepAccountingController {
     return this.svc.approveInvoice(id, user.id);
   }
 
-  @Roles(...WRITE)
   @RequirePermissions(Permission.MANAGE_FINANCE)
   @Post('supplier-invoices/pay')
   async payInvoice(
@@ -253,7 +235,7 @@ export class DeepAccountingController {
     return this.svc.payInvoice(body, user.id);
   }
 
-  @Roles(...READ)
+  @RequirePermissions(Permission.READ_FINANCE)
   @Get('ap-aging')
   async apAging(
     @CurrentUser() user: AuthUser,
@@ -264,7 +246,7 @@ export class DeepAccountingController {
   }
 
   // Bank rec
-  @Roles(...READ)
+  @RequirePermissions(Permission.READ_FINANCE)
   @Get('bank-reconciliations')
   async listBankRec(
     @CurrentUser() user: AuthUser,
@@ -274,7 +256,7 @@ export class DeepAccountingController {
     return this.svc.listBankReconciliations(await this.building(user, tenantId, buildingId));
   }
 
-  @Roles(...READ)
+  @RequirePermissions(Permission.READ_FINANCE)
   @Get('bank-gl-balance')
   async glBalance(
     @CurrentUser() user: AuthUser,
@@ -288,7 +270,6 @@ export class DeepAccountingController {
     return { buildingId: b, bankAccountId: bankAccountId ?? null, balance };
   }
 
-  @Roles(...WRITE)
   @RequirePermissions(Permission.MANAGE_FINANCE)
   @Post('bank-reconciliations')
   async createBankRec(
@@ -301,7 +282,6 @@ export class DeepAccountingController {
     return this.svc.createBankReconciliation(body, user.id);
   }
 
-  @Roles(...WRITE)
   @RequirePermissions(Permission.MANAGE_FINANCE)
   @Post('bank-reconciliations/:id/close')
   async closeBankRec(
@@ -321,7 +301,7 @@ export class DeepAccountingController {
     return this.svc.closeBankReconciliation(id, user.id);
   }
 
-  @Roles(...READ)
+  @RequirePermissions(Permission.READ_FINANCE)
   @Get('cash-book')
   async cashBook(
     @CurrentUser() user: AuthUser,
@@ -334,7 +314,6 @@ export class DeepAccountingController {
   }
 
   // Close pack
-  @Roles(...WRITE)
   @RequirePermissions(Permission.MANAGE_FINANCE)
   @Post('periods/close-snapshot')
   async closeSnapshot(
@@ -346,7 +325,7 @@ export class DeepAccountingController {
     return this.svc.createCloseSnapshot(b, body.period, user.id);
   }
 
-  @Roles(...READ)
+  @RequirePermissions(Permission.READ_FINANCE)
   @Get('periods/close-snapshots')
   async listSnapshots(
     @CurrentUser() user: AuthUser,
@@ -358,7 +337,7 @@ export class DeepAccountingController {
   }
 
   // Budget encumbrance
-  @Roles(...READ)
+  @RequirePermissions(Permission.READ_FINANCE)
   @Get('budget/plan-fact-encumbrance')
   async budgetEnc(
     @CurrentUser() user: AuthUser,
@@ -373,7 +352,7 @@ export class DeepAccountingController {
   }
 
   // CoA export map
-  @Roles(...READ)
+  @RequirePermissions(Permission.READ_FINANCE)
   @Get('coa-export-map')
   async coaMap(
     @CurrentUser() user: AuthUser,
@@ -385,7 +364,6 @@ export class DeepAccountingController {
     return this.svc.exportCoaMapping(buildingId);
   }
 
-  @Roles(...WRITE)
   @RequirePermissions(Permission.MANAGE_FINANCE)
   @Post('tariffs/run')
   async runTariffs(
@@ -397,7 +375,7 @@ export class DeepAccountingController {
     return this.svc.runTariffs(body, user.id);
   }
 
-  @Roles(...READ)
+  @RequirePermissions(Permission.READ_FINANCE)
   @Get('overview')
   async overview(
     @CurrentUser() user: AuthUser,
@@ -407,7 +385,7 @@ export class DeepAccountingController {
     return this.svc.accountantOverview(await this.building(user, tenantId, buildingId));
   }
 
-  @Roles(...READ)
+  @RequirePermissions(Permission.READ_FINANCE)
   @Get('owner-change-policy')
   async ownerPolicy(
     @CurrentUser() user: AuthUser,
@@ -418,8 +396,8 @@ export class DeepAccountingController {
     return this.svc.ownerChangePolicy(apartmentId);
   }
 
-  @Roles(UserRole.chairman, UserRole.accountant, UserRole.super_admin)
-  @RequirePermissions(Permission.MANAGE_FINANCE)
+  // M15: corrections/closing — SPEC/03 «Анулювання» board ❌ → FINANCE_ADMIN (chairman, accountant).
+  @RequirePermissions(Permission.FINANCE_ADMIN)
   @Post('year-end')
   async yearEnd(
     @Body() body: YearEndDto,
@@ -430,8 +408,7 @@ export class DeepAccountingController {
     return this.svc.yearEndClose(b, Number(body.year), user.id, user.role);
   }
 
-  @Roles(UserRole.chairman, UserRole.accountant, UserRole.super_admin)
-  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @RequirePermissions(Permission.FINANCE_ADMIN)
   @Post('adjustments')
   async adjustment(
     @Body() body: ManualAdjustmentDto,

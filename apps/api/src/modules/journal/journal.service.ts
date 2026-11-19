@@ -1,6 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { JournalEntryType, Prisma } from '@prisma/client';
 import { roundMoney } from '../../common/utils/money';
+import { financeFlags } from '../../common/utils/finance-sot';
+import { mergeBuildingSettings, parseBuildingSettings } from '../building/building-settings';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export type TxClient = Prisma.TransactionClient;
@@ -808,6 +810,110 @@ export class JournalService {
   static sotStreakDays(): number {
     const n = Number(process.env.JOURNAL_SOT_STREAK_DAYS ?? 30);
     return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 30;
+  }
+
+  /**
+   * Phase 3: rules of the per-building Journal-SoT switch.
+   * - disabling (rollback to legacy reads) is always allowed;
+   * - enabling requires the readiness streak (sotReadiness.eligible);
+   * - super_admin may force an early cutover only with a written reason (audited).
+   */
+  static sotSwitchDecision(input: {
+    enable: boolean;
+    current: boolean;
+    eligible: boolean;
+    force?: boolean;
+    reason?: string;
+    actorRole?: string;
+  }): { allowed: boolean; forced: boolean; error?: string } {
+    if (!input.enable || input.current) return { allowed: true, forced: false };
+    if (input.eligible) return { allowed: true, forced: false };
+    if (input.force) {
+      if (input.actorRole !== 'super_admin') {
+        return { allowed: false, forced: false, error: 'Примусове перемикання доступне лише super_admin' };
+      }
+      if (!input.reason || input.reason.trim().length < 10) {
+        return { allowed: false, forced: false, error: 'Для примусового перемикання вкажіть причину (≥10 символів)' };
+      }
+      return { allowed: true, forced: true };
+    }
+    return {
+      allowed: false,
+      forced: false,
+      error: 'Журнал ще не готовий бути джерелом істини: недостатня серія щоденних shadow-compare',
+    };
+  }
+
+  /** Throws 409 unless enabling Journal-SoT for the building is allowed. */
+  async assertSotSwitchAllowed(
+    buildingId: string,
+    enable: boolean,
+    opts: { force?: boolean; reason?: string; actorRole?: string } = {},
+  ) {
+    const building = await this.prisma.building.findUnique({
+      where: { id: buildingId },
+      select: { id: true, settings: true },
+    });
+    if (!building) throw new NotFoundException('Будинок не знайдено');
+    const current = !!parseBuildingSettings(building.settings).finance?.journalSot;
+    const readiness = await this.sotReadiness(buildingId);
+    const decision = JournalService.sotSwitchDecision({
+      enable,
+      current,
+      eligible: readiness.eligible,
+      ...opts,
+    });
+    if (!decision.allowed) {
+      throw new ConflictException({
+        message: decision.error,
+        requiredDays: readiness.requiredDays,
+        streakDays: readiness.streakDays,
+      });
+    }
+    return { building, current, readiness, forced: decision.forced };
+  }
+
+  /**
+   * Per-building switch of the read path (settings.finance.journalSot). Reversible: only the
+   * flag changes — legacy tables and journal keep being written (dual-run), nothing is deleted.
+   */
+  async setJournalSot(
+    buildingId: string,
+    enable: boolean,
+    actor: { id: string; role: string },
+    opts: { force?: boolean; reason?: string } = {},
+  ) {
+    const { building, current, readiness, forced } = await this.assertSotSwitchAllowed(
+      buildingId,
+      enable,
+      { ...opts, actorRole: actor.role },
+    );
+    const raw = parseBuildingSettings(building.settings);
+    const settings = mergeBuildingSettings(building.settings, {
+      finance: {
+        ...(raw.finance ?? {}),
+        journalSot: enable,
+        journalSotChangedAt: new Date().toISOString(),
+        journalSotChangedBy: actor.id,
+        journalSotForced: forced || undefined,
+      },
+    });
+    await this.prisma.building.update({
+      where: { id: buildingId },
+      data: { settings: settings as Prisma.InputJsonValue },
+    });
+    return {
+      buildingId,
+      previous: current,
+      changed: current !== enable,
+      forced,
+      ...financeFlags(settings),
+      readiness: {
+        requiredDays: readiness.requiredDays,
+        streakDays: readiness.streakDays,
+        eligible: readiness.eligible,
+      },
+    };
   }
 
   /** Persist today's shadow-compare for a building (idempotent per UTC day). */

@@ -1,3 +1,6 @@
+import { Permission } from '@dah/shared';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import {
   Body,
   Controller,
@@ -27,14 +30,6 @@ import { CreateAccrualDto } from './dto/create-accrual.dto';
 import { CreateAccrualTemplateDto } from './dto/create-accrual-template.dto';
 import { CreditNoteDto, ReverseAccrualDto } from './dto/accrual-actions.dto';
 
-const WRITE_ROLES = [UserRole.chairman, UserRole.accountant, UserRole.board];
-const READ_ROLES: UserRole[] = [
-  UserRole.chairman,
-  UserRole.accountant,
-  UserRole.board,
-  UserRole.auditor,
-  UserRole.super_admin,
-];
 const ADMIN_ROLES: UserRole[] = [
   UserRole.chairman,
   UserRole.accountant,
@@ -73,8 +68,8 @@ export class AccrualsController {
     return row.fund.buildingId;
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('templates')
   listTemplates(
     @Query('buildingId') buildingId?: string,
@@ -83,8 +78,8 @@ export class AccrualsController {
     return this.accruals.listTemplates(buildingId, tenantId);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post('templates')
   async createTemplate(
     @Body() dto: CreateAccrualTemplateDto,
@@ -95,8 +90,8 @@ export class AccrualsController {
     return this.accruals.createTemplate(dto);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Delete('templates/:id')
   async deleteTemplate(
     @Param('id') id: string,
@@ -107,8 +102,8 @@ export class AccrualsController {
     return this.accruals.deleteTemplate(id);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get()
   listAccruals(
     @Query('period') period?: string,
@@ -181,8 +176,8 @@ export class AccrualsController {
     res.send(buffer);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post('preview')
   async preview(
     @Body() dto: CreateAccrualDto,
@@ -193,8 +188,8 @@ export class AccrualsController {
     return this.accruals.previewAmounts(dto);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post()
   async create(
     @Body() dto: CreateAccrualDto,
@@ -209,8 +204,8 @@ export class AccrualsController {
     return this.accruals.createAccrual(dto, user.id);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post(':id/reverse')
   async reverse(
     @Param('id') id: string,
@@ -222,8 +217,8 @@ export class AccrualsController {
     return this.accruals.reverseAccrual(id, user.id, body?.reason);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post('lines/:lineId/credit-note')
   async creditNote(
     @Param('lineId') lineId: string,
@@ -306,8 +301,8 @@ export class AccrualsController {
   }
 
   /** Full accrual with every apartment line — staff only, own organization (H1). */
-  @UseGuards(RolesGuard)
-  @Roles(...READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get(':id')
   async getOne(
     @Param('id') id: string,

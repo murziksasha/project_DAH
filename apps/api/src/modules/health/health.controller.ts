@@ -1,9 +1,10 @@
+import { Permission } from '@dah/shared';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Controller, Get, HttpCode, ServiceUnavailableException, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../common/guards/roles.guard';
+
 import { HealthService } from './health.service';
 
 @ApiTags('health')
@@ -41,15 +42,9 @@ export class HealthController {
   }
 
   /** Full component status — staff only. */
+  @RequirePermissions(Permission.READ_FINANCE)
   @ApiBearerAuth()
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(
-    UserRole.super_admin,
-    UserRole.chairman,
-    UserRole.board,
-    UserRole.accountant,
-    UserRole.auditor,
-  )
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
   @Get('details')
   details() {
     return this.health.check();

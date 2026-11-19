@@ -1,11 +1,12 @@
+import { Permission } from '@dah/shared';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
-import { RolesGuard } from '../../common/guards/roles.guard';
+
 import { SetupApartmentsDto } from './dto/setup-apartment.dto';
 import { SetupBankDto } from './dto/setup-bank.dto';
 import { SetupBuildingDto } from './dto/setup-building.dto';
@@ -14,17 +15,18 @@ import { SetupService } from './setup.service';
 
 @ApiTags('setup')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'), RolesGuard)
-@Roles(UserRole.super_admin)
+@UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('setup')
 export class SetupController {
   constructor(private setup: SetupService) {}
 
+  @RequirePermissions(Permission.MANAGE_SETUP)
   @Get('status')
   status(@TenantId() tenantId?: string | null) {
     return this.setup.getStatus(tenantId);
   }
 
+  @RequirePermissions(Permission.MANAGE_SETUP)
   @Post('building')
   building(
     @Body() dto: SetupBuildingDto,
@@ -34,6 +36,7 @@ export class SetupController {
     return this.setup.upsertBuilding(dto, user.id, tenantId);
   }
 
+  @RequirePermissions(Permission.MANAGE_SETUP)
   @Post('bank')
   bank(
     @Body() dto: SetupBankDto,
@@ -43,6 +46,7 @@ export class SetupController {
     return this.setup.setupBank(dto, user.id, tenantId);
   }
 
+  @RequirePermissions(Permission.MANAGE_SETUP)
   @Post('apartments')
   apartments(
     @Body() dto: SetupApartmentsDto,
@@ -52,6 +56,7 @@ export class SetupController {
     return this.setup.setupApartments(dto, user.id, tenantId);
   }
 
+  @RequirePermissions(Permission.MANAGE_SETUP)
   @Post('users')
   users(
     @Body() dto: SetupUsersDto,
@@ -61,6 +66,7 @@ export class SetupController {
     return this.setup.setupUsers(dto, user.id, tenantId);
   }
 
+  @RequirePermissions(Permission.MANAGE_SETUP)
   @Post('complete')
   complete(@CurrentUser() user: AuthUser, @TenantId() tenantId?: string | null) {
     return this.setup.complete(user.id, tenantId);

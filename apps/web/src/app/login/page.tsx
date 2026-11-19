@@ -6,6 +6,7 @@ import { PendingApprovalCard } from '@/components/PendingApprovalCard';
 import { useI18n } from '@/components/LocaleProvider';
 import { PasswordField } from '@/components/ui/PasswordField';
 import { apiFetch, isTenantInactiveMessage, LoginResponse, persistAccessToken } from '@/lib/api';
+import type { ApiSchema } from '@/lib/api-types';
 import { getRoleHome } from '@/lib/auth';
 import { isPendingApprovalMessage } from '@/lib/notification-links';
 
@@ -200,7 +201,7 @@ export default function LoginPage() {
     try {
       const res = await apiFetch<{ message?: string }>('/auth/password/forgot', {
         method: 'POST',
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email } satisfies ApiSchema<'ForgotPasswordDto'>),
       });
       setMessage(res.message ?? 'Якщо email зареєстровано, надіслано інструкції');
     } catch (err) {
@@ -218,7 +219,7 @@ export default function LoginPage() {
     try {
       const res = await apiFetch<{ message?: string }>('/auth/password/reset', {
         method: 'POST',
-        body: JSON.stringify({ token: resetToken, newPassword }),
+        body: JSON.stringify({ token: resetToken, newPassword } satisfies ApiSchema<'ResetPasswordDto'>),
       });
       setMessage(res.message ?? 'Пароль змінено');
       setMode('password');
@@ -240,7 +241,7 @@ export default function LoginPage() {
         body: JSON.stringify({
           email: email.trim().toLowerCase(),
           password,
-        }),
+        } satisfies ApiSchema<'LoginDto'>),
       });
       if (data.requires2fa && data.tempToken) {
         setTempToken(data.tempToken);

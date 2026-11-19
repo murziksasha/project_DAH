@@ -6,6 +6,7 @@ import { PendingApprovalCard } from '@/components/PendingApprovalCard';
 import { useI18n } from '@/components/LocaleProvider';
 import { PasswordField } from '@/components/ui/PasswordField';
 import { apiFetch } from '@/lib/api';
+import type { ApiSchema } from '@/lib/api-types';
 
 interface Apartment {
   id: string;
@@ -97,7 +98,7 @@ export default function RegisterPage() {
           phone: phone || undefined,
           apartmentId,
           inviteCode: inviteCode || undefined,
-        }),
+        } satisfies ApiSchema<'RegisterDto'>),
       });
       setSuccess(data.message || t('registerSuccess'));
       try {

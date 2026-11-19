@@ -16,7 +16,7 @@
     "docker:ps:prod": "node scripts/docker-prod-ops.mjs ps",
     "update:prod": "node scripts/update-prod.mjs",
     "db:users:init:prod": "node scripts/db-users-init-prod.mjs",
-    "test:deployment": "node --test scripts/product-env.test.mjs scripts/production-docker-state.test.mjs scripts/update-prod.test.mjs scripts/docker-rollback-prod.test.mjs scripts/db-users-init-prod.test.mjs",
+    "test:deployment": "node --test scripts/product-env.test.mjs scripts/production-docker-state.test.mjs scripts/update-prod.test.mjs scripts/docker-rollback-prod.test.mjs scripts/db-users-init-prod.test.mjs scripts/csp-config.test.mjs",
     "docker:down": "npm run docker:infra:down",
     "docker:infra": "docker compose up -d postgres minio minio-init",
     "docker:infra:redis": "docker compose --profile redis up -d redis",

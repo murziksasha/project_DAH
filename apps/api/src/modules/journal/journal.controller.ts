@@ -19,6 +19,9 @@ import { AuthUser, CurrentUser } from '../../common/decorators/current-user.deco
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { TenantAccessService } from '../../common/tenant-access/tenant-access.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { financeFlags } from '../../common/utils/finance-sot';
+import { SetJournalSotDto } from './dto/set-journal-sot.dto';
 import { UpdateExternalCodeDto } from './dto/update-external-code.dto';
 import { JournalService } from './journal.service';
 
@@ -38,6 +41,7 @@ export class JournalController {
     private journal: JournalService,
     private access: TenantAccessService,
     private prisma: PrismaService,
+    private audit: AuditService,
   ) {}
 
   @Get()
@@ -88,7 +92,43 @@ export class JournalController {
     @Query('buildingId') buildingId: string,
   ) {
     const id = await this.access.resolveBuilding(user, buildingId, tenantId);
-    return this.journal.sotReadiness(id);
+    const [readiness, building] = await Promise.all([
+      this.journal.sotReadiness(id),
+      this.prisma.building.findUnique({ where: { id }, select: { settings: true } }),
+    ]);
+    return { ...readiness, ...financeFlags(building?.settings) };
+  }
+
+  /**
+   * Phase 3: per-building Journal-SoT switch. Enabling needs the readiness streak
+   * (409 otherwise; super_admin may force with a reason). Disabling = instant rollback.
+   */
+  @Post('sot')
+  @Roles(UserRole.chairman, UserRole.accountant, UserRole.super_admin)
+  async setSot(
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+    @Body() dto: SetJournalSotDto,
+  ) {
+    const id = await this.access.resolveBuilding(user, dto.buildingId, tenantId);
+    const result = await this.journal.setJournalSot(id, dto.enabled, user, {
+      force: dto.force,
+      reason: dto.reason,
+    });
+    await this.audit.log({
+      userId: user.id,
+      action: dto.enabled ? 'journal.sot_enabled' : 'journal.sot_disabled',
+      entityType: 'Building',
+      entityId: id,
+      payload: {
+        previous: result.previous,
+        forced: result.forced,
+        reason: dto.reason ?? null,
+        streakDays: result.readiness.streakDays,
+        requiredDays: result.readiness.requiredDays,
+      },
+    });
+    return result;
   }
 
   /** Record today's shadow-compare now (otherwise the worker does it daily). */

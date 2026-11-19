@@ -174,6 +174,9 @@ export default function OrganizationPage() {
       }).catch(() => ({ pendingDeferredRoles: [] })),
     ]);
     setPendingDeferredRoles(setupStatus.pendingDeferredRoles ?? []);
+    // `selectedTenant` is read via getSelectedTenantId() (storage); it stays a dependency so a
+    // super-admin tenant switch re-runs the load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     loadApartments,
     loadResidents,

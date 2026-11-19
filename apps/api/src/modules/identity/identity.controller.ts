@@ -55,11 +55,25 @@ export class IdentityController {
     @Query('return_to') returnTo: string | undefined,
     @Res() res: Response,
   ) {
+    // Phase 3 review: the page was public regardless of IDENTITY_* and accepted any redirect_uri
+    // (incl. javascript:) as the form action. Serve it only for the enabled mock IdP.
+    if (!this.identity.mockPageAllowed()) {
+      res.status(404).send('Not found');
+      return;
+    }
     if (!state || !redirectUri) {
       res.status(400).send('state and redirect_uri required');
       return;
     }
+    if (!this.identity.isAllowedRedirect(redirectUri)) {
+      res.status(400).send('redirect_uri not allowed');
+      return;
+    }
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader(
+      'Content-Security-Policy',
+      `default-src 'none'; style-src 'unsafe-inline'; form-action ${new URL(redirectUri).origin}; frame-ancestors 'none'; base-uri 'none'`,
+    );
     res.send(
       this.identity.mockAuthorizePage({
         state,

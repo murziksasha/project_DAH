@@ -5038,6 +5038,35 @@
         ]
       }
     },
+    "/api/journal/sot": {
+      "post": {
+        "operationId": "JournalController_setSot",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetJournalSotDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "journal"
+        ]
+      }
+    },
     "/api/journal/sot-readiness": {
       "get": {
         "operationId": "JournalController_sotReadiness",
@@ -7583,6 +7612,30 @@
       }
     },
     "schemas": {
+      "SetJournalSotDto": {
+        "type": "object",
+        "properties": {
+          "buildingId": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "true = reads from journal projectors, false = legacy reads (rollback)"
+          },
+          "force": {
+            "type": "boolean",
+            "description": "super_admin only: switch before the streak is reached"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Required with force (audited)"
+          }
+        },
+        "required": [
+          "buildingId",
+          "enabled"
+        ]
+      },
       "UpdateExternalCodeDto": {
         "type": "object",
         "properties": {
