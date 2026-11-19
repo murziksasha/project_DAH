@@ -107,7 +107,11 @@ export class FinanceController {
   @Roles(UserRole.chairman, UserRole.accountant)
   @Delete('bank-accounts/:id')
   deleteBankAccount(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.finance.deleteBankAccount(id, user.id);
+    return this.finance.deleteBankAccount(
+      id,
+      user.id,
+      user.role === 'super_admin' ? null : user.tenantId,
+    );
   }
 
   @UseGuards(RolesGuard)

@@ -24,7 +24,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     sub: string;
     tenantId?: string | null;
     sid?: string;
+    typ?: string;
+    purpose?: string;
   }): Promise<AuthUser> {
+    if (payload.typ !== 'access') {
+      throw new UnauthorizedException('Недійсний тип токена');
+    }
+    if (!payload.sid) {
+      throw new UnauthorizedException('Сесія не вказана або недійсна');
+    }
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
       include: {
@@ -36,6 +44,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
     if (!user || user.status !== UserStatus.active) {
       throw new UnauthorizedException('Користувач не авторизований');
+    }
+    const session = await this.prisma.authSession.findUnique({
+      where: { id: payload.sid },
+      select: { userId: true, revokedAt: true },
+    });
+    if (!session || session.revokedAt || session.userId !== user.id) {
+      throw new UnauthorizedException('Сесія недійсна або відкликана');
     }
     if (user.tenantId) {
       const tenant = await this.prisma.tenant.findUnique({

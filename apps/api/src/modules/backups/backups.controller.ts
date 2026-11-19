@@ -68,7 +68,7 @@ export class BackupsController {
     return this.backups.ensureWeeklyBackup({ source: 'api', userId: user.id });
   }
 
-  @Roles(...READ_ROLES)
+  @Roles(UserRole.super_admin)
   @Get(':kind/:id/download')
   async download(
     @Param('kind') kind: string,
@@ -83,7 +83,7 @@ export class BackupsController {
     createReadStream(dumpPath).pipe(res);
   }
 
-  @Roles(...WRITE_ROLES)
+  @Roles(UserRole.super_admin)
   @Post('upload')
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -95,8 +95,8 @@ export class BackupsController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
-      // Default unlimited; optional BACKUP_UPLOAD_MAX_MB enforced in service
-      limits: { fileSize: Number.MAX_SAFE_INTEGER },
+      // 512 MB ceiling aligned with edge nginx client_max_body_size (optional BACKUP_UPLOAD_MAX_MB further limits in service)
+      limits: { fileSize: 512 * 1024 * 1024 },
     }),
   )
   upload(

@@ -231,7 +231,7 @@ export class AuthService {
         return this.completeLogin(activeUser, meta);
       }
       const tempToken = await this.jwt.signAsync(
-        { sub: activeUser.id, purpose: '2fa' },
+        { sub: activeUser.id, purpose: '2fa', typ: '2fa' },
         { expiresIn: '5m', secret: resolveJwtSecret(this.config) },
       );
       return {
@@ -1095,7 +1095,7 @@ export class AuthService {
 
     if (full.totpEnabled && this.totpPlain(full.totpSecret)) {
       const tempToken = await this.jwt.signAsync(
-        { sub: full.id, purpose: '2fa' },
+        { sub: full.id, purpose: '2fa', typ: '2fa' },
         { expiresIn: '5m', secret: resolveJwtSecret(this.config) },
       );
       return {

@@ -1,35 +1,39 @@
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
 import { isPendingApprovalMessage, resolveNotificationHref } from './notification-links';
 
 describe('resolveNotificationHref', () => {
   it('keeps modern resident paths', () => {
-    expect(resolveNotificationHref({ url: '/resident?tab=news' })).toBe('/resident?tab=news');
+    assert.equal(resolveNotificationHref({ url: '/resident?tab=news' }), '/resident?tab=news');
   });
 
   it('migrates legacy communications tab', () => {
-    expect(
+    assert.equal(
       resolveNotificationHref({
         url: '/resident?tab=communications',
         kind: 'announcement',
       }),
-    ).toBe('/resident?tab=news');
-    expect(
+      '/resident?tab=news',
+    );
+    assert.equal(
       resolveNotificationHref({
         url: '/resident?tab=communications',
         title: 'Заявка оновлена',
       }),
-    ).toBe('/resident?tab=requests');
+      '/resident?tab=requests',
+    );
   });
 
   it('fills from kind when url missing', () => {
-    expect(resolveNotificationHref({ kind: 'request_status' })).toBe('/resident?tab=requests');
-    expect(resolveNotificationHref({ kind: 'meter' })).toBe('/resident/meters');
-    expect(resolveNotificationHref({ kind: 'sla_breached' })).toBe('/admin/dispatch');
+    assert.equal(resolveNotificationHref({ kind: 'request_status' }), '/resident?tab=requests');
+    assert.equal(resolveNotificationHref({ kind: 'meter' }), '/resident/meters');
+    assert.equal(resolveNotificationHref({ kind: 'sla_breached' }), '/admin/dispatch');
   });
 });
 
 describe('isPendingApprovalMessage', () => {
   it('detects uk pending login error', () => {
-    expect(isPendingApprovalMessage('Очікуйте підтвердження від правління')).toBe(true);
-    expect(isPendingApprovalMessage('Невірний email або пароль')).toBe(false);
+    assert.equal(isPendingApprovalMessage('Очікуйте підтвердження від правління'), true);
+    assert.equal(isPendingApprovalMessage('Невірний email або пароль'), false);
   });
 });

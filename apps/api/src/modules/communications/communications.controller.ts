@@ -43,12 +43,18 @@ export class CommunicationsController {
 
   @Get('announcements')
   listAnnouncements(@CurrentUser() user: AuthUser) {
-    return this.communications.listAnnouncements(user.id);
+    return this.communications.listAnnouncements(
+      user.id,
+      user.role === UserRole.super_admin ? null : user.tenantId,
+    );
   }
 
   @Get('announcements/unread-count')
   unreadAnnouncementCount(@CurrentUser() user: AuthUser) {
-    return this.communications.unreadAnnouncementCount(user.id);
+    return this.communications.unreadAnnouncementCount(
+      user.id,
+      user.role === UserRole.super_admin ? null : user.tenantId,
+    );
   }
 
   @Patch('announcements/read-all')
@@ -117,7 +123,7 @@ export class CommunicationsController {
     @Body() dto: UpdateRequestDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.communications.updateRequest(id, dto, user.id, user.role);
+    return this.communications.updateRequest(id, dto, user.id, user.role, user.tenantId);
   }
 
   @Get('polls')

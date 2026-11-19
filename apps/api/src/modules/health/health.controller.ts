@@ -15,10 +15,12 @@ export class HealthController {
   @Get()
   async check() {
     const full = await this.health.check();
+    const buildSha = process.env.GIT_SHA || process.env.BUILD_SHA || undefined;
     return {
       status: full.status === 'down' ? 'down' : 'ok',
       service: 'dah-api',
       timestamp: full.timestamp,
+      ...(buildSha ? { buildSha } : {}),
     };
   }
 

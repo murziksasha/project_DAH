@@ -294,6 +294,32 @@ export class AccountingPeriodsService {
     const existing = await this.getOrCreate(buildingId, period);
 
     if (
+      (status === AccountingPeriodStatus.locked ||
+        status === AccountingPeriodStatus.soft_closed) &&
+      existing.status !== status
+    ) {
+      const checklist = await this.closeChecklist(buildingId, period);
+      if (status === AccountingPeriodStatus.locked && !checklist.canLock) {
+        const reasons = checklist.checks
+          .filter((c) => !c.ok)
+          .map((c) => c.label)
+          .join('; ');
+        throw new BadRequestException(
+          `Неможливо заблокувати період ${period}: не виконано умови чеклисту (${reasons})`,
+        );
+      }
+      if (status === AccountingPeriodStatus.soft_closed && !checklist.canSoftClose) {
+        const reasons = checklist.checks
+          .filter((c) => !c.ok)
+          .map((c) => c.label)
+          .join('; ');
+        throw new BadRequestException(
+          `Неможливо м'яко закрити період ${period}: не виконано умови чеклисту (${reasons})`,
+        );
+      }
+    }
+
+    if (
       existing.status === AccountingPeriodStatus.locked &&
       status !== AccountingPeriodStatus.locked &&
       role !== UserRole.super_admin &&

@@ -150,6 +150,17 @@ Deep links:
 - Auto-flush on `window.online`; manual flush on meters page
 - Event `dah-meter-queue-change`
 
+### Offline request queue (1.14.0)
+
+- `localStorage` key `dah_request_offline_queue`
+- Черга чернеток сервісних заявок мешканця при відсутності зв'язку
+- **Ізоляція користувача та організації**: кожна чернетка зберігає `userId` та `tenantId`. Скидання черги відправляє заявки тільки від імені поточного авторизованого користувача та його організації.
+- **Атомарність та захист від втрати даних при фоновій відправці**:
+  - Успішно відправлені заявки видаляються зі сховища поштучно за ідентифікатором (`removeQueuedRequest(id)`).
+  - Нові чернетки, створені користувачем прямо під час очікування мережевої відповіді (`await post`), не затираються.
+  - Помилки мережі фіксуються в чернетці (`status: 'failed'`, `error: '...'`), дозволяючи повторити спробу при відновленні зв'язку.
+- Фонова відправка: `RequestQueueFlusher` запускається при подіях `online`, `dah-request-queue-change` та `dah-auth-change`.
+
 ### Soft apartment switch (1.13.2)
 
 - Event `dah-apartment-change` (no `location.reload`)

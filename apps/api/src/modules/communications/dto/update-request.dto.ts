@@ -3,6 +3,11 @@ import { RequestPriority, RequestStatus } from '@prisma/client';
 import { IsArray, IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
 
 export class UpdateRequestDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  category?: string;
+
   @ApiPropertyOptional({ enum: RequestStatus })
   @IsOptional()
   @IsEnum(RequestStatus)

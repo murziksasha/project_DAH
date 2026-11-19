@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { RequestPriority, RequestStatus, UserRole, VoteWeightMode } from '@prisma/client';
+import { Prisma, RequestPriority, RequestStatus, UserRole, VoteWeightMode } from '@prisma/client';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { roundMoney } from '../../common/utils/money';
 import {
@@ -51,9 +51,13 @@ export class CommunicationsService {
     private storage: StorageService,
   ) {}
 
-  async listAnnouncements(userId: string) {
+  async listAnnouncements(userId: string, tenantId?: string | null) {
+    const where: Prisma.AnnouncementWhereInput = tenantId
+      ? { author: { tenantId } }
+      : {};
     const [rows, reads] = await Promise.all([
       this.prisma.announcement.findMany({
+        where,
         orderBy: [{ isPinned: 'desc' }, { createdAt: 'desc' }],
         include: {
           author: { select: { id: true, firstName: true, lastName: true } },
@@ -71,13 +75,19 @@ export class CommunicationsService {
     }));
   }
 
-  async unreadAnnouncementCount(userId: string) {
-    const total = await this.prisma.announcement.count();
+  async unreadAnnouncementCount(userId: string, tenantId?: string | null) {
+    const where: Prisma.AnnouncementWhereInput = tenantId
+      ? { author: { tenantId } }
+      : {};
+    const total = await this.prisma.announcement.count({ where });
     if (total === 0) return { unread: 0 };
     const read = await this.prisma.announcementRead.count({ where: { userId } });
     // Unread = announcements without a read row (approx if some deleted reads cascade)
     const unread = await this.prisma.announcement.count({
-      where: { reads: { none: { userId } } },
+      where: {
+        ...where,
+        reads: { none: { userId } },
+      },
     });
     return { unread, total, read };
   }
@@ -264,18 +274,40 @@ export class CommunicationsService {
   async listRequests(user: AuthUser) {
     const isAdmin = ADMIN_ROLES.includes(user.role as UserRole);
     const isCrew = user.role === UserRole.crew;
-    const where = isAdmin
-      ? user.tenantId
-        ? {
-            OR: [
-              { buildingId: null },
-              { author: { tenantId: user.tenantId } },
-            ],
-          }
-        : undefined
-      : isCrew
-        ? { assigneeId: user.id }
-        : { authorId: user.id };
+
+    if (!isAdmin && !isCrew) {
+      const rows = await this.prisma.request.findMany({
+        where: { authorId: user.id },
+        orderBy: [{ priority: 'desc' }, { dueAt: 'asc' }, { createdAt: 'desc' }],
+        include: {
+          author: { select: { id: true, firstName: true, lastName: true, email: true } },
+          assignee: { select: { id: true, firstName: true, lastName: true } },
+        },
+      });
+      const withSla = rows.map((r) => this.enrichRequestSla(r));
+      return Promise.all(withSla.map((r) => this.withPhotoUrls(r)));
+    }
+
+    let tenantFilter: Prisma.RequestWhereInput = {};
+    if (user.role !== UserRole.super_admin && user.tenantId) {
+      const buildings = await this.prisma.building.findMany({
+        where: { tenantId: user.tenantId },
+        select: { id: true },
+      });
+      const buildingIds = buildings.map((b) => b.id);
+      tenantFilter = {
+        OR: [
+          { author: { tenantId: user.tenantId } },
+          ...(buildingIds.length ? [{ buildingId: { in: buildingIds } }] : []),
+        ],
+      };
+    }
+
+    const where: Prisma.RequestWhereInput = {
+      ...tenantFilter,
+      ...(isCrew ? { assigneeId: user.id } : {}),
+    };
+
     const rows = await this.prisma.request.findMany({
       where,
       orderBy: [{ priority: 'desc' }, { dueAt: 'asc' }, { createdAt: 'desc' }],
@@ -307,11 +339,19 @@ export class CommunicationsService {
       throw new ForbiddenException('Немає доступу до черги заявок');
     }
 
-    const where: {
-      status?: RequestStatus | { not: RequestStatus };
-      assigneeId?: string | null;
-      priority?: RequestPriority;
-    } = {};
+    const where: Prisma.RequestWhereInput = {};
+
+    if (user.role !== UserRole.super_admin && user.tenantId) {
+      const buildings = await this.prisma.building.findMany({
+        where: { tenantId: user.tenantId },
+        select: { id: true },
+      });
+      const buildingIds = buildings.map((b) => b.id);
+      where.OR = [
+        { author: { tenantId: user.tenantId } },
+        ...(buildingIds.length ? [{ buildingId: { in: buildingIds } }] : []),
+      ];
+    }
 
     if (query.status && Object.values(RequestStatus).includes(query.status as RequestStatus)) {
       where.status = query.status as RequestStatus;
@@ -415,9 +455,35 @@ export class CommunicationsService {
     return this.withPhotoUrls(this.enrichRequestSla(request));
   }
 
-  async updateRequest(id: string, dto: UpdateRequestDto, userId: string, actorRole?: string) {
-    const request = await this.prisma.request.findUnique({ where: { id } });
+  async updateRequest(
+    id: string,
+    dto: UpdateRequestDto,
+    userId: string,
+    actorRole?: string,
+    actorTenantId?: string | null,
+  ) {
+    const request = await this.prisma.request.findUnique({
+      where: { id },
+      include: {
+        author: { select: { id: true, tenantId: true } },
+      },
+    });
     if (!request) throw new NotFoundException('Заявку не знайдено');
+
+    // Tenant boundary check
+    if (actorRole !== UserRole.super_admin && actorTenantId) {
+      let requestTenantId = request.author?.tenantId;
+      if (!requestTenantId && request.buildingId) {
+        const b = await this.prisma.building.findUnique({
+          where: { id: request.buildingId },
+          select: { tenantId: true },
+        });
+        requestTenantId = b?.tenantId ?? null;
+      }
+      if (requestTenantId && requestTenantId !== actorTenantId) {
+        throw new ForbiddenException('Немає доступу до заявки іншої організації');
+      }
+    }
 
     // Crew may only update own assigned tickets (status)
     if (actorRole === UserRole.crew) {
@@ -441,6 +507,7 @@ export class CommunicationsService {
     const updated = await this.prisma.request.update({
       where: { id },
       data: {
+        ...(dto.category ? { category: dto.category } : {}),
         status: dto.status,
         priority: dto.priority,
         assigneeId: dto.assigneeId,

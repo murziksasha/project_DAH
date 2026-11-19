@@ -138,8 +138,24 @@ export class IdentityService {
     }
     const tokens = (await tokenRes.json()) as { access_token?: string; id_token?: string };
     const claims = this.decodeJwtPayload(tokens.id_token ?? tokens.access_token ?? '');
+
+    const expectedIssuer = this.config.get<string>('IDENTITY_ISSUER');
+    if (expectedIssuer && claims.iss && claims.iss !== expectedIssuer) {
+      throw new UnauthorizedException('Identity: невідповідний issuer токена');
+    }
+    const expectedAudience = this.config.get<string>('IDENTITY_CLIENT_ID');
+    if (expectedAudience && claims.aud && claims.aud !== expectedAudience) {
+      throw new UnauthorizedException('Identity: невідповідний audience токена');
+    }
+
     const email = String(claims.email ?? claims.preferred_username ?? '');
-    const phone = claims.phone_number ? String(claims.phone_number) : body.phone;
+    // Only trust verified phone from IdP claims, never untrusted client body
+    const phone = claims.phone_number
+      ? String(claims.phone_number)
+      : claims.phone
+        ? String(claims.phone)
+        : undefined;
+
     return this.loginByClaims({ email: email || undefined, phone }, meta);
   }
 
@@ -147,6 +163,9 @@ export class IdentityService {
     body: { phone?: string; email?: string; code?: string },
     meta: SessionMeta = {},
   ) {
+    if (this.config.get('NODE_ENV') === 'production') {
+      throw new BadRequestException('Mock identity заборонено в production');
+    }
     let email = body.email;
     let phone = body.phone;
     if (body.code?.startsWith('mock_')) {

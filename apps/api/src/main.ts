@@ -34,6 +34,10 @@ function isSwaggerEnabled(): boolean {
 async function bootstrap() {
   assertProductionJwtSecret();
   const app = await NestFactory.create(AppModule);
+  const trustProxy = process.env.TRUST_PROXY ?? (process.env.NODE_ENV === 'production' ? '1' : '0');
+  if (trustProxy === '1' || trustProxy === 'true') {
+    (app.getHttpAdapter().getInstance() as any).set('trust proxy', 1);
+  }
   app.setGlobalPrefix('api');
   app.use(cookieParser());
   app.use(securityHeaders);

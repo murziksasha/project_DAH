@@ -81,12 +81,19 @@ API_PUBLIC_URL=https://your-domain/api
 }
 ```
 
-## Статус
+## Статус та верифікація
 
 `GET /api/kep/status` → `enabled`, `provider`, `diiaConfigured`, `productionReady`.
 
-## Безпека
+Публічна сесія `GET /api/kep/sessions/:id` повертає поле `verified: boolean`:
+- `status: "signed"` позначає завершення сесії підпису користувачем.
+- `verified: true` гарантує, що підпис успішно пройшов криптографічну верифікацію (наявний валідний CAdES CMS або перевірено webhook офіційного провайдера).
+
+## Безпека та верифікація особи (IdP)
 
 - У `NODE_ENV=production` webhook **без** `KEP_WEBHOOK_SECRET` відхиляється.
-- `KEP_ALLOW_MOCK=false` блокує mock-підпис.
+- `KEP_ALLOW_MOCK=false` блокує mock-підпис. У production спроби тихої деградації до mock заборонені.
+- **Верифікація телефону**: сервіс ідентифікації (`IdentityService`) довіряє виключно підтвердженим клеймам від провайдера ідентифікації (`claims.phone_number`). Передача довільного телефону з тіла клієнтського запиту (`body.phone`) суворо заблокована.
+- **Перевірка токенів IdP**: перевіряється збіг `iss` та `aud` з налаштуваннями OIDC провайдера.
+- Ендпоінти mock identity заблоковані у production.
 - Сесії мають TTL (`KEP_SESSION_TTL_MIN`, default 30).

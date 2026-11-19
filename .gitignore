@@ -11,6 +11,10 @@ out/
 .env
 .env.local
 .env.*.local
+.env.product
+.env.*
+!.env.example
+!.env.product.example
 
 # Logs & OS
 *.log

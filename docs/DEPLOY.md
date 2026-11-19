@@ -14,33 +14,42 @@
 
 ```bash
 git clone <repo-url> miy-dim && cd miy-dim
-cp .env.example .env
+cp .env.product.example .env.product
+chmod 600 .env.product
 ```
 
-Після старту super-admin створює організації на `/admin/tenants` з типом **ОСББ** (`osbb`) або **УК** (`management_company`).
+> [!CAUTION]
+> **Категорично заборонено** використовувати `docker compose down -v` у production. Це призведе до безповоротного видалення томів БД та файлів.
+> Використовуйте `npm run update:prod` для оновлень та `npm run docker:stop:prod` для зупинки без видалення томів.
 
-Обов'язково змініть у `.env`:
+Обов'язково заповніть у `.env.product`:
 
 | Змінна | Опис |
 |--------|------|
-| `POSTGRES_PASSWORD` | Сильний пароль БД |
+| `COMPOSE_PROJECT_NAME` | Назва Compose-проєкту (наприклад `project_dah`) |
+| `POSTGRES_DATA_VOLUME` | Ім'я існуючого тому PostgreSQL |
+| `MINIO_DATA_VOLUME` | Ім'я існуючого тому MinIO |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` | Суперкористувач Postgres (лише для міграцій та init) |
+| `POSTGRES_APP_USER` / `POSTGRES_APP_PASSWORD` | Окрема роль застосунку (`dah_app`, non-superuser) |
+| `DATABASE_URL` | `postgresql://dah_app:<пароль>@postgres:5432/dah` |
 | `JWT_SECRET` | Випадковий рядок 64+ символів |
-| `S3_SECRET_KEY` | Пароль MinIO (internal; не публікувати :9000) |
-| `REDIS_URL` | За замовчуванням `none` (worker без Redis) |
-| `FILE_DOWNLOAD_SECRET` | Опційно; інакше HMAC від `JWT_SECRET` |
+| `FILE_DOWNLOAD_SECRET` | Окремий випадковий рядок 64+ символів (відмінний від `JWT_SECRET`) |
+| `S3_ROOT_USER` / `S3_ROOT_PASSWORD` | Root-користувач MinIO (internal; не потрапляє в API) |
+| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | Користувач MinIO з доступом лише до бакета `dah-files` |
 | `DOMAIN` | Ваш домен |
 | `CORS_ORIGIN` | `https://<домен>` |
 | `NEXT_PUBLIC_API_URL` | `https://<домен>/api` |
 | `APP_URL` | `https://<домен>` (посилання скидання пароля) |
-| `VAPID_*` | `npx web-push generate-vapid-keys` |
 | `COOKIE_SECURE` | `true` за HTTPS (HttpOnly refresh cookie) |
 | `BACKUP_DIR` | Каталог копій (Docker: `/backups`) |
 | `BACKUP_STATUS_PATH` | `last-backup.json` для health / ops |
 | `BACKUP_MAX_AGE_HOURS` | Поріг «stale» для health (напр. 192 для weekly) |
-| `SWAGGER_ENABLED` | у prod залиште вимкненим (default off when `NODE_ENV=production`) |
-| `REQUIRE_FINANCE_2FA` | default on; finance + backup download need TOTP |
+| `SWAGGER_ENABLED` | `false` |
+| `KEP_ALLOW_MOCK` | `false` |
+| `REQUIRE_FINANCE_2FA` | `true` (TOTP для фінансів та завантаження бекапів) |
 
-Повний чекліст: [SECURITY-CHECKLIST.md](./SECURITY-CHECKLIST.md).
+> [!IMPORTANT]
+> `SUPER_ADMIN_PASSWORD` у `.env.product` **заборонено**. Початковий super-admin створюється одноразово через команду CLI поза цим файлом (див. крок 4). Seed (`prisma/seed.ts`) у продакшні **не запускається**, оскільки він призначений виключно для dev-демонстрації з паролями за замовчуванням.
 
 ## 3. TLS-сертифікати (Let's Encrypt)
 
@@ -61,12 +70,41 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -subj "/CN=localhost"
 ```
 
-## 4. Запуск
+## 4. Ініціалізація та перший запуск
 
+### 4.1. Ініціалізація ролей БД та сховища MinIO
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-docker compose exec api npx ts-node prisma/seed.ts   # лише перший раз
+npm run db:users:init:prod
 ```
+Команда:
+- Створює роль `dah_app` з обмеженими правами (без прав superuser, create db чи role).
+- Налаштовує бакет MinIO та користувача додатку.
+- Не чіпає наявні дані та не викликає `down`.
+
+### 4.2. Створення першого системного адміністратора (одноразово)
+```bash
+docker compose --env-file .env.product -f docker-compose.yml -f docker-compose.prod.yml run --rm \
+  -e SUPER_ADMIN_EMAIL=admin@osbb.example.com \
+  -e SUPER_ADMIN_PASSWORD=strong_admin_password_from_vault \
+  api npx ts-node prisma/create-super-admin.ts
+```
+
+### 4.3. Запуск продуктового контуру
+```bash
+npm run update:prod
+```
+Скрипт `update:prod`:
+1. Перевіряє `.env.product` та чистий git checkout.
+2. Зберігає поточні образи з тегом `:rollback` та збирає нові під поточний `GIT_SHA`.
+3. Виконує міграції Prisma одноразовим контейнером із суперкористувачем (без збереження пароля в логах).
+4. Піднімає контейнери на існуючих томах без перестворення даних (`pull never`, `no-build`).
+5. Перевіряє `/api/health` за SHA до 90 с.
+
+### 4.4. Відкат (у разі потреби)
+```bash
+npm run docker:rollback:prod
+```
+Піднімає попередні збережені образи `:rollback` на тих самих незмінних томах.
 
 Перевірка:
 
@@ -114,6 +152,10 @@ powershell -File infra/scripts/backup.ps1
 ```
 
 Архіви CLI: `backups/<timestamp>/` — `database.sql.gz`, `files/` (MinIO), `manifest.json`.
+
+**Цілісність бекапів та безпека:**
+- Статус створення бекапу: повертає `status: "ok"` лише при успішному архівуванні БД та файлів MinIO; якщо файли MinIO не вдалося скопіювати, статус встановлюється як `"partial"`.
+- Завантаження дампів на диск (`GET /backups/:kind/:id/download`) та завантаження зовнішніх бекапів (`POST /backups/upload`) доступні **виключно для ролі `super_admin`**.
 
 **Відновлення:**
 

@@ -61,12 +61,13 @@ export class BuildingController {
     return this.building.listApartments(
       buildingId,
       user.role === 'super_admin' ? null : user.tenantId,
+      user,
     );
   }
 
   @Get('apartments/:id')
-  getApartment(@Param('id') id: string) {
-    return this.building.getApartment(id);
+  getApartment(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.building.getApartment(id, user);
   }
 
   @Get('settings')

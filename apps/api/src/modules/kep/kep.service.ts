@@ -250,6 +250,7 @@ export class KepService {
     expiresAt: Date;
     completedAt: Date | null;
     createdAt: Date;
+    signatureCms?: string | null;
   }) {
     return {
       sessionId: session.id,
@@ -269,6 +270,10 @@ export class KepService {
       completedAt: session.completedAt?.toISOString() ?? null,
       createdAt: session.createdAt.toISOString(),
       signed: session.status === 'signed',
+      verified:
+        session.status === 'signed' &&
+        Boolean(session.signatureCms) &&
+        session.provider !== 'mock',
     };
   }
 
@@ -519,7 +524,12 @@ export class KepService {
       this.config.get('KEP_DIIA_ACQUIRER_TOKEN') ?? this.config.get('KEP_DIIA_API_KEY') ?? '';
 
     if (!offerUrl || !token) {
-      // Graceful degradation: mock deeplink so UI/flow can be tested without credentials
+      if (this.config.get('NODE_ENV') === 'production') {
+        throw new BadRequestException(
+          'Diia offer: KEP_DIIA_OFFER_URL / token missing in production',
+        );
+      }
+      // Graceful degradation in development: mock deeplink so UI/flow can be tested without credentials
       this.logger.warn(
         'Diia offer: KEP_DIIA_OFFER_URL / token missing — using mock deeplink. Register at integration.diia.gov.ua',
       );

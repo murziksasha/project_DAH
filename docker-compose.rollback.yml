@@ -1,0 +1,27 @@
+# ==============================================================================
+# «Мій дім» — Rollback Compose Layer
+# ==============================================================================
+# Replaces container images with :rollback tags on the existing external volumes
+# with existing database roles.
+# ==============================================================================
+
+services:
+  api:
+    image: miy-dim/api:rollback
+    pull_policy: never
+
+  worker:
+    image: miy-dim/api:rollback
+    pull_policy: never
+
+  web:
+    image: miy-dim/web:rollback
+    pull_policy: never
+
+volumes:
+  postgres_data:
+    external: true
+    name: ${POSTGRES_DATA_VOLUME:?Set POSTGRES_DATA_VOLUME in .env.product}
+  minio_data:
+    external: true
+    name: ${MINIO_DATA_VOLUME:?Set MINIO_DATA_VOLUME in .env.product}

@@ -14,11 +14,11 @@ export class TransparencyController {
 
   @Get('dashboard')
   dashboard(@CurrentUser() user: AuthUser) {
-    return this.transparency.getResidentDashboard(user.role as UserRole);
+    return this.transparency.getResidentDashboard(user);
   }
 
   @Get('debtors')
   debtors(@CurrentUser() user: AuthUser) {
-    return this.transparency.getDebtorsForUser(user.role as UserRole);
+    return this.transparency.getDebtorsForUser(user);
   }
 }

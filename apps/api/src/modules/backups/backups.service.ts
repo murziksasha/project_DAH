@@ -20,7 +20,7 @@ export type BackupSource = 'schedule' | 'api' | 'upload' | 'manual' | string;
 
 export interface BackupManifest {
   kind: BackupKind;
-  status: 'ok' | 'failed';
+  status: 'ok' | 'partial' | 'failed';
   finishedAt: string | null;
   sizeBytes: number | null;
   source: BackupSource | null;
@@ -65,7 +65,7 @@ export interface CreateBackupResult {
   relativePath: string;
   finishedAt: string;
   sizeBytes: number;
-  status: 'ok';
+  status: 'ok' | 'partial';
   source: BackupSource;
   weekKey?: string;
 }
@@ -571,9 +571,10 @@ export class BackupsService {
       const filesMeta = await this.tryMirrorMinioFiles(dir);
       const finishedAt = new Date().toISOString();
       const totalSize = sizeBytes + (filesMeta.filesBytes ?? 0);
+      const status: 'ok' | 'partial' = filesMeta.ok ? 'ok' : 'partial';
       const manifest: BackupManifest = {
         kind: params.kind,
-        status: 'ok',
+        status,
         finishedAt,
         sizeBytes: totalSize,
         source: params.source,
@@ -600,12 +601,13 @@ export class BackupsService {
           source: params.source,
           sizeBytes: totalSize,
           files: filesMeta.ok,
+          status,
           finishedAt,
         },
       });
 
       this.logger.log(
-        `Backup created ${relativePath} (db=${sizeBytes} files=${filesMeta.filesBytes ?? 0}) source=${params.source}`,
+        `Backup created ${relativePath} status=${status} (db=${sizeBytes} files=${filesMeta.filesBytes ?? 0}) source=${params.source}`,
       );
 
       return {
@@ -614,7 +616,7 @@ export class BackupsService {
         relativePath,
         finishedAt,
         sizeBytes: totalSize,
-        status: 'ok',
+        status,
         source: params.source,
         weekKey: params.weekKey,
       };

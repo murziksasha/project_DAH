@@ -1,41 +1,145 @@
-# Production overlay: HTTPS via nginx + stricter env
-# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# ==============================================================================
+# «Мій дім» — Production Compose Overlay
+# ==============================================================================
+# Usage:
+#   docker compose --env-file .env.product -f docker-compose.yml -f docker-compose.prod.yml up -d
+# ==============================================================================
+
 services:
-  api:
-    environment:
-      CORS_ORIGIN: ${CORS_ORIGIN:-https://localhost}
-      REDIS_URL: ${REDIS_URL:-none}
-      KEP_ALLOW_MOCK: ${KEP_ALLOW_MOCK:-false}
-      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
-      NODE_ENV: production
-    restart: always
-    # Do not publish MinIO/Postgres/Redis ports in prod — only via this overlay on host firewall
-
-  worker:
-    environment:
-      REDIS_URL: ${REDIS_URL:-none}
-      NODE_ENV: production
-    restart: always
-
-  web:
-    build:
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://localhost/api}
-    restart: always
-
-  nginx:
-    volumes:
-      - ./infra/nginx/nginx-ssl.conf:/etc/nginx/nginx.conf:ro
-      - ${SSL_CERT_DIR:-./infra/certs}:/etc/nginx/certs:ro
-    ports:
-      - "80:80"
-      - "443:443"
-    restart: always
-
   postgres:
     restart: always
-    # Prefer not publishing 5432 publicly in real prod (override ports: [] if needed)
+    ports: !override
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env.product}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.product}
+      POSTGRES_DB: ${POSTGRES_DB:-dah}
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:-dah_app}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD in .env.product}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init-app-user.sh:/docker-entrypoint-initdb.d/init-app-user.sh:ro
 
   minio:
     restart: always
-    # Prefer not publishing 9000/9001 publicly — files stream via API /api/files/download
+    ports: !override []
+    environment:
+      MINIO_ROOT_USER: ${S3_ROOT_USER:?Set S3_ROOT_USER in .env.product}
+      MINIO_ROOT_PASSWORD: ${S3_ROOT_PASSWORD:?Set S3_ROOT_PASSWORD in .env.product}
+
+  minio-init:
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 $${S3_ROOT_USER} $${S3_ROOT_PASSWORD};
+      mc mb --ignore-existing local/$${S3_BUCKET:-dah-files};
+      mc admin user add local $${S3_ACCESS_KEY} $${S3_SECRET_KEY} || mc admin user enable local $${S3_ACCESS_KEY};
+      mc admin policy attach local readwrite --user $${S3_ACCESS_KEY};
+      exit 0;
+      "
+    environment:
+      S3_ROOT_USER: ${S3_ROOT_USER}
+      S3_ROOT_PASSWORD: ${S3_ROOT_PASSWORD}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET: ${S3_BUCKET:-dah-files}
+
+  redis:
+    ports: !override []
+
+  api:
+    image: miy-dim/api:${GIT_SHA:-prod}
+    pull_policy: never
+    restart: always
+    user: "node"
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 200
+    mem_limit: 1g
+    ports: !override
+      - "127.0.0.1:3001:3001"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env.product}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env.product}
+      FILE_DOWNLOAD_SECRET: ${FILE_DOWNLOAD_SECRET:?Set FILE_DOWNLOAD_SECRET in .env.product}
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?Set S3_ACCESS_KEY in .env.product}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?Set S3_SECRET_KEY in .env.product}
+      S3_BUCKET: ${S3_BUCKET:-dah-files}
+      CORS_ORIGIN: ${CORS_ORIGIN}
+      APP_URL: ${APP_URL}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      KEP_ALLOW_MOCK: ${KEP_ALLOW_MOCK:-false}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      ONLINE_PAYMENTS_SANDBOX: ${ONLINE_PAYMENTS_SANDBOX:-false}
+      GIT_SHA: ${GIT_SHA}
+      BUILD_SHA: ${GIT_SHA}
+      TRUST_PROXY: "1"
+
+  worker:
+    image: miy-dim/api:${GIT_SHA:-prod}
+    pull_policy: never
+    restart: always
+    user: "node"
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 200
+    mem_limit: 512m
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env.product}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env.product}
+      FILE_DOWNLOAD_SECRET: ${FILE_DOWNLOAD_SECRET:?Set FILE_DOWNLOAD_SECRET in .env.product}
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET: ${S3_BUCKET:-dah-files}
+      CORS_ORIGIN: ${CORS_ORIGIN}
+      APP_URL: ${APP_URL}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      KEP_ALLOW_MOCK: ${KEP_ALLOW_MOCK:-false}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      ONLINE_PAYMENTS_SANDBOX: ${ONLINE_PAYMENTS_SANDBOX:-false}
+      GIT_SHA: ${GIT_SHA}
+      BUILD_SHA: ${GIT_SHA}
+
+  web:
+    image: miy-dim/web:${GIT_SHA:-prod}
+    pull_policy: never
+    restart: always
+    ports: !override []
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 200
+    mem_limit: 128m
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
+
+  nginx:
+    restart: always
+    volumes:
+      - ./infra/nginx/nginx-ssl.conf:/etc/nginx/nginx.conf:ro
+      - ${SSL_CERT_DIR:-./infra/certs}:/etc/nginx/certs:ro
+    ports: !override
+      - "80:80"
+      - "443:443"
+
+  backup:
+    environment:
+      PGPASSWORD: ${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD in .env.product}
+      POSTGRES_USER: ${POSTGRES_APP_USER:-dah_app}
+      POSTGRES_DB: ${POSTGRES_DB:-dah}
+
+volumes:
+  postgres_data:
+    external: true
+    name: ${POSTGRES_DATA_VOLUME:?Set POSTGRES_DATA_VOLUME in .env.product}
+  minio_data:
+    external: true
+    name: ${MINIO_DATA_VOLUME:?Set MINIO_DATA_VOLUME in .env.product}

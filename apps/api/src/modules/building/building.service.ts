@@ -1,9 +1,10 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   normalizeDocumentTemplatesConfig,
   type DocumentTemplatesConfig,
 } from '@dah/shared';
-import { Prisma } from '@prisma/client';
+import { Prisma, UserRole } from '@prisma/client';
+import { AuthUser } from '../../common/decorators/current-user.decorator';
 import {
   extractEmailsFromResidentsCell,
   parseApartmentsCsv,
@@ -539,13 +540,48 @@ export class BuildingService {
     return normalized;
   }
 
-  async listApartments(buildingId?: string, tenantId?: string | null) {
+  async listApartments(buildingId?: string, tenantId?: string | null, user?: AuthUser) {
+    if (user && user.role === UserRole.resident) {
+      const allowedIds = user.apartmentIds?.length
+        ? user.apartmentIds
+        : user.apartmentId
+          ? [user.apartmentId]
+          : [];
+      if (!allowedIds.length) return [];
+      const apartments = await this.prisma.apartment.findMany({
+        where: {
+          id: { in: allowedIds },
+          ...(tenantId ? { building: { tenantId } } : {}),
+        },
+        orderBy: [{ entrance: 'asc' }, { number: 'asc' }],
+        include: {
+          residents: true,
+          apartmentLinks: {
+            include: {
+              user: {
+                select: { id: true, email: true, firstName: true, lastName: true, status: true },
+              },
+            },
+            orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+          },
+        },
+      });
+      return sortByApartmentNumber(
+        apartments.map((a) => ({
+          ...a,
+          users: a.apartmentLinks.map((l) => ({
+            ...l.user,
+            isPrimary: l.isPrimary,
+          })),
+        })),
+      );
+    }
+
     const apartments = await this.prisma.apartment.findMany({
-      where: buildingId
-        ? { buildingId }
-        : tenantId
-          ? { building: { tenantId } }
-          : undefined,
+      where: {
+        ...(buildingId ? { buildingId } : {}),
+        ...(tenantId ? { building: { tenantId } } : {}),
+      },
       orderBy: [{ entrance: 'asc' }, { number: 'asc' }],
       include: {
         residents: true,
@@ -571,10 +607,11 @@ export class BuildingService {
     );
   }
 
-  getApartment(id: string) {
-    return this.prisma.apartment.findUnique({
+  async getApartment(id: string, user?: AuthUser) {
+    const apartment = await this.prisma.apartment.findUnique({
       where: { id },
       include: {
+        building: { select: { id: true, tenantId: true } },
         residents: true,
         accrualLines: {
           include: { accrual: true, allocations: true },
@@ -583,6 +620,25 @@ export class BuildingService {
         payments: { orderBy: { date: 'desc' } },
       },
     });
+    if (!apartment) throw new NotFoundException('Квартиру не знайдено');
+
+    if (user && user.role !== UserRole.super_admin) {
+      if (user.tenantId && apartment.building.tenantId !== user.tenantId) {
+        throw new ForbiddenException('Немає доступу до квартири іншої організації');
+      }
+      if (user.role === UserRole.resident) {
+        const allowedIds = user.apartmentIds?.length
+          ? user.apartmentIds
+          : user.apartmentId
+            ? [user.apartmentId]
+            : [];
+        if (!allowedIds.includes(apartment.id)) {
+          throw new ForbiddenException('Немає доступу до чужої квартири');
+        }
+      }
+    }
+
+    return apartment;
   }
 
   async createApartment(dto: CreateApartmentDto, userId: string, tenantId?: string | null) {

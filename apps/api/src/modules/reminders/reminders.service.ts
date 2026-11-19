@@ -103,6 +103,11 @@ export class RemindersService {
       if (!fundId) continue;
 
       const title = `Пеня ${dayKey}`;
+      const periodRow = await this.prisma.accountingPeriod.findUnique({
+        where: { buildingId_period: { buildingId: building.id, period } },
+      });
+      if (periodRow && periodRow.status !== 'open') continue;
+
       const existing = await this.prisma.accrual.findFirst({
         where: { fundId, period, title },
       });

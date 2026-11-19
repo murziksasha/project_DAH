@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -278,12 +279,18 @@ export class FinanceService {
     return updated;
   }
 
-  async deleteBankAccount(id: string, userId: string) {
+  async deleteBankAccount(id: string, userId: string, tenantId?: string | null) {
     const existing = await this.prisma.bankAccount.findUnique({
       where: { id },
-      include: { _count: { select: { funds: true } } },
+      include: {
+        building: { select: { id: true, tenantId: true } },
+        _count: { select: { funds: true } },
+      },
     });
     if (!existing) throw new NotFoundException('Рахунок не знайдено');
+    if (tenantId && existing.building.tenantId !== tenantId) {
+      throw new ForbiddenException('Немає доступу до банківського рахунку іншої організації');
+    }
     if (existing._count.funds > 0) {
       throw new BadRequestException('Спочатку відвʼяжіть фонди від цього рахунку');
     }
@@ -589,6 +596,12 @@ export class FinanceService {
     if (expense.createdById === userId) {
       throw new BadRequestException('Другий підпис має бути іншої особи');
     }
+
+    await this.periods.assertAllowsMutation(
+      expense.fund.buildingId,
+      expense.date,
+      'expense',
+    );
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const row = await tx.expense.update({

@@ -35,11 +35,7 @@ export class AuthController {
   constructor(private auth: AuthService) {}
 
   private sessionMeta(req: Request) {
-    const xf = req.headers['x-forwarded-for'];
-    const ip =
-      typeof xf === 'string'
-        ? xf.split(',')[0]?.trim()
-        : req.socket?.remoteAddress ?? undefined;
+    const ip = req.ip ?? req.socket?.remoteAddress ?? undefined;
     return {
       userAgent: req.headers['user-agent'],
       ip,
