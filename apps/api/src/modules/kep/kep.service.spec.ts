@@ -170,4 +170,33 @@ describe('KepService', () => {
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
+
+  describe('H5/M11 demo signing guard', () => {
+    const withCfg = (over: Record<string, string | undefined>) =>
+      new KepService(
+        { get: (k: string, d?: string) => (k in over ? over[k] : configMap[k]) ?? d } as never,
+        prisma as never,
+        { log: jest.fn() } as never,
+      );
+
+    it('mock is off by default in production, on in dev, explicit flag wins', () => {
+      expect(withCfg({ KEP_ALLOW_MOCK: undefined, NODE_ENV: 'production' }).mockAllowed()).toBe(false);
+      expect(withCfg({ KEP_ALLOW_MOCK: undefined, NODE_ENV: 'development' }).mockAllowed()).toBe(true);
+      expect(withCfg({ KEP_ALLOW_MOCK: 'false', NODE_ENV: 'development' }).mockAllowed()).toBe(false);
+      expect(withCfg({ KEP_ALLOW_MOCK: 'true', NODE_ENV: 'production' }).mockAllowed()).toBe(true);
+    });
+
+    it('startSession with mock is rejected when mock is disallowed', async () => {
+      const svc = withCfg({ KEP_ALLOW_MOCK: 'false' });
+      await expect(
+        svc.startSession({ documentText: 'x', provider: 'mock' } as never),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('mock authorize page escapes the session id (no XSS)', () => {
+      const html = service.mockAuthorizePage('"><script>alert(1)</script>', 'n0nce');
+      expect(html).not.toContain('<script>alert(1)</script>');
+      expect(html).toContain('nonce="n0nce"');
+    });
+  });
 });

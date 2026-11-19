@@ -29,6 +29,7 @@ import {
 import { OnlinePaymentsService } from './online-payments.service';
 import { VoidPaymentDto } from './dto/void-payment.dto';
 import { PaymentsService } from './payments.service';
+import { TenantAccessService } from '../../common/tenant-access/tenant-access.service';
 
 const WRITE_ROLES = [UserRole.chairman, UserRole.accountant, UserRole.board];
 const REPORT_ROLES = [...WRITE_ROLES, UserRole.auditor, UserRole.super_admin];
@@ -40,6 +41,7 @@ export class PaymentsController {
   constructor(
     private payments: PaymentsService,
     private online: OnlinePaymentsService,
+    private access: TenantAccessService,
   ) {}
 
   /** Public webhook for acquiring provider (no JWT). Accepts generic / LiqPay / WayForPay bodies. */
@@ -139,16 +141,20 @@ export class PaymentsController {
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(...WRITE_ROLES)
   @Post('import/preview')
-  importPreview(
+  async importPreview(
     @Body() dto: ImportPreviewDto,
     @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
   ) {
+    const scopeTenant = this.access.effectiveTenantId(user, tenantId);
+    const buildingIds = await this.access.scopeBuildingIds(user, dto.buildingId, tenantId);
     return this.payments.previewBankImport(
       dto.csv,
       dto.buildingId,
       dto.format,
       user.id,
       dto.sourceFileName,
+      { buildingIds, tenantId: scopeTenant },
     );
   }
 
@@ -159,35 +165,57 @@ export class PaymentsController {
     @Param('lineId') lineId: string,
     @Body() dto: AssignStatementLineDto,
     @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
   ) {
-    return this.payments.assignStatementLine(lineId, dto.apartmentId, user);
+    return this.payments.assignStatementLine(
+      lineId,
+      dto.apartmentId,
+      user,
+      this.access.effectiveTenantId(user, tenantId),
+    );
   }
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(...WRITE_ROLES)
   @Patch('import/lines/:lineId/ignore')
-  ignoreLine(@Param('lineId') lineId: string, @CurrentUser() user: AuthUser) {
-    return this.payments.ignoreStatementLine(lineId, user);
+  ignoreLine(
+    @Param('lineId') lineId: string,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+  ) {
+    return this.payments.ignoreStatementLine(
+      lineId,
+      user,
+      this.access.effectiveTenantId(user, tenantId),
+    );
   }
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(...REPORT_ROLES)
   @Get('import/unmatched')
-  unmatchedReport(
+  async unmatchedReport(
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
     @Query('buildingId') buildingId?: string,
     @Query('days') days?: string,
   ) {
+    if (buildingId) await this.access.assertBuilding(user, buildingId, tenantId);
     return this.payments.unmatchedStatementReport(
       buildingId,
       days ? Number(days) : 30,
+      this.access.effectiveTenantId(user, tenantId),
     );
   }
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(...WRITE_ROLES)
   @Post('import')
-  importCommit(@Body() dto: ImportPaymentsDto, @CurrentUser() user: AuthUser) {
-    return this.payments.importPayments(dto, user);
+  importCommit(
+    @Body() dto: ImportPaymentsDto,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+  ) {
+    return this.payments.importPayments(dto, user, this.access.effectiveTenantId(user, tenantId));
   }
 
   @UseGuards(AuthGuard('jwt'))

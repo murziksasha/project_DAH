@@ -6,6 +6,7 @@ import { IsEnum, IsOptional, IsString, Matches } from 'class-validator';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { TenantAccessService } from '../../common/tenant-access/tenant-access.service';
 import { AccountingPeriodsService } from './accounting-periods.service';
 
 class SetPeriodStatusDto {
@@ -38,30 +39,37 @@ const WRITE_ROLES = [UserRole.chairman, UserRole.accountant, UserRole.board, Use
 @ApiBearerAuth()
 @Controller('finance/periods')
 export class AccountingPeriodsController {
-  constructor(private periods: AccountingPeriodsService) {}
+  constructor(
+    private periods: AccountingPeriodsService,
+    private access: TenantAccessService,
+  ) {}
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(...READ_ROLES)
   @Get()
-  list(@Query('buildingId') buildingId: string) {
-    return this.periods.list(buildingId);
+  async list(@Query('buildingId') buildingId: string, @CurrentUser() user: AuthUser) {
+    // L11: only periods of a building in the caller's organization
+    const id = await this.access.resolveBuilding(user, buildingId);
+    return this.periods.list(id);
   }
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(...READ_ROLES)
   @Get('checklist')
-  checklist(
+  async checklist(
     @Query('buildingId') buildingId: string,
     @Query('period') period: string,
     @CurrentUser() user: AuthUser,
   ) {
+    await this.access.assertBuilding(user, buildingId);
     return this.periods.closeChecklist(buildingId, period, user);
   }
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(...WRITE_ROLES)
   @Patch()
-  setStatus(@Body() dto: SetPeriodStatusDto, @CurrentUser() user: AuthUser) {
+  async setStatus(@Body() dto: SetPeriodStatusDto, @CurrentUser() user: AuthUser) {
+    await this.access.assertBuilding(user, dto.buildingId);
     return this.periods.setStatus(
       dto.buildingId,
       dto.period,

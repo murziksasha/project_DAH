@@ -366,6 +366,7 @@ export class BuildingService {
       registrationEnabled: json.registrationEnabled ?? DEFAULT_BUILDING_SETTINGS.registrationEnabled,
       registrationInviteCode: json.registrationInviteCode ?? '',
       expenseDualApprovalThreshold: json.expenseDualApprovalThreshold ?? null,
+      autoApplyAdvance: json.autoApplyAdvance !== false,
       showBankDetailsToResidents:
         json.showBankDetailsToResidents ?? DEFAULT_BUILDING_SETTINGS.showBankDetailsToResidents,
       defaultAccrualDueDays:
@@ -430,6 +431,7 @@ export class BuildingService {
       ...(dto.expenseDualApprovalThreshold !== undefined
         ? { expenseDualApprovalThreshold: dto.expenseDualApprovalThreshold }
         : {}),
+      ...(dto.autoApplyAdvance !== undefined ? { autoApplyAdvance: dto.autoApplyAdvance } : {}),
       ...((dto.journalSot !== undefined ||
         dto.strictBankRec !== undefined ||
         dto.defaultCashFlowSource !== undefined)
@@ -481,6 +483,7 @@ export class BuildingService {
       registrationEnabled: json.registrationEnabled ?? DEFAULT_BUILDING_SETTINGS.registrationEnabled,
       registrationInviteCode: json.registrationInviteCode ?? '',
       expenseDualApprovalThreshold: json.expenseDualApprovalThreshold ?? null,
+      autoApplyAdvance: json.autoApplyAdvance !== false,
       showBankDetailsToResidents:
         json.showBankDetailsToResidents ?? DEFAULT_BUILDING_SETTINGS.showBankDetailsToResidents,
       defaultAccrualDueDays:
@@ -874,8 +877,12 @@ export class BuildingService {
         const apartmentId = byNumber.get(row.number);
         if (!apartmentId) continue;
 
+        // Only users of THIS organization may be linked (no cross-tenant account takeover).
         const users = await tx.user.findMany({
-          where: { email: { in: emails, mode: 'insensitive' } },
+          where: {
+            email: { in: emails, mode: 'insensitive' },
+            memberships: { some: { tenantId: building.tenantId } },
+          },
           select: { id: true, apartmentId: true },
         });
         for (const u of users) {
@@ -965,9 +972,33 @@ export class BuildingService {
     await tx.apartment.deleteMany({ where: { id: { in: apartmentIds } } });
   }
 
-  async updateApartment(id: string, dto: UpdateApartmentDto, userId: string) {
+  /** Normalize legacy `userId` callers (tests) vs `AuthUser` callers (controller). */
+  private actor(userOrUserId: AuthUser | string): { userId: string; user: AuthUser | null } {
+    return typeof userOrUserId === 'string'
+      ? { userId: userOrUserId, user: null }
+      : { userId: userOrUserId.id, user: userOrUserId };
+  }
+
+  /** 404 when the apartment's building belongs to another organization. */
+  private async assertApartmentInTenant(
+    apartmentId: string,
+    user: AuthUser | null,
+  ): Promise<void> {
+    if (!user || user.role === UserRole.super_admin) return;
+    const apt = await this.prisma.apartment.findUnique({
+      where: { id: apartmentId },
+      select: { building: { select: { tenantId: true } } },
+    });
+    if (!apt || !user.tenantId || apt.building.tenantId !== user.tenantId) {
+      throw new NotFoundException('Квартиру не знайдено');
+    }
+  }
+
+  async updateApartment(id: string, dto: UpdateApartmentDto, userOrUserId: AuthUser | string) {
+    const { userId, user } = this.actor(userOrUserId);
     const existing = await this.prisma.apartment.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Квартиру не знайдено');
+    await this.assertApartmentInTenant(id, user);
 
     const apartment = await this.prisma.apartment.update({
       where: { id },
@@ -990,7 +1021,9 @@ export class BuildingService {
     return apartment;
   }
 
-  async deleteApartment(id: string, userId: string) {
+  async deleteApartment(id: string, userOrUserId: AuthUser | string) {
+    const { userId, user } = this.actor(userOrUserId);
+    await this.assertApartmentInTenant(id, user);
     const existing = await this.prisma.apartment.findUnique({
       where: { id },
       include: { apartmentLinks: true, payments: true, accrualLines: true },
@@ -1013,9 +1046,15 @@ export class BuildingService {
     return { deleted: true };
   }
 
-  async createResident(apartmentId: string, dto: CreateResidentDto, userId: string) {
+  async createResident(
+    apartmentId: string,
+    dto: CreateResidentDto,
+    userOrUserId: AuthUser | string,
+  ) {
+    const { userId, user } = this.actor(userOrUserId);
     const apartment = await this.prisma.apartment.findUnique({ where: { id: apartmentId } });
     if (!apartment) throw new NotFoundException('Квартиру не знайдено');
+    await this.assertApartmentInTenant(apartmentId, user);
 
     const resident = await this.prisma.resident.create({
       data: {
@@ -1040,9 +1079,11 @@ export class BuildingService {
     return resident;
   }
 
-  async updateResident(id: string, dto: UpdateResidentDto, userId: string) {
+  async updateResident(id: string, dto: UpdateResidentDto, userOrUserId: AuthUser | string) {
+    const { userId, user } = this.actor(userOrUserId);
     const existing = await this.prisma.resident.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Мешканця не знайдено');
+    await this.assertApartmentInTenant(existing.apartmentId, user);
 
     const resident = await this.prisma.resident.update({
       where: { id },
@@ -1069,9 +1110,11 @@ export class BuildingService {
     return resident;
   }
 
-  async deleteResident(id: string, userId: string) {
+  async deleteResident(id: string, userOrUserId: AuthUser | string) {
+    const { userId, user } = this.actor(userOrUserId);
     const existing = await this.prisma.resident.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Мешканця не знайдено');
+    await this.assertApartmentInTenant(existing.apartmentId, user);
 
     await this.prisma.resident.delete({ where: { id } });
 

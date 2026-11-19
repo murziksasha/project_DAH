@@ -147,13 +147,17 @@ enum BankStatementLineStatus {
   ignored
 }
 
-/** ОСББ or managing company (УК) — same product «Мій дім». */
+/**
+ * ОСББ or managing company (УК) — same product «Мій дім».
+ */
 enum OrganizationType {
   osbb
   management_company
 }
 
-/** One legal organization (ОСББ or УК) on a shared install. Multi-tenant foundation. */
+/**
+ * One legal organization (ОСББ or УК) on a shared install. Multi-tenant foundation.
+ */
 model Tenant {
   id        String           @id @default(cuid())
   name      String
@@ -164,10 +168,13 @@ model Tenant {
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
 
-  buildings   Building[]
-  users       User[]
-  memberships TenantMembership[]
-  roles       TenantRole[]
+  buildings         Building[]
+  users             User[]
+  memberships       TenantMembership[]
+  roles             TenantRole[]
+  reminders         Reminder[]
+  bankStatements    BankStatement[]
+  expenseCategories ExpenseCategory[]
 }
 
 /**
@@ -217,65 +224,67 @@ model TenantMembership {
 }
 
 model User {
-  id           String     @id @default(cuid())
-  email        String     @unique
-  passwordHash String
-  firstName    String
-  lastName     String
-  phone        String?
-  role         UserRole   @default(resident)
-  status       UserStatus @default(pending)
+  id                 String     @id @default(cuid())
+  email              String     @unique
+  passwordHash       String
+  firstName          String
+  lastName           String
+  phone              String?
+  role               UserRole   @default(resident)
+  status             UserStatus @default(pending)
   /// null = platform super_admin (cross-tenant); otherwise active/selected organization tenant
-  tenantId     String?
-  tenant       Tenant?    @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  apartmentId  String?
-  primaryApartment Apartment? @relation("UserPrimaryApartment", fields: [apartmentId], references: [id])
+  tenantId           String?
+  tenant             Tenant?    @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  apartmentId        String?
+  primaryApartment   Apartment? @relation("UserPrimaryApartment", fields: [apartmentId], references: [id])
   /// Who activated the account (registration approve or admin status→active)
-  approvedAt   DateTime?
-  approvedById String?
-  approvedBy   User?      @relation("UserApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
-  approvedUsers User[]    @relation("UserApprovedBy")
-  refreshToken String?
+  approvedAt         DateTime?
+  approvedById       String?
+  approvedBy         User?      @relation("UserApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedUsers      User[]     @relation("UserApprovedBy")
+  refreshToken       String?
   totpSecret         String?
-  totpEnabled        Boolean  @default(false)
+  totpEnabled        Boolean    @default(false)
   totpTempSecret     String?
-  emailNotifyEnabled Boolean  @default(true)
+  emailNotifyEnabled Boolean    @default(true)
   /// Consecutive failed password logins (reset on success)
-  failedLoginCount   Int      @default(0)
+  failedLoginCount   Int        @default(0)
   /// Temporary lock after too many failed logins
   lockedUntil        DateTime?
   /// Soft onboarding flag for first login checklist
-  onboardingDone     Boolean  @default(false)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  onboardingDone     Boolean    @default(false)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
 
-  memberships        TenantMembership[]
-  apartmentLinks     UserApartment[]
-  authSessions       AuthSession[]
-  auditLogs          AuditLog[]
-  createdExpenses    Expense[]           @relation("ExpenseCreatedBy")
-  approvedExpenses   Expense[]           @relation("ExpenseApprovedBy")
-  announcements      Announcement[]
-  requests           Request[]           @relation("RequestAuthor")
-  assignedRequests   Request[]           @relation("RequestAssignee")
-  pushSubscriptions  PushSubscription[]
-  reminders          Reminder[]          @relation("ReminderTarget")
-  createdReminders   Reminder[]          @relation("ReminderCreator")
-  meetingsCreated    Meeting[]           @relation("MeetingCreatedBy")
+  memberships         TenantMembership[]
+  apartmentLinks      UserApartment[]
+  authSessions        AuthSession[]
+  auditLogs           AuditLog[]
+  createdExpenses     Expense[]            @relation("ExpenseCreatedBy")
+  approvedExpenses    Expense[]            @relation("ExpenseApprovedBy")
+  announcements       Announcement[]
+  requests            Request[]            @relation("RequestAuthor")
+  assignedRequests    Request[]            @relation("RequestAssignee")
+  pushSubscriptions   PushSubscription[]
+  reminders           Reminder[]           @relation("ReminderTarget")
+  createdReminders    Reminder[]           @relation("ReminderCreator")
+  meetingsCreated     Meeting[]            @relation("MeetingCreatedBy")
   meetingParticipants MeetingParticipant[]
-  meetingVotes       MeetingVote[]
-  meetingSignatures  MeetingSignature[]
-  chatMemberships    ChatThreadMember[]
-  chatMessages       ChatMessage[]
-  passwordResets     PasswordResetToken[]
-  appNotifications   AppNotification[]
-  announcementReads  AnnouncementRead[]
+  meetingVotes        MeetingVote[]
+  meetingSignatures   MeetingSignature[]
+  chatMemberships     ChatThreadMember[]
+  chatMessages        ChatMessage[]
+  passwordResets      PasswordResetToken[]
+  appNotifications    AppNotification[]
+  announcementReads   AnnouncementRead[]
 
   @@index([tenantId])
   @@index([approvedById])
 }
 
-/** One-time password reset token (hashed). */
+/**
+ * One-time password reset token (hashed).
+ */
 model PasswordResetToken {
   id        String    @id @default(cuid())
   userId    String
@@ -289,7 +298,9 @@ model PasswordResetToken {
   @@index([tokenHash])
 }
 
-/** In-app notification center (bell). */
+/**
+ * In-app notification center (bell).
+ */
 model AppNotification {
   id        String    @id @default(cuid())
   userId    String
@@ -304,7 +315,9 @@ model AppNotification {
   @@index([userId, readAt, createdAt])
 }
 
-/** Refresh-token session with rotation + reuse detection (v1.0). */
+/**
+ * Refresh-token session with rotation + reuse detection (v1.0).
+ */
 model AuthSession {
   id               String    @id @default(cuid())
   userId           String
@@ -338,51 +351,51 @@ model UserApartment {
 }
 
 model Building {
-  id                      String   @id @default(cuid())
-  tenantId                String
-  tenant                  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  name                    String
-  address                 String
-  edrpou                  String?
-  showDebtorsToResidents  Boolean  @default(true)
-  isInitialized           Boolean  @default(false)
-  settings                Json     @default("{}")
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  id                     String   @id @default(cuid())
+  tenantId               String
+  tenant                 Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  name                   String
+  address                String
+  edrpou                 String?
+  showDebtorsToResidents Boolean  @default(true)
+  isInitialized          Boolean  @default(false)
+  settings               Json     @default("{}")
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
-  apartments            Apartment[]
-  bankAccounts          BankAccount[]
-  funds                 Fund[]
-  suppliers             Supplier[]
-  accountingPeriods     AccountingPeriod[]
-  bankStatements        BankStatement[]
-  ibanAliases           IbanApartmentAlias[]
-  budgetLines           BudgetLine[]
-  serviceTariffs        ServiceTariff[]
-  supplierInvoices      SupplierInvoice[]
-  bankReconciliations   BankReconciliation[]
-  debtWriteOffs         DebtWriteOff[]
-  periodCloseSnapshots  PeriodCloseSnapshot[]
-  ledgerAccounts        LedgerAccount[]
+  apartments           Apartment[]
+  bankAccounts         BankAccount[]
+  funds                Fund[]
+  suppliers            Supplier[]
+  accountingPeriods    AccountingPeriod[]
+  bankStatements       BankStatement[]
+  ibanAliases          IbanApartmentAlias[]
+  budgetLines          BudgetLine[]
+  serviceTariffs       ServiceTariff[]
+  supplierInvoices     SupplierInvoice[]
+  bankReconciliations  BankReconciliation[]
+  debtWriteOffs        DebtWriteOff[]
+  periodCloseSnapshots PeriodCloseSnapshot[]
+  ledgerAccounts       LedgerAccount[]
 
   @@index([tenantId])
 }
 
 model Apartment {
-  id         String   @id @default(cuid())
-  buildingId String
-  building   Building @relation(fields: [buildingId], references: [id])
-  number     String
-  entrance   Int      @default(1)
-  floor      Int?
-  area       Float
+  id             String   @id @default(cuid())
+  buildingId     String
+  building       Building @relation(fields: [buildingId], references: [id])
+  number         String
+  entrance       Int      @default(1)
+  floor          Int?
+  area           Float
   /// Prepaid balance (advance) in major units — first-class, updated with payments/voids.
-  advanceBalance Decimal @default(0) @db.Decimal(12, 2)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  advanceBalance Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   residents      Resident[]
-  primaryUsers   User[]            @relation("UserPrimaryApartment")
+  primaryUsers   User[]          @relation("UserPrimaryApartment")
   apartmentLinks UserApartment[]
   accrualLines   AccrualLine[]
   payments       Payment[]
@@ -454,44 +467,53 @@ model BankAccount {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  funds            Fund[]
-  reconciliations  BankReconciliation[]
+  funds           Fund[]
+  reconciliations BankReconciliation[]
 }
 
 model Fund {
-  id            String    @id @default(cuid())
-  buildingId    String
-  building      Building  @relation(fields: [buildingId], references: [id])
-  bankAccountId String?
-  bankAccount   BankAccount? @relation(fields: [bankAccountId], references: [id])
-  type          FundType
-  name          String
-  openingBalance Decimal  @default(0) @db.Decimal(12, 2)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id             String       @id @default(cuid())
+  buildingId     String
+  building       Building     @relation(fields: [buildingId], references: [id])
+  bankAccountId  String?
+  bankAccount    BankAccount? @relation(fields: [bankAccountId], references: [id])
+  type           FundType
+  name           String
+  openingBalance Decimal      @default(0) @db.Decimal(12, 2)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   expenses         Expense[]
   accrualTemplates AccrualTemplate[]
   accruals         Accrual[]
   budgetLines      BudgetLine[]
-  transfersFrom    FundTransfer[] @relation("TransferFrom")
-  transfersTo      FundTransfer[] @relation("TransferTo")
+  transfersFrom    FundTransfer[]    @relation("TransferFrom")
+  transfersTo      FundTransfer[]    @relation("TransferTo")
   serviceTariffs   ServiceTariff[]
   supplierInvoices SupplierInvoice[]
 }
 
+/// tenantId = null → shared system catalog (read-only for organizations);
+/// otherwise a category owned by one organization.
 model ExpenseCategory {
   id        String   @id @default(cuid())
+  tenantId  String?
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name      String
-  code      String   @unique
+  code      String
   createdAt DateTime @default(now())
 
   expenses         Expense[]
   budgetLines      BudgetLine[]
   supplierInvoices SupplierInvoice[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
 }
 
-/** Annual / monthly budget line for plan vs actual reports. */
+/**
+ * Annual / monthly budget line for plan vs actual reports.
+ */
 model BudgetLine {
   id            String           @id @default(cuid())
   buildingId    String
@@ -514,7 +536,9 @@ model BudgetLine {
   @@index([categoryId])
 }
 
-/** Move money between funds of the same building (journal dual entry). */
+/**
+ * Move money between funds of the same building (journal dual entry).
+ */
 model FundTransfer {
   id          String   @id @default(cuid())
   fromFundId  String
@@ -546,34 +570,34 @@ model Supplier {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  expenses  Expense[]
-  invoices  SupplierInvoice[]
-  payments  SupplierPayment[]
+  expenses Expense[]
+  invoices SupplierInvoice[]
+  payments SupplierPayment[]
 }
 
 model Expense {
-  id          String          @id @default(cuid())
-  fundId      String
-  fund        Fund            @relation(fields: [fundId], references: [id])
-  categoryId  String
-  category    ExpenseCategory @relation(fields: [categoryId], references: [id])
-  supplierId  String?
-  supplier    Supplier?       @relation(fields: [supplierId], references: [id])
-  amount      Decimal         @db.Decimal(12, 2)
-  date        DateTime
-  description String?
-  documentKey String?
-  isVoided    Boolean         @default(false)
-  voidReason  String?
+  id             String          @id @default(cuid())
+  fundId         String
+  fund           Fund            @relation(fields: [fundId], references: [id])
+  categoryId     String
+  category       ExpenseCategory @relation(fields: [categoryId], references: [id])
+  supplierId     String?
+  supplier       Supplier?       @relation(fields: [supplierId], references: [id])
+  amount         Decimal         @db.Decimal(12, 2)
+  date           DateTime
+  description    String?
+  documentKey    String?
+  isVoided       Boolean         @default(false)
+  voidReason     String?
   /// pending | approved (dual-control for large expenses)
-  approvalStatus String       @default("approved")
-  approvedAt  DateTime?
-  approvedById String?
-  approvedBy  User?           @relation("ExpenseApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
-  createdById String
-  createdBy   User            @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  approvalStatus String          @default("approved")
+  approvedAt     DateTime?
+  approvedById   String?
+  approvedBy     User?           @relation("ExpenseApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  createdById    String
+  createdBy      User            @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 
   @@index([approvalStatus])
 }
@@ -594,16 +618,20 @@ model AccrualTemplate {
 }
 
 model Accrual {
-  id         String   @id @default(cuid())
+  id         String           @id @default(cuid())
   fundId     String
-  fund       Fund     @relation(fields: [fundId], references: [id])
+  fund       Fund             @relation(fields: [fundId], references: [id])
   templateId String?
   template   AccrualTemplate? @relation(fields: [templateId], references: [id])
   period     String
   title      String
-  createdAt  DateTime @default(now())
+  createdAt  DateTime         @default(now())
 
   lines AccrualLine[]
+
+  /// M6: idempotency — one accrual per fund + period + title.
+  @@unique([fundId, period, title])
+  @@index([period])
 }
 
 model AccrualLine {
@@ -620,6 +648,9 @@ model AccrualLine {
   updatedAt   DateTime          @updatedAt
 
   allocations PaymentAllocation[]
+
+  @@index([accrualId])
+  @@index([apartmentId, status, dueDate])
 }
 
 model Payment {
@@ -637,6 +668,9 @@ model Payment {
 
   allocations PaymentAllocation[]
   onlineOrder OnlinePaymentOrder?
+
+  @@index([apartmentId, date])
+  @@index([reference])
 }
 
 /// Persisted online checkout (LiqPay / WayForPay / generic) for idempotent webhooks.
@@ -668,26 +702,31 @@ model PaymentAllocation {
   accrualLine   AccrualLine @relation(fields: [accrualLineId], references: [id])
   amount        Decimal     @db.Decimal(12, 2)
   createdAt     DateTime    @default(now())
+
+  @@index([paymentId])
+  @@index([accrualLineId])
 }
 
 model Announcement {
-  id         String   @id @default(cuid())
+  id         String             @id @default(cuid())
   tenantId   String?
   buildingId String?
   title      String
   body       String
-  isPinned   Boolean  @default(false)
+  isPinned   Boolean            @default(false)
   authorId   String
-  author     User     @relation(fields: [authorId], references: [id])
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  author     User               @relation(fields: [authorId], references: [id])
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
   reads      AnnouncementRead[]
 
   @@index([tenantId])
   @@index([buildingId])
 }
 
-/** Per-user read state for resident news / badges. */
+/**
+ * Per-user read state for resident news / badges.
+ */
 model AnnouncementRead {
   id             String       @id @default(cuid())
   userId         String
@@ -805,27 +844,27 @@ model LedgerAccount {
 
 /// Immutable financial journal (v1.0+ deep accounting).
 model JournalEntry {
-  id              String           @id @default(cuid())
-  type            JournalEntryType
-  buildingId      String?
-  apartmentId     String?
-  fundId          String?
-  refType         String
-  refId           String
+  id             String           @id @default(cuid())
+  type           JournalEntryType
+  buildingId     String?
+  apartmentId    String?
+  fundId         String?
+  refType        String
+  refId          String
   /// Unique posting key to prevent double-post (refType:refId:type[:suffix])
-  idempotencyKey  String?          @unique
-  description     String?
+  idempotencyKey String?          @unique
+  description    String?
   /// Business date of the operation (defaults to createdAt date)
-  valueDate       DateTime?
+  valueDate      DateTime?
   /// YYYY-MM derived from valueDate
-  period          String?
+  period         String?
   /// Sequential number per building + calendar year
-  entryNo         Int?
-  reversesId      String?
-  reverses        JournalEntry?    @relation("JournalReverse", fields: [reversesId], references: [id], onDelete: SetNull)
-  reversedBy      JournalEntry[]   @relation("JournalReverse")
-  createdById     String?
-  createdAt       DateTime         @default(now())
+  entryNo        Int?
+  reversesId     String?
+  reverses       JournalEntry?    @relation("JournalReverse", fields: [reversesId], references: [id], onDelete: SetNull)
+  reversedBy     JournalEntry[]   @relation("JournalReverse")
+  createdById    String?
+  createdAt      DateTime         @default(now())
 
   lines JournalLine[]
 
@@ -836,22 +875,32 @@ model JournalEntry {
   @@index([buildingId, entryNo])
 }
 
+/// M1: per-building, per-year journal entry counter (atomic UPSERT, no MAX()+1 race).
+model JournalSequence {
+  buildingId String
+  year       Int
+  lastNo     Int
+  updatedAt  DateTime @default(now()) @updatedAt
+
+  @@id([buildingId, year])
+}
+
 model JournalLine {
-  id             String         @id @default(cuid())
-  entryId        String
-  entry          JournalEntry   @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  id            String         @id @default(cuid())
+  entryId       String
+  entry         JournalEntry   @relation(fields: [entryId], references: [id], onDelete: Cascade)
   /// Logical account code: receivable | cash | advance | expense | fund_balance | payable | ...
-  account        String
-  accountId      String?
-  ledgerAccount  LedgerAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
-  apartmentId    String?
-  fundId         String?
-  supplierId     String?
-  bankAccountId  String?
-  categoryId     String?
-  serviceId      String?
-  debit          Decimal        @default(0) @db.Decimal(14, 2)
-  credit         Decimal        @default(0) @db.Decimal(14, 2)
+  account       String
+  accountId     String?
+  ledgerAccount LedgerAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  apartmentId   String?
+  fundId        String?
+  supplierId    String?
+  bankAccountId String?
+  categoryId    String?
+  serviceId     String?
+  debit         Decimal        @default(0) @db.Decimal(14, 2)
+  credit        Decimal        @default(0) @db.Decimal(14, 2)
 
   @@index([entryId])
   @@index([account, apartmentId])
@@ -861,7 +910,9 @@ model JournalLine {
   @@index([bankAccountId])
 }
 
-/** Recurring service / tariff for mass accruals (GL-3). */
+/**
+ * Recurring service / tariff for mass accruals (GL-3).
+ */
 model ServiceTariff {
   id            String              @id @default(cuid())
   buildingId    String
@@ -882,32 +933,34 @@ model ServiceTariff {
   @@index([fundId])
 }
 
-/** Supplier invoice (AP) — GL-4. */
+/**
+ * Supplier invoice (AP) — GL-4.
+ */
 model SupplierInvoice {
-  id             String                @id @default(cuid())
-  buildingId     String
-  building       Building              @relation(fields: [buildingId], references: [id], onDelete: Cascade)
-  supplierId     String
-  supplier       Supplier              @relation(fields: [supplierId], references: [id])
-  fundId         String
-  fund           Fund                  @relation(fields: [fundId], references: [id])
-  categoryId     String?
-  category       ExpenseCategory?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  number         String?
-  amount         Decimal               @db.Decimal(12, 2)
-  paidAmount     Decimal               @default(0) @db.Decimal(12, 2)
-  date           DateTime
-  dueDate        DateTime?
-  description    String?
-  documentKey    String?
-  status         SupplierInvoiceStatus @default(draft)
-  isVoided       Boolean               @default(false)
-  voidReason     String?
-  createdById    String
-  approvedAt     DateTime?
-  approvedById   String?
-  createdAt      DateTime              @default(now())
-  updatedAt      DateTime              @updatedAt
+  id           String                @id @default(cuid())
+  buildingId   String
+  building     Building              @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  supplierId   String
+  supplier     Supplier              @relation(fields: [supplierId], references: [id])
+  fundId       String
+  fund         Fund                  @relation(fields: [fundId], references: [id])
+  categoryId   String?
+  category     ExpenseCategory?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  number       String?
+  amount       Decimal               @db.Decimal(12, 2)
+  paidAmount   Decimal               @default(0) @db.Decimal(12, 2)
+  date         DateTime
+  dueDate      DateTime?
+  description  String?
+  documentKey  String?
+  status       SupplierInvoiceStatus @default(draft)
+  isVoided     Boolean               @default(false)
+  voidReason   String?
+  createdById  String
+  approvedAt   DateTime?
+  approvedById String?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
 
   paymentAllocations SupplierPaymentAllocation[]
 
@@ -917,19 +970,19 @@ model SupplierInvoice {
 }
 
 model SupplierPayment {
-  id          String   @id @default(cuid())
+  id          String        @id @default(cuid())
   supplierId  String
-  supplier    Supplier @relation(fields: [supplierId], references: [id])
-  amount      Decimal  @db.Decimal(12, 2)
+  supplier    Supplier      @relation(fields: [supplierId], references: [id])
+  amount      Decimal       @db.Decimal(12, 2)
   date        DateTime
   source      PaymentSource @default(bank)
   reference   String?
   description String?
-  isVoided    Boolean  @default(false)
+  isVoided    Boolean       @default(false)
   voidReason  String?
   createdById String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 
   allocations SupplierPaymentAllocation[]
 
@@ -937,18 +990,20 @@ model SupplierPayment {
 }
 
 model SupplierPaymentAllocation {
-  id         String          @id @default(cuid())
-  paymentId  String
-  payment    SupplierPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
-  invoiceId  String
-  invoice    SupplierInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  amount     Decimal         @db.Decimal(12, 2)
+  id        String          @id @default(cuid())
+  paymentId String
+  payment   SupplierPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  invoiceId String
+  invoice   SupplierInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amount    Decimal         @db.Decimal(12, 2)
 
   @@index([paymentId])
   @@index([invoiceId])
 }
 
-/** Bank reconciliation session (GL-2). */
+/**
+ * Bank reconciliation session (GL-2).
+ */
 model BankReconciliation {
   id               String                   @id @default(cuid())
   buildingId       String
@@ -971,7 +1026,9 @@ model BankReconciliation {
   @@index([buildingId, period])
 }
 
-/** Bad-debt write-off (GL-3). */
+/**
+ * Bad-debt write-off (GL-3).
+ */
 model DebtWriteOff {
   id            String             @id @default(cuid())
   buildingId    String
@@ -992,7 +1049,9 @@ model DebtWriteOff {
   @@index([apartmentId])
 }
 
-/** Immutable snapshot at period close (GL-6). */
+/**
+ * Immutable snapshot at period close (GL-6).
+ */
 model PeriodCloseSnapshot {
   id          String   @id @default(cuid())
   buildingId  String
@@ -1005,7 +1064,9 @@ model PeriodCloseSnapshot {
   @@index([buildingId, period])
 }
 
-/** Monthly accounting period lock per building (YYYY-MM). */
+/**
+ * Monthly accounting period lock per building (YYYY-MM).
+ */
 model AccountingPeriod {
   id         String                 @id @default(cuid())
   buildingId String
@@ -1023,11 +1084,16 @@ model AccountingPeriod {
   @@index([buildingId, status])
 }
 
-/** Persisted bank statement import batch. */
+/**
+ * Persisted bank statement import batch.
+ */
 model BankStatement {
   id             String              @id @default(cuid())
   buildingId     String?
   building       Building?           @relation(fields: [buildingId], references: [id], onDelete: SetNull)
+  /// Organization scope (statements may span several buildings of one tenant).
+  tenantId       String?
+  tenant         Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   format         String
   sourceFileName String?
   rawHash        String?
@@ -1043,6 +1109,7 @@ model BankStatement {
 
   @@index([buildingId, importedAt])
   @@index([rawHash])
+  @@index([tenantId, importedAt])
 }
 
 model BankStatementLine {
@@ -1072,7 +1139,9 @@ model BankStatementLine {
   @@index([createdAt])
 }
 
-/** Learned IBAN → apartment mapping from manual matches. */
+/**
+ * Learned IBAN → apartment mapping from manual matches.
+ */
 model IbanApartmentAlias {
   id          String   @id @default(cuid())
   buildingId  String
@@ -1140,23 +1209,27 @@ model EmailLog {
 }
 
 model Reminder {
-  id          String    @id @default(cuid())
+  id          String     @id @default(cuid())
   type        String
   title       String
   body        String?
   dueAt       DateTime
   sentAt      DateTime?
   userId      String?
-  user        User?     @relation("ReminderTarget", fields: [userId], references: [id], onDelete: SetNull)
+  user        User?      @relation("ReminderTarget", fields: [userId], references: [id], onDelete: SetNull)
   apartmentId String?
   apartment   Apartment? @relation(fields: [apartmentId], references: [id], onDelete: SetNull)
   createdById String?
-  createdBy   User?     @relation("ReminderCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdBy   User?      @relation("ReminderCreator", fields: [createdById], references: [id], onDelete: SetNull)
   meta        Json?
-  createdAt   DateTime  @default(now())
+  /// Organization scope (backfilled from apartment / creator membership).
+  tenantId    String?
+  tenant      Tenant?    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt   DateTime   @default(now())
 
   @@index([dueAt, sentAt])
   @@index([userId])
+  @@index([tenantId, sentAt])
 }
 
 // ─── Meetings (загальні збори) + КЕП ─────────────────────────────────────────
@@ -1177,22 +1250,22 @@ enum MeetingType {
 }
 
 model Meeting {
-  id             String         @id @default(cuid())
-  tenantId       String?
-  buildingId     String?
-  title          String
-  description    String?
-  type           MeetingType    @default(general)
-  status         MeetingStatus  @default(draft)
-  scheduledAt    DateTime?
-  endsAt         DateTime?
-  quorumPercent  Decimal?       @db.Decimal(5, 2)
-  voteWeight     VoteWeightMode @default(one_per_apartment)
-  protocolText   String?
-  createdById    String?
-  createdBy      User?          @relation("MeetingCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  id            String         @id @default(cuid())
+  tenantId      String?
+  buildingId    String?
+  title         String
+  description   String?
+  type          MeetingType    @default(general)
+  status        MeetingStatus  @default(draft)
+  scheduledAt   DateTime?
+  endsAt        DateTime?
+  quorumPercent Decimal?       @db.Decimal(5, 2)
+  voteWeight    VoteWeightMode @default(one_per_apartment)
+  protocolText  String?
+  createdById   String?
+  createdBy     User?          @relation("MeetingCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
   agendaItems  MeetingAgendaItem[]
   participants MeetingParticipant[]
@@ -1219,17 +1292,19 @@ model MeetingAgendaItem {
 }
 
 model MeetingParticipant {
-  id          String   @id @default(cuid())
-  meetingId   String
-  meeting     Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  apartmentId String?
-  weight      Decimal  @default(1) @db.Decimal(12, 4)
+  id           String   @id @default(cuid())
+  meetingId    String
+  meeting      Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apartmentId  String?
+  weight       Decimal  @default(1) @db.Decimal(12, 4)
   registeredAt DateTime @default(now())
 
-  @@unique([meetingId, userId])
+  /// One participant row per apartment (quorum counts apartments, not accounts).
+  @@unique([meetingId, apartmentId])
   @@index([meetingId])
+  @@index([meetingId, userId])
 }
 
 model MeetingVote {
@@ -1243,24 +1318,26 @@ model MeetingVote {
   weight       Decimal           @default(1) @db.Decimal(12, 4)
   createdAt    DateTime          @default(now())
 
-  @@unique([agendaItemId, userId])
+  /// One vote per apartment per agenda item (ЗУ «Про ОСББ», ст. 10).
+  @@unique([agendaItemId, apartmentId])
   @@index([agendaItemId])
+  @@index([agendaItemId, userId])
 }
 
 /// Qualified electronic signature (КЕП) / Diia.Sign — result linked to meeting.
 model MeetingSignature {
-  id                String   @id @default(cuid())
-  meetingId         String
-  meeting           Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
-  userId            String
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  provider          String   @default("mock") // mock | diia | cloud_kep | cades
-  status            String   @default("pending") // pending | signed | failed
+  id               String    @id @default(cuid())
+  meetingId        String
+  meeting          Meeting   @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider         String    @default("mock") // mock | diia | cloud_kep | cades
+  status           String    @default("pending") // pending | signed | failed
   /// Link to SignSession when started via /api/kep
-  sessionId         String?
-  signaturePayload  Json     @default("{}")
-  signedAt          DateTime?
-  createdAt         DateTime @default(now())
+  sessionId        String?
+  signaturePayload Json      @default("{}")
+  signedAt         DateTime?
+  createdAt        DateTime  @default(now())
 
   @@unique([meetingId, userId])
   @@index([meetingId])

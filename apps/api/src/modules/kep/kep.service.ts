@@ -45,6 +45,17 @@ export class KepService {
     return this.config.get('KEP_ENABLED', 'true') === 'true';
   }
 
+  /**
+   * Demo (mock) signatures: allowed only when explicitly enabled, or by default
+   * outside production (H5). A mock-signed protocol must never appear in prod.
+   */
+  mockAllowed(): boolean {
+    const flag = this.config.get<string>('KEP_ALLOW_MOCK');
+    if (flag === 'true') return true;
+    if (flag === 'false') return false;
+    return (this.config.get<string>('NODE_ENV') ?? process.env.NODE_ENV) !== 'production';
+  }
+
   defaultProvider(): KepProvider {
     const p = (this.config.get('KEP_PROVIDER', 'mock') || 'mock') as KepProvider;
     return KEP_PROVIDERS.includes(p) ? p : 'mock';
@@ -62,7 +73,7 @@ export class KepService {
       enabled: this.isEnabled(),
       provider,
       providers: KEP_PROVIDERS,
-      mockAllowed: this.config.get('KEP_ALLOW_MOCK', 'true') === 'true',
+      mockAllowed: this.mockAllowed(),
       diiaConfigured,
       cloudConfigured,
       productionReady:
@@ -70,7 +81,7 @@ export class KepService {
         ((provider === 'diia' && diiaConfigured) ||
           (provider === 'cloud_kep' && cloudConfigured) ||
           provider === 'cades' ||
-          (provider === 'mock' && this.config.get('NODE_ENV') !== 'production')),
+          (provider === 'mock' && this.mockAllowed() && this.config.get('NODE_ENV') !== 'production')),
       webhookPath: '/api/kep/webhook',
       docs: 'https://integration.diia.gov.ua/signature.html',
     };
@@ -90,7 +101,7 @@ export class KepService {
   async startSession(input: StartSignInput): Promise<StartSignResult> {
     this.assertEnabled();
     let provider = input.provider ?? this.defaultProvider();
-    if (provider === 'mock' && this.config.get('KEP_ALLOW_MOCK', 'true') !== 'true') {
+    if (provider === 'mock' && !this.mockAllowed()) {
       throw new BadRequestException('Mock-підпис вимкнено (KEP_ALLOW_MOCK=false)');
     }
     if (!KEP_PROVIDERS.includes(provider)) {
@@ -325,6 +336,9 @@ export class KepService {
     }
 
     if (session.provider === 'mock') {
+      if (!this.mockAllowed()) {
+        throw new BadRequestException('Mock-підпис вимкнено (KEP_ALLOW_MOCK=false)');
+      }
       const cms = Buffer.from(
         JSON.stringify({
           mock: true,
@@ -572,9 +586,9 @@ export class KepService {
       this.config.get('KEP_DIIA_ACQUIRER_TOKEN') ?? this.config.get('KEP_DIIA_API_KEY') ?? '';
 
     if (!offerUrl || !token) {
-      if (this.config.get('NODE_ENV') === 'production') {
+      if (this.config.get('NODE_ENV') === 'production' || !this.mockAllowed()) {
         throw new BadRequestException(
-          'Diia offer: KEP_DIIA_OFFER_URL / token missing in production',
+          'Diia offer: KEP_DIIA_OFFER_URL / token missing (mock fallback disabled)',
         );
       }
       // Graceful degradation in development: mock deeplink so UI/flow can be tested without credentials
@@ -749,7 +763,19 @@ export class KepService {
     throw new ForbiddenException('Невірний секрет / підпис webhook КЕП');
   }
 
-  mockAuthorizePage(sessionId: string): string {
+  /** Mock QES page. `nonce` lets the inline script run under a strict CSP. */
+  mockAuthorizePage(sessionId: string, nonce = ''): string {
+    const esc = (v: string) =>
+      v.replace(/[&<>"']/g, (c) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string,
+      );
+    // JSON inside <script>: also neutralize "</script>" and U+2028/2029 (M11 XSS).
+    const jsString = JSON.stringify(sessionId)
+      .replace(/</g, '\\u003c')
+      .replace(/>/g, '\\u003e')
+      .replace(/\u2028/g, '\\u2028')
+      .replace(/\u2029/g, '\\u2029');
+    const nonceAttr = nonce ? ` nonce="${esc(nonce)}"` : '';
     return `<!DOCTYPE html>
 <html lang="uk"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Mock КЕП / Дія.Підпис — Мій дім</title>
@@ -765,13 +791,13 @@ export class KepService {
 <div class="card">
   <h1>Демо-підпис (Mock QES)</h1>
   <p>Це емулятор <strong>КЕП / Дія.Підпис</strong> для локальної розробки. У production підключіть реальні credentials (див. KEP_* у .env).</p>
-  <p>Session: <code id="sid">${sessionId}</code></p>
+  <p>Session: <code id="sid">${esc(sessionId)}</code></p>
   <button type="button" id="ok">Підписати документ</button>
   <button type="button" class="sec" id="cancel">Скасувати</button>
   <p id="msg"></p>
 </div>
-<script>
-const sessionId = ${JSON.stringify(sessionId)};
+<script${nonceAttr}>
+const sessionId = ${jsString};
 const apiBase = location.origin + '/api';
 document.getElementById('ok').onclick = async () => {
   const msg = document.getElementById('msg');

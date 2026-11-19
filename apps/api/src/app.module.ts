@@ -17,6 +17,7 @@ import { MailModule } from './modules/mail/mail.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { BootstrapModule } from './modules/bootstrap/bootstrap.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { TenantAccessModule } from './common/tenant-access/tenant-access.module';
 import { RemindersModule } from './modules/reminders/reminders.module';
 import { SetupModule } from './modules/setup/setup.module';
 import { UsersModule } from './modules/users/users.module';
@@ -41,6 +42,7 @@ import { DeepAccountingModule } from './modules/deep-accounting/deep-accounting.
       throttlers: [{ name: 'default', ttl: 60000, limit: 120 }],
     }),
     PrismaModule,
+    TenantAccessModule,
     JournalModule,
     MetersModule,
     SmsModule,

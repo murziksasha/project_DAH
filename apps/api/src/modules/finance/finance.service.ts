@@ -306,11 +306,46 @@ export class FinanceService {
     return { id, deleted: true };
   }
 
-  listCategories() {
-    return this.prisma.expenseCategory.findMany({ orderBy: { name: 'asc' } });
+  /**
+   * Categories visible to an organization: shared system catalog + its own.
+   * `tenantId` null → platform admin (all).
+   */
+  listCategories(tenantId: string | null = null) {
+    return this.prisma.expenseCategory.findMany({
+      where: tenantId ? { OR: [{ tenantId: null }, { tenantId }] } : undefined,
+      orderBy: { name: 'asc' },
+    });
   }
 
-  async createCategory(dto: { name: string; code?: string }) {
+  /** Category may be referenced only when it is global or owned by `tenantId`. */
+  async assertCategoryVisible(categoryId: string | null | undefined, tenantId: string | null) {
+    if (!categoryId || !tenantId) return;
+    const cat = await this.prisma.expenseCategory.findUnique({
+      where: { id: categoryId },
+      select: { tenantId: true },
+    });
+    if (!cat || (cat.tenantId && cat.tenantId !== tenantId)) {
+      throw new NotFoundException('Категорію не знайдено');
+    }
+  }
+
+  /** Mutations only on own categories; shared catalog is changed by platform admin. */
+  private async loadOwnCategory(id: string, tenantId: string | null) {
+    const cat = await this.prisma.expenseCategory.findUnique({
+      where: { id },
+      include: { _count: { select: { expenses: true } } },
+    });
+    if (!cat) throw new NotFoundException('Категорію не знайдено');
+    if (tenantId && cat.tenantId !== tenantId) {
+      if (cat.tenantId === null) {
+        throw new ForbiddenException('Системну категорію змінює лише адміністратор платформи');
+      }
+      throw new NotFoundException('Категорію не знайдено');
+    }
+    return cat;
+  }
+
+  async createCategory(dto: { name: string; code?: string }, tenantId: string | null = null) {
     const code =
       dto.code?.trim() ||
       dto.name
@@ -320,20 +355,27 @@ export class FinanceService {
         .slice(0, 48) ||
       `cat_${Date.now().toString(36)}`;
 
-    const existing = await this.prisma.expenseCategory.findUnique({ where: { code } });
+    const existing = await this.prisma.expenseCategory.findFirst({
+      where: { code, OR: [{ tenantId: null }, { tenantId }] },
+    });
     if (existing) throw new BadRequestException(`Категорія з кодом «${code}» вже існує`);
 
     return this.prisma.expenseCategory.create({
-      data: { name: dto.name.trim(), code },
+      data: { name: dto.name.trim(), code, tenantId },
     });
   }
 
-  async updateCategory(id: string, dto: { name: string; code?: string }) {
-    const cat = await this.prisma.expenseCategory.findUnique({ where: { id } });
-    if (!cat) throw new NotFoundException('Категорію не знайдено');
+  async updateCategory(
+    id: string,
+    dto: { name: string; code?: string },
+    tenantId: string | null = null,
+  ) {
+    const cat = await this.loadOwnCategory(id, tenantId);
 
     if (dto.code && dto.code !== cat.code) {
-      const clash = await this.prisma.expenseCategory.findUnique({ where: { code: dto.code } });
+      const clash = await this.prisma.expenseCategory.findFirst({
+        where: { code: dto.code, OR: [{ tenantId: null }, { tenantId: cat.tenantId }] },
+      });
       if (clash) throw new BadRequestException('Код уже зайнятий');
     }
 
@@ -346,12 +388,8 @@ export class FinanceService {
     });
   }
 
-  async deleteCategory(id: string) {
-    const cat = await this.prisma.expenseCategory.findUnique({
-      where: { id },
-      include: { _count: { select: { expenses: true } } },
-    });
-    if (!cat) throw new NotFoundException('Категорію не знайдено');
+  async deleteCategory(id: string, tenantId: string | null = null) {
+    const cat = await this.loadOwnCategory(id, tenantId);
     if (cat._count.expenses > 0) {
       throw new BadRequestException('Неможливо видалити: є витрати з цією категорією');
     }
@@ -383,9 +421,14 @@ export class FinanceService {
     });
   }
 
-  async updateSupplier(id: string, dto: CreateSupplierDto) {
-    const supplier = await this.prisma.supplier.findUnique({ where: { id } });
-    if (!supplier) throw new NotFoundException('Постачальника не знайдено');
+  async updateSupplier(id: string, dto: CreateSupplierDto, tenantId: string | null = null) {
+    const supplier = await this.prisma.supplier.findUnique({
+      where: { id },
+      include: { building: { select: { tenantId: true } } },
+    });
+    if (!supplier || (tenantId && supplier.building.tenantId !== tenantId)) {
+      throw new NotFoundException('Постачальника не знайдено');
+    }
 
     return this.prisma.supplier.update({
       where: { id },
@@ -470,17 +513,20 @@ export class FinanceService {
     };
   }
 
-  async getExpense(id: string) {
+  async getExpense(id: string, tenantId: string | null = null) {
     const expense = await this.prisma.expense.findUnique({
       where: { id },
       include: {
-        fund: true,
+        fund: { include: { building: { select: { tenantId: true } } } },
         category: true,
         supplier: true,
         createdBy: { select: { firstName: true, lastName: true } },
       },
     });
     if (!expense || expense.isVoided) throw new NotFoundException('Витрату не знайдено');
+    if (tenantId && expense.fund.building.tenantId !== tenantId) {
+      throw new NotFoundException('Витрату не знайдено');
+    }
 
     return {
       ...expense,
@@ -523,6 +569,16 @@ export class FinanceService {
     }
 
     await this.periods.assertAllowsMutation(fund.buildingId, dto.date, 'expense');
+    await this.assertCategoryVisible(dto.categoryId, fund.building.tenantId);
+    if (dto.supplierId) {
+      const supplier = await this.prisma.supplier.findUnique({
+        where: { id: dto.supplierId },
+        select: { buildingId: true },
+      });
+      if (!supplier || supplier.buildingId !== fund.buildingId) {
+        throw new NotFoundException('Постачальника не знайдено');
+      }
+    }
 
     const settings = parseBuildingSettings(fund.building.settings);
     const threshold = settings.expenseDualApprovalThreshold;
@@ -946,13 +1002,14 @@ export class FinanceService {
 
   // ── Fund transfers ──────────────────────────────────────────────
 
-  listFundTransfers(buildingId?: string) {
+  listFundTransfers(buildingId?: string, tenantId: string | null = null) {
     return this.prisma.fundTransfer.findMany({
       where: {
         isVoided: false,
         ...(buildingId
           ? { OR: [{ fromFund: { buildingId } }, { toFund: { buildingId } }] }
           : {}),
+        ...(tenantId ? { fromFund: { building: { tenantId } } } : {}),
       },
       include: {
         fromFund: { select: { id: true, name: true, buildingId: true } },

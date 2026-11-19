@@ -1,3 +1,4 @@
+import { roundMoney } from '../../common/utils/money';
 import { Injectable } from '@nestjs/common';
 import { JournalEntryType } from '@prisma/client';
 import { JournalService, type JournalLineInput, type TxClient } from './journal.service';
@@ -63,6 +64,12 @@ export class PostingService {
     );
   }
 
+  /**
+   * Payment: cash Dr / receivable Cr (allocated) / advance Cr (rest).
+   * M4: when `fundSplit` is given (allocations across several funds), the cash and
+   * receivable lines are split per fund so each fund's cash balance is correct;
+   * the advance part stays on `ctx.fundId`.
+   */
   postPayment(
     refId: string,
     amount: number,
@@ -70,25 +77,16 @@ export class PostingService {
     advance: number,
     ctx: PostingContext,
     tx?: TxClient,
+    fundSplit?: Array<{ fundId: string | null; amount: number }>,
   ) {
-    const lines: JournalLineInput[] = [
-      { account: 'cash', debit: amount, ...this.dim(ctx) },
-    ];
-    if (allocated > 0) {
-      lines.push({
-        account: 'receivable',
-        credit: allocated,
-        ...this.dim(ctx),
-      });
-    }
-    if (advance > 0) {
-      lines.push({
-        account: 'advance',
-        credit: advance,
-        ...this.dim(ctx),
-      });
-    }
-    // Edge: full advance, no allocation — still balanced (cash / advance)
+    const lines: JournalLineInput[] = buildPaymentLines(
+      amount,
+      allocated,
+      advance,
+      ctx.fundId ?? null,
+      (fundId) => this.dim({ ...ctx, fundId }),
+      fundSplit,
+    );
     return this.journal.write(
       {
         type: JournalEntryType.payment,
@@ -101,6 +99,35 @@ export class PostingService {
         createdById: ctx.createdById,
         valueDate: ctx.valueDate,
         lines,
+      },
+      tx,
+    );
+  }
+
+  /**
+   * M5: apply an apartment advance to new accrual lines: advance Dr / receivable Cr.
+   */
+  postAdvanceApplication(
+    refId: string,
+    amount: number,
+    ctx: PostingContext,
+    tx?: TxClient,
+  ) {
+    return this.journal.write(
+      {
+        type: JournalEntryType.adjustment,
+        refType: 'AdvanceApplication',
+        refId,
+        description: ctx.description ?? 'Зарахування авансу',
+        buildingId: ctx.buildingId,
+        apartmentId: ctx.apartmentId,
+        fundId: ctx.fundId,
+        createdById: ctx.createdById,
+        valueDate: ctx.valueDate,
+        lines: [
+          { account: 'advance', debit: amount, ...this.dim(ctx) },
+          { account: 'receivable', credit: amount, ...this.dim(ctx) },
+        ],
       },
       tx,
     );
@@ -282,4 +309,37 @@ export class PostingService {
       tx,
     );
   }
+}
+
+/**
+ * Pure helper (unit-tested): journal lines for a payment, optionally split by fund.
+ * Σ cash Dr = amount; Σ receivable Cr = allocated; advance Cr = advance.
+ */
+export function buildPaymentLines(
+  amount: number,
+  allocated: number,
+  advance: number,
+  defaultFundId: string | null,
+  dim: (fundId: string | null) => Partial<JournalLineInput>,
+  fundSplit?: Array<{ fundId: string | null; amount: number }>,
+): JournalLineInput[] {
+  const split = (fundSplit ?? []).filter((f) => f.amount > 0);
+  const splitTotal = roundMoney(split.reduce((s, f) => s + f.amount, 0));
+  const useSplit = split.length > 1 && Math.abs(splitTotal - allocated) <= 0.005;
+  if (!useSplit) {
+    const lines: JournalLineInput[] = [{ account: 'cash', debit: amount, ...dim(defaultFundId) }];
+    if (allocated > 0) lines.push({ account: 'receivable', credit: allocated, ...dim(defaultFundId) });
+    if (advance > 0) lines.push({ account: 'advance', credit: advance, ...dim(defaultFundId) });
+    return lines;
+  }
+  const lines: JournalLineInput[] = [];
+  for (const f of split) {
+    lines.push({ account: 'cash', debit: roundMoney(f.amount), ...dim(f.fundId) });
+    lines.push({ account: 'receivable', credit: roundMoney(f.amount), ...dim(f.fundId) });
+  }
+  if (advance > 0) {
+    lines.push({ account: 'cash', debit: advance, ...dim(defaultFundId) });
+    lines.push({ account: 'advance', credit: advance, ...dim(defaultFundId) });
+  }
+  return lines;
 }

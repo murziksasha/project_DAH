@@ -71,7 +71,10 @@ async function bootstrap() {
   }
 
   const port = process.env.API_PORT ?? 3001;
-  await app.listen(port);
+  // API_HOST=127.0.0.1 on native Windows hosts (reverse proxy on the same machine).
+  const host = process.env.API_HOST?.trim();
+  if (host) await app.listen(port, host);
+  else await app.listen(port);
   // eslint-disable-next-line no-console
   console.log(JSON.stringify({ level: 'info', msg: 'api_started', port: Number(port) }));
 }

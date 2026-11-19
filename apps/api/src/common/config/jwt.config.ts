@@ -1,3 +1,4 @@
+import { assertProductionSecrets, looksLikePlaceholder } from './secrets.config';
 import { ConfigService } from '@nestjs/config';
 
 const DEV_FALLBACK = 'dev-secret-change-me';
@@ -19,9 +20,11 @@ export function assertProductionJwtSecret(): void {
   if (process.env.NODE_ENV === 'test') return;
 
   const secret = process.env.JWT_SECRET;
-  if (!secret || secret === DEV_FALLBACK || secret === 'change_me_to_random_64_char_string') {
+  if (!secret || secret === DEV_FALLBACK || looksLikePlaceholder(secret)) {
     if (process.env.NODE_ENV === 'production') {
       throw new Error('JWT_SECRET must be set to a strong unique value in production.');
     }
   }
+  // Full check of all secrets (JWT, file links, S3, DB password, KEP webhook).
+  assertProductionSecrets();
 }

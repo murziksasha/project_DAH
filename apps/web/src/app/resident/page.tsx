@@ -730,7 +730,7 @@ export default function ResidentPage() {
   // Deep-link: /resident?pay=1 → open Pay sheet once account loaded
   useEffect(() => {
     if (!payDeepLinked.current || loading || !account) return;
-    if ((account.summary?.debt ?? 0) > 0 || true) {
+    {
       setPayOpen(true);
       payDeepLinked.current = false;
       const url = new URL(window.location.href);

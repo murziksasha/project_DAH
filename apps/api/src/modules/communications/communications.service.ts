@@ -512,7 +512,7 @@ export class CommunicationsService {
       },
     });
 
-    void this.mail.notifyAdmins('request.created', {
+    void this.mail.notifyAdmins(tenantId, 'request.created', {
       firstName: request.author.firstName,
       lastName: request.author.lastName,
       title: dto.title,

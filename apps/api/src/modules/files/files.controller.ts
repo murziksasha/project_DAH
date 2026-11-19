@@ -1,3 +1,4 @@
+import { resolveFileDownloadSecret } from '../../common/config/secrets.config';
 import {
   BadRequestException,
   Controller,
@@ -56,10 +57,7 @@ export class FilesController {
       throw new BadRequestException('key, exp, sig required');
     }
     const exp = Number(expRaw);
-    const secret =
-      this.config.get<string>('FILE_DOWNLOAD_SECRET') ||
-      this.config.get<string>('JWT_SECRET') ||
-      'dev-only-insecure-file-secret';
+    const secret = resolveFileDownloadSecret((k) => this.config.get<string>(k));
 
     if (!verifyFileDownload(key, exp, sig, secret)) {
       throw new ForbiddenException('Invalid or expired download link');

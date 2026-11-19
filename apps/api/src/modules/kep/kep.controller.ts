@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import {
   BadRequestException,
   Body,
@@ -36,12 +37,21 @@ export class KepController {
   /** Mock QES page (browser). */
   @Get('mock/authorize')
   mockAuthorize(@Query('sessionId') sessionId: string, @Res() res: Response) {
-    if (!sessionId) {
+    if (!this.kep.mockAllowed()) {
+      res.status(404).send('Not found');
+      return;
+    }
+    if (!sessionId || !/^[A-Za-z0-9-]{8,64}$/.test(sessionId)) {
       res.status(400).send('sessionId required');
       return;
     }
+    const nonce = randomBytes(16).toString('base64');
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.send(this.kep.mockAuthorizePage(sessionId));
+    res.setHeader(
+      'Content-Security-Policy',
+      `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'`,
+    );
+    res.send(this.kep.mockAuthorizePage(sessionId, nonce));
   }
 
   @ApiBearerAuth()
@@ -63,6 +73,10 @@ export class KepController {
   ) {
     // Public complete for mock IdP page (and diia mock fallback deeplink)
     const session = await this.kep.getSession(id);
+    if (!this.kep.mockAllowed()) {
+      // Public (unauthenticated) completion exists only for the demo signer.
+      throw new BadRequestException('Mock-підпис вимкнено (KEP_ALLOW_MOCK=false)');
+    }
     if (session.provider !== 'mock') {
       // Real diia/cloud must use webhook or complete-auth with JWT
       const isDiiaMockDeeplink =

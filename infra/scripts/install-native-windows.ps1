@@ -159,6 +159,16 @@ if ($DownloadMinio) {
   $url = "https://dl.min.io/server/minio/release/windows-amd64/minio.exe"
   Write-Host "==> Download MinIO: $url"
   Invoke-WebRequest -Uri $url -OutFile $defaultMinio -UseBasicParsing
+  # Integrity check against the vendor-published SHA-256 (H7).
+  $sumText = (Invoke-WebRequest -Uri "$url.sha256sum" -UseBasicParsing).Content
+  if ($sumText -is [byte[]]) { $sumText = [System.Text.Encoding]::ASCII.GetString($sumText) }
+  $expected = ($sumText -split '\s+')[0].Trim().ToLowerInvariant()
+  $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $defaultMinio).Hash.ToLowerInvariant()
+  if (-not $expected -or $expected -ne $actual) {
+    Remove-Item -LiteralPath $defaultMinio -Force -ErrorAction SilentlyContinue
+    throw "minio.exe SHA-256 mismatch (expected $expected, got $actual) - download aborted"
+  }
+  Write-Host "    SHA-256 verified: $actual"
   $MinioExe = $defaultMinio
   Write-Host "    Saved $MinioExe"
 }
@@ -377,11 +387,12 @@ Write-Host "    Task registered as $userId (interactive). Log in after boot so p
 
 # Firewall
 if (-not $SkipFirewall -and (Test-IsAdmin)) {
-  Write-Host "==> Firewall rules (inbound $WebPort, 3001 optional for debug)"
+  Write-Host "==> Firewall rules (inbound $WebPort only; API 3001 / MinIO 9000 stay on 127.0.0.1)"
   $rules = @(
-    @{ Name = "DAH Web $WebPort"; Port = $WebPort },
-    @{ Name = "DAH API 3001"; Port = 3001 }
+    @{ Name = "DAH Web $WebPort"; Port = $WebPort }
   )
+  # Remove the legacy API rule created by older installers (H7).
+  Get-NetFirewallRule -DisplayName "DAH API 3001" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
   foreach ($r in $rules) {
     Get-NetFirewallRule -DisplayName $r.Name -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
     New-NetFirewallRule -DisplayName $r.Name -Direction Inbound -Action Allow -Protocol TCP -LocalPort $r.Port -Profile Private,Domain | Out-Null

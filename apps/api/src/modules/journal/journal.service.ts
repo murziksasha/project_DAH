@@ -4,6 +4,8 @@ import { roundMoney } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export type TxClient = Prisma.TransactionClient;
+/** Single building, list of tenant buildings, or unrestricted (undefined/null). */
+export type BuildingScope = string | string[] | null;
 
 export interface JournalLineInput {
   account: string;
@@ -119,6 +121,57 @@ export class JournalService {
       : `${refType}:${refId}:${type}`;
   }
 
+  /** Building scope: one id, a list of ids (tenant scope) or undefined (unrestricted). */
+  private buildingWhere(scope?: BuildingScope): { buildingId?: string | { in: string[] } } {
+    if (scope === undefined || scope === null) return {};
+    if (Array.isArray(scope)) return { buildingId: { in: scope } };
+    return { buildingId: scope };
+  }
+
+  /** Transaction-scoped advisory lock on an idempotency key (no-op for mocks). */
+  private async lockIdempotencyKey(tx: TxClient, key: string) {
+    if (typeof (tx as { $executeRaw?: unknown }).$executeRaw !== 'function') return;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
+  }
+
+  /**
+   * M1: gap-tolerant, race-free entry number per building + calendar year.
+   * Atomic UPSERT on JournalSequence (row lock serializes concurrent writers);
+   * first use of a (building, year) pair is seeded from the existing MAX(entryNo).
+   */
+  async nextEntryNo(
+    client: TxClient | PrismaService,
+    buildingId: string,
+    valueDate: Date,
+  ): Promise<number> {
+    const year = valueDate.getUTCFullYear();
+    const yearStart = new Date(Date.UTC(year, 0, 1));
+    const yearEnd = new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
+    const maxExisting = async () => {
+      const agg = await client.journalEntry.aggregate({
+        where: {
+          buildingId,
+          valueDate: { gte: yearStart, lte: yearEnd },
+          entryNo: { not: null },
+        },
+        _max: { entryNo: true },
+      });
+      return agg._max.entryNo ?? 0;
+    };
+    if (typeof (client as { $queryRaw?: unknown }).$queryRaw !== 'function') {
+      return (await maxExisting()) + 1; // unit-test mocks
+    }
+    const seed = await maxExisting();
+    const rows = await client.$queryRaw<Array<{ lastNo: number }>>`
+      INSERT INTO "JournalSequence" ("buildingId", "year", "lastNo")
+      VALUES (${buildingId}, ${year}, ${seed + 1})
+      ON CONFLICT ("buildingId", "year")
+      DO UPDATE SET "lastNo" = GREATEST("JournalSequence"."lastNo", ${seed}) + 1
+      RETURNING "lastNo"
+    `;
+    return Number(rows?.[0]?.lastNo ?? seed + 1);
+  }
+
   async write(input: WriteJournalInput, tx?: TxClient) {
     this.assertBalanced(input.lines);
     const client = tx ?? this.prisma;
@@ -129,6 +182,9 @@ export class JournalService {
           this.defaultIdempotencyKey(input.refType, input.refId, input.type));
 
     if (key) {
+      // M2: inside a caller's transaction a P2002 would abort the whole tx, so
+      // serialize writers of the same key with a transaction-scoped advisory lock.
+      if (tx) await this.lockIdempotencyKey(tx, key);
       const existing = await client.journalEntry.findUnique({
         where: { idempotencyKey: key },
         include: { lines: true },
@@ -141,18 +197,7 @@ export class JournalService {
 
     let entryNo: number | null = null;
     if (input.buildingId) {
-      const year = valueDate.getUTCFullYear();
-      const yearStart = new Date(Date.UTC(year, 0, 1));
-      const yearEnd = new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
-      const agg = await client.journalEntry.aggregate({
-        where: {
-          buildingId: input.buildingId,
-          valueDate: { gte: yearStart, lte: yearEnd },
-          entryNo: { not: null },
-        },
-        _max: { entryNo: true },
-      });
-      entryNo = (agg._max.entryNo ?? 0) + 1;
+      entryNo = await this.nextEntryNo(client, input.buildingId, valueDate);
     }
 
     // Resolve accountId from global CoA codes when present
@@ -254,11 +299,10 @@ export class JournalService {
 
   listRecent(
     limit = 50,
-    buildingId?: string,
+    buildingId?: BuildingScope,
     opts?: { period?: string; account?: string; from?: string; to?: string },
   ) {
-    const where: Prisma.JournalEntryWhereInput = {};
-    if (buildingId) where.buildingId = buildingId;
+    const where: Prisma.JournalEntryWhereInput = { ...this.buildingWhere(buildingId) };
     if (opts?.period) where.period = opts.period;
     if (opts?.from || opts?.to) {
       where.valueDate = {};
@@ -286,9 +330,8 @@ export class JournalService {
   /**
    * Trial balance / ОСВ by account code for a building (optional period).
    */
-  async trialBalance(buildingId?: string, period?: string) {
-    const entryWhere: Prisma.JournalEntryWhereInput = {};
-    if (buildingId) entryWhere.buildingId = buildingId;
+  async trialBalance(buildingId?: BuildingScope, period?: string) {
+    const entryWhere: Prisma.JournalEntryWhereInput = { ...this.buildingWhere(buildingId) };
     if (period) entryWhere.period = period;
 
     const lines = await this.prisma.journalLine.findMany({
@@ -330,7 +373,7 @@ export class JournalService {
     );
 
     return {
-      buildingId: buildingId ?? null,
+      buildingId: typeof buildingId === 'string' ? buildingId : null,
       period: period ?? null,
       totalDebit,
       totalCredit,
@@ -344,10 +387,9 @@ export class JournalService {
    */
   async accountCard(
     account: string,
-    opts?: { buildingId?: string; period?: string; limit?: number },
+    opts?: { buildingId?: BuildingScope; period?: string; limit?: number },
   ) {
-    const entryWhere: Prisma.JournalEntryWhereInput = {};
-    if (opts?.buildingId) entryWhere.buildingId = opts.buildingId;
+    const entryWhere: Prisma.JournalEntryWhereInput = { ...this.buildingWhere(opts?.buildingId) };
     if (opts?.period) entryWhere.period = opts.period;
 
     const lines = await this.prisma.journalLine.findMany({
@@ -383,7 +425,7 @@ export class JournalService {
 
     return {
       account,
-      buildingId: opts?.buildingId ?? null,
+      buildingId: typeof opts?.buildingId === 'string' ? opts.buildingId : null,
       period: opts?.period ?? null,
       totalDebit: debit,
       totalCredit: credit,
@@ -395,7 +437,31 @@ export class JournalService {
   /**
    * Compare journal-derived figures with legacy fields.
    */
-  async reconcile(buildingId?: string) {
+  /**
+   * Reconcile for one building, a tenant's set of buildings (merged), or all (platform).
+   */
+  async reconcile(scope?: BuildingScope) {
+    if (!Array.isArray(scope)) return this.reconcileOne(scope ?? undefined);
+    const parts = await Promise.all(scope.map((id) => this.reconcileOne(id)));
+    const mismatches = parts.flatMap((p) => p.mismatches);
+    const totalDebit = roundMoney(parts.reduce((s, p) => s + p.trialBalance.totalDebit, 0));
+    const totalCredit = roundMoney(parts.reduce((s, p) => s + p.trialBalance.totalCredit, 0));
+    return {
+      checkedAt: new Date().toISOString(),
+      buildingId: null,
+      buildingIds: scope,
+      mismatchCount: parts.reduce((s, p) => s + p.mismatchCount, 0),
+      ok: parts.every((p) => p.ok),
+      trialBalance: {
+        totalDebit,
+        totalCredit,
+        balanced: Math.abs(totalDebit - totalCredit) <= 0.005,
+      },
+      mismatches: mismatches.slice(0, 150),
+    };
+  }
+
+  private async reconcileOne(buildingId?: string) {
     const mismatches: ReconcileMismatch[] = [];
 
     // Self-check: every entry balances
@@ -638,10 +704,16 @@ export class JournalService {
     return this.listChartOfAccounts();
   }
 
-  listChartOfAccounts(buildingId?: string) {
+  listChartOfAccounts(buildingId?: BuildingScope) {
+    const scoped =
+      buildingId === undefined || buildingId === null
+        ? null
+        : Array.isArray(buildingId)
+          ? { buildingId: { in: buildingId } }
+          : { buildingId };
     return this.prisma.ledgerAccount.findMany({
-      where: buildingId
-        ? { OR: [{ buildingId: null }, { buildingId }], isActive: true }
+      where: scoped
+        ? { OR: [{ buildingId: null }, scoped], isActive: true }
         : { isActive: true },
       orderBy: { code: 'asc' },
     });

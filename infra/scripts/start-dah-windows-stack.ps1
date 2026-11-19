@@ -180,6 +180,8 @@ try {
     [System.Environment]::SetEnvironmentVariable(`$name, `$val, 'Process')
   }
   if (-not `$env:NODE_ENV) { `$env:NODE_ENV = 'production' }
+  # Native host: API is reached only through local nginx (127.0.0.1:3001) - never bind on LAN.
+  if (-not `$env:API_HOST) { `$env:API_HOST = '127.0.0.1' }
   Set-Location -LiteralPath `$workDir
   `$p = Start-Process -FilePath `$nodeExe -ArgumentList @(`$entryJs) -WorkingDirectory `$workDir -NoNewWindow -PassThru -RedirectStandardOutput `$logOut -RedirectStandardError `$logErr
   if (-not `$p) { throw 'Start-Process node returned null' }
@@ -308,7 +310,10 @@ if (-not $SkipMinio) {
     if (-not $access) { $access = "dah_minio" }
     $secret = $envMap["S3_SECRET_KEY"]
     if (-not $secret) { $secret = $envMap["MINIO_ROOT_PASSWORD"] }
-    if (-not $secret) { $secret = "dah_minio_secret_change_me" }
+    if (-not $secret) {
+      # No hard-coded default secret (H7): refuse to start MinIO without a configured key.
+      throw "S3_SECRET_KEY (or MINIO_ROOT_PASSWORD) is not set in .env - generate a strong random value and re-run."
+    }
 
     $minioExeEsc = $MinioExe.Replace("'", "''")
     $dataEsc = $MinioDataDir.Replace("'", "''")
@@ -317,7 +322,7 @@ if (-not $SkipMinio) {
     $cmd = @"
 `$env:MINIO_ROOT_USER = '$accessEsc'
 `$env:MINIO_ROOT_PASSWORD = '$secretEsc'
-& '$minioExeEsc' server '$dataEsc' --address ':9000' --console-address ':9001'
+& '$minioExeEsc' server '$dataEsc' --address '127.0.0.1:9000' --console-address '127.0.0.1:9001'
 "@
     Start-DetachedPowerShell -Name "minio" -CommandText $cmd
 

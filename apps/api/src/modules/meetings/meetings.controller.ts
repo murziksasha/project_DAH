@@ -8,6 +8,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import {
   CreateMeetingDto,
+  RegisterMeetingDto,
   SignMeetingDto,
   UpdateMeetingStatusDto,
   VoteAgendaDto,
@@ -52,8 +53,12 @@ export class MeetingsController {
   }
 
   @Post(':id/register')
-  register(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.meetings.register(id, user);
+  register(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @Body() dto: RegisterMeetingDto,
+  ) {
+    return this.meetings.register(id, user, dto?.apartmentId);
   }
 
   @Post(':id/agenda/:agendaItemId/vote')

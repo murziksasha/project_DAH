@@ -1,5 +1,6 @@
 import {
   Controller,
+  ForbiddenException,
   Get,
   Param,
   Post,
@@ -19,6 +20,7 @@ import { CurrentUser, AuthUser } from '../../common/decorators/current-user.deco
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { BackupsService } from './backups.service';
+import { PrismaService } from '../../prisma/prisma.service';
 
 /** Read/list/download: board + auditor */
 const READ_ROLES = [
@@ -42,29 +44,51 @@ const WRITE_ROLES = [
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 @Controller('backups')
 export class BackupsController {
-  constructor(private backups: BackupsService) {}
+  constructor(
+    private backups: BackupsService,
+    private prisma: PrismaService,
+  ) {}
+
+  /**
+   * Backups are whole-database dumps (all organizations). Organization roles may see /
+   * trigger them only on a single-organization install; on shared installs — platform
+   * admin only (H4).
+   */
+  private async assertInstallLevel(user: AuthUser) {
+    if (user.role === UserRole.super_admin) return;
+    const tenants = await this.prisma.tenant.count();
+    if (tenants > 1) {
+      throw new ForbiddenException(
+        'Резервні копії спільної інсталяції доступні лише адміністратору платформи',
+      );
+    }
+  }
 
   @Roles(...READ_ROLES)
   @Get('status')
-  status() {
+  async status(@CurrentUser() user: AuthUser) {
+    await this.assertInstallLevel(user);
     return this.backups.getStatus();
   }
 
   @Roles(...READ_ROLES)
   @Get()
-  list() {
+  async list(@CurrentUser() user: AuthUser) {
+    await this.assertInstallLevel(user);
     return this.backups.list();
   }
 
   @Roles(...WRITE_ROLES)
   @Post()
-  createManual(@CurrentUser() user: AuthUser) {
+  async createManual(@CurrentUser() user: AuthUser) {
+    await this.assertInstallLevel(user);
     return this.backups.createManualBackup({ source: 'api', userId: user.id });
   }
 
   @Roles(...WRITE_ROLES)
   @Post('weekly')
-  ensureWeekly(@CurrentUser() user: AuthUser) {
+  async ensureWeekly(@CurrentUser() user: AuthUser) {
+    await this.assertInstallLevel(user);
     return this.backups.ensureWeeklyBackup({ source: 'api', userId: user.id });
   }
 

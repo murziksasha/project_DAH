@@ -7,6 +7,7 @@ import { MailModule } from './modules/mail/mail.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { RemindersModule } from './modules/reminders/reminders.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { TenantAccessModule } from './common/tenant-access/tenant-access.module';
 
 /**
  * Minimal Nest context for the background worker.
@@ -17,6 +18,7 @@ import { PrismaModule } from './prisma/prisma.module';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
+    TenantAccessModule,
     MailModule,
     AuditModule,
     RemindersModule,

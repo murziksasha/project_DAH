@@ -101,7 +101,8 @@ describe('Auth 2FA (e2e)', () => {
     expect(step1.body.tempToken).toBeTruthy();
     expect(step1.body.accessToken).toBeUndefined();
 
-    const code2 = currentTotp(user!.totpSecret!);
+    // DB stores the secret sealed at rest; use the plain secret from /2fa/setup.
+    const code2 = currentTotp(setup.body.secret);
     const step2 = await request(app.getHttpServer())
       .post('/api/auth/2fa/verify')
       .send({ tempToken: step1.body.tempToken, code: code2 });

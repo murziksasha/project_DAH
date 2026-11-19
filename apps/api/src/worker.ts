@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
 import { WorkerModule } from './worker.module';
+import { assertProductionSecrets } from './common/config/secrets.config';
 import { domainEvents } from './common/utils/domain-events';
 import { BackupsService } from './modules/backups/backups.service';
 import { JournalService } from './modules/journal/journal.service';
@@ -53,6 +54,7 @@ function utcDayKey(d = new Date()): string {
 }
 
 async function bootstrap() {
+  assertProductionSecrets();
   const app = await NestFactory.createApplicationContext(WorkerModule, {
     logger: ['error', 'warn', 'log'],
   });

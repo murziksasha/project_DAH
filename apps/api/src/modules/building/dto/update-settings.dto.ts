@@ -82,6 +82,11 @@ export class UpdateBuildingSettingsDto {
   @MaxLength(64)
   registrationInviteCode?: string;
 
+  @ApiPropertyOptional({ description: 'Apply apartment advance to new accruals (default true)' })
+  @IsOptional()
+  @IsBoolean()
+  autoApplyAdvance?: boolean;
+
   @ApiPropertyOptional({ description: 'Dual-approve expenses at/above this UAH amount' })
   @IsOptional()
   @IsNumber()

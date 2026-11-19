@@ -240,12 +240,17 @@ describe('Setup defer roles (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(201);
 
+    const setupBuilding = await testPrisma.building.findFirstOrThrow({
+      orderBy: { createdAt: 'asc' },
+    });
     await request(app.getHttpServer())
       .post('/api/users')
       .set('Authorization', `Bearer ${token}`)
+      // super_admin acts inside an organization explicitly (X-Tenant-Id)
+      .set('X-Tenant-Id', setupBuilding.tenantId)
       .send({
         email: 'late-acc@osbb.local',
-        password: 'password123',
+        password: 'Late-Acc-Strong-2026!',
         firstName: 'Late',
         lastName: 'Acc',
         role: 'accountant',
@@ -364,6 +369,8 @@ describe('Setup resume (e2e)', () => {
 
   it('POST /api/setup/users creates only missing roles when chairman exists', async () => {
     const passwordHash = await bcrypt.hash('password123', 4);
+    // Setup counts only users of THIS organization (tenant isolation).
+    const building = await testPrisma.building.findFirstOrThrow({ orderBy: { createdAt: 'asc' } });
     await testPrisma.user.create({
       data: {
         email: 'existing-chair@osbb.local',
@@ -372,6 +379,10 @@ describe('Setup resume (e2e)', () => {
         lastName: 'Chair',
         role: UserRole.chairman,
         status: UserStatus.active,
+        tenantId: building.tenantId,
+        memberships: {
+          create: { tenantId: building.tenantId, role: UserRole.chairman, status: UserStatus.active },
+        },
       },
     });
 

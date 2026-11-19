@@ -83,8 +83,23 @@ export class OnlinePaymentsService implements OnModuleInit {
   async getOrder(orderId: string, user: AuthUser) {
     const order = await this.prisma.onlinePaymentOrder.findUnique({ where: { orderId } });
     if (!order) throw new NotFoundException('Замовлення не знайдено');
-    if (user.role === 'resident' && order.userId && order.userId !== user.id) {
-      throw new BadRequestException('Немає доступу до цього замовлення');
+    if (user.role === 'resident') {
+      const own = user.apartmentIds?.length
+        ? user.apartmentIds
+        : user.apartmentId
+          ? [user.apartmentId]
+          : [];
+      const mine = order.userId ? order.userId === user.id : own.includes(order.apartmentId);
+      if (!mine) throw new NotFoundException('Замовлення не знайдено');
+    } else if (user.role !== 'super_admin') {
+      // Staff: only orders of apartments in their organization.
+      const apt = await this.prisma.apartment.findUnique({
+        where: { id: order.apartmentId },
+        select: { building: { select: { tenantId: true } } },
+      });
+      if (!user.tenantId || apt?.building.tenantId !== user.tenantId) {
+        throw new NotFoundException('Замовлення не знайдено');
+      }
     }
     return order;
   }

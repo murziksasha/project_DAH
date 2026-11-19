@@ -166,7 +166,7 @@ export class AuthService {
       actionPath: '/login?pending=1',
       actionLabel: 'Сторінка входу',
     });
-    void this.mail.notifyAdmins('registration.new_request', {
+    void this.mail.notifyAdmins(tenantId, 'registration.new_request', {
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,

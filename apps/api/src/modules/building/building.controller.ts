@@ -1,4 +1,15 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  ForbiddenException,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
@@ -13,6 +24,7 @@ import { UpdateResidentDto } from './dto/update-resident.dto';
 import { UpdateBuildingDto } from './dto/update-building.dto';
 import { UpdateBuildingSettingsDto } from './dto/update-settings.dto';
 import { UpdateDocumentTemplatesDto } from './dto/update-document-templates.dto';
+import { ImportApartmentsCsvDto } from './dto/import-apartments-csv.dto';
 
 @ApiTags('building')
 @ApiBearerAuth()
@@ -38,7 +50,13 @@ export class BuildingController {
     @Body() body: { name: string; address: string; edrpou?: string | null; tenantId?: string },
     @CurrentUser() user: AuthUser,
   ) {
-    return this.building.createBuilding(body, user.id, user.tenantId);
+    // Only platform admin may create a building in another organization.
+    const dto =
+      user.role === UserRole.super_admin ? body : { ...body, tenantId: undefined };
+    if (user.role !== UserRole.super_admin && !user.tenantId) {
+      throw new ForbiddenException('Обліковий запис без організації');
+    }
+    return this.building.createBuilding(dto, user.id, user.tenantId);
   }
 
   @Get('by/:id')
@@ -162,8 +180,11 @@ export class BuildingController {
   @UseGuards(RolesGuard)
   @Roles(UserRole.super_admin, UserRole.chairman)
   @Post('apartments/import')
-  importApartments(@Body() body: { csv: string }, @CurrentUser() user: AuthUser) {
-    return this.building.importApartmentsCsv(body.csv ?? '', user.id);
+  importApartments(
+    @Body() body: ImportApartmentsCsvDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.building.importApartmentsCsv(body.csv ?? '', user, body.buildingId);
   }
 
   @UseGuards(RolesGuard)
@@ -174,14 +195,14 @@ export class BuildingController {
     @Body() dto: UpdateApartmentDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.building.updateApartment(id, dto, user.id);
+    return this.building.updateApartment(id, dto, user);
   }
 
   @UseGuards(RolesGuard)
   @Roles(UserRole.super_admin, UserRole.chairman)
   @Delete('apartments/:id')
   deleteApartment(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.building.deleteApartment(id, user.id);
+    return this.building.deleteApartment(id, user);
   }
 
   @UseGuards(RolesGuard)
@@ -192,7 +213,7 @@ export class BuildingController {
     @Body() dto: CreateResidentDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.building.createResident(apartmentId, dto, user.id);
+    return this.building.createResident(apartmentId, dto, user);
   }
 
   @UseGuards(RolesGuard)
@@ -203,13 +224,13 @@ export class BuildingController {
     @Body() dto: UpdateResidentDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.building.updateResident(id, dto, user.id);
+    return this.building.updateResident(id, dto, user);
   }
 
   @UseGuards(RolesGuard)
   @Roles(UserRole.super_admin, UserRole.chairman)
   @Delete('residents/:id')
   deleteResident(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.building.deleteResident(id, user.id);
+    return this.building.deleteResident(id, user);
   }
 }
