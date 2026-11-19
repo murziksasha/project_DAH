@@ -8,15 +8,17 @@
     "start": "next start -p 3000",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "next lint",
-    "test": "npx --yes tsx --test src/lib/nav-config.spec.ts src/lib/instructions-content.spec.ts src/app/resident/_lib/account-filters.spec.ts src/lib/notification-links.spec.ts src/lib/request-offline-queue.spec.ts src/lib/meter-offline-queue.spec.ts",
+    "test": "npx --yes tsx --test src/lib/nav-config.spec.ts src/lib/instructions-content.spec.ts src/app/resident/_lib/account-filters.spec.ts src/lib/notification-links.spec.ts src/lib/request-offline-queue.spec.ts src/lib/meter-offline-queue.spec.ts src/lib/nbu-qr.spec.ts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@dah/shared": "*",
     "@tanstack/react-query": "^5.66.0",
+    "@types/qrcode": "^1.5.6",
     "exceljs": "^4.4.0",
     "next": "^15.1.7",
+    "qrcode": "^1.5.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

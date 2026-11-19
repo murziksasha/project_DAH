@@ -1081,6 +1081,11 @@ const DICT = {
     residentBankName: 'Банк',
     residentEdrpou: 'ЄДРПОУ',
     residentPaymentPurpose: 'Призначення платежу',
+    residentQrScanTitle: 'Оплата за QR-кодом (НБУ)',
+    residentQrScanDesc:
+      'Відскануйте камерою у додатку банку (Приват24, Monobank, Sense, Ощад тощо) — реквізити та суму буде заповнено автоматично',
+    residentOpenMono: 'Відкрити Monobank',
+    residentOpenPrivat: 'Відкрити Приват24',
     residentAllOk: 'Усе в порядку — немає термінових дій',
     residentActionPay: 'Сплатити {amount}',
     residentActionPaySub: 'Онлайн або за реквізитами',
@@ -2385,6 +2390,11 @@ const DICT = {
     residentBankName: 'Банк',
     residentEdrpou: 'ЕГРПОУ',
     residentPaymentPurpose: 'Назначение платежа',
+    residentQrScanTitle: 'Оплата по QR-коду (НБУ)',
+    residentQrScanDesc:
+      'Отсканируйте камерой в приложении банка (Приват24, Monobank, Sense, Ощад и др.) — реквизиты и сумма заполнятся автоматически',
+    residentOpenMono: 'Открыть Monobank',
+    residentOpenPrivat: 'Открыть Приват24',
     residentAllOk: 'Всё в порядке — нет срочных действий',
     residentActionPay: 'Оплатить {amount}',
     residentActionPaySub: 'Онлайн или по реквизитам',
