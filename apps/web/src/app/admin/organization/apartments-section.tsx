@@ -63,13 +63,20 @@ export function ApartmentsSection({
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return apartments;
-    return apartments.filter(
-      (a) =>
-        a.number.toLowerCase().includes(q) ||
-        String(a.entrance).includes(q) ||
-        String(a.floor ?? '').includes(q),
-    );
+    const list = !q
+      ? apartments
+      : apartments.filter(
+          (a) =>
+            a.number.toLowerCase().includes(q) ||
+            String(a.entrance).includes(q) ||
+            String(a.floor ?? '').includes(q),
+        );
+    // Natural order 1,2,10 (API also sorts; keep stable if data comes unsorted)
+    return [...list].sort((a, b) => {
+      const e = a.entrance - b.entrance;
+      if (e !== 0) return e;
+      return a.number.localeCompare(b.number, undefined, { numeric: true, sensitivity: 'base' });
+    });
   }, [apartments, search]);
 
   const linkableUsers = useMemo(() => {

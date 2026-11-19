@@ -2,7 +2,7 @@
   "name": "@dah/native-cli",
   "version": "1.0.0",
   "private": true,
-  "description": "CLI wrappers for native host install/update (Linux systemd, no Docker)",
+  "description": "CLI wrappers for native host install/update/uninstall (Linux systemd, Windows Scheduled Task)",
   "type": "module",
   "bin": {
     "dah-native": "./bin/dah-native.mjs",

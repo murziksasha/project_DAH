@@ -98,7 +98,10 @@ export class HealthService {
       connectTimeout: 1500,
       lazyConnect: true,
       enableOfflineQueue: false,
+      retryStrategy: () => null,
     });
+    // Without a listener, ECONNREFUSED becomes "Unhandled error event" spam in logs.
+    client.on('error', () => undefined);
     try {
       await client.connect();
       const pong = await client.ping();
@@ -106,7 +109,11 @@ export class HealthService {
     } catch {
       return 'down';
     } finally {
-      client.disconnect();
+      try {
+        client.disconnect();
+      } catch {
+        /* ignore */
+      }
     }
   }
 

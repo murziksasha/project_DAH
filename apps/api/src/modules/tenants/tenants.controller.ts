@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
@@ -18,6 +18,11 @@ export class TenantsController {
   @Get()
   list() {
     return this.tenants.list();
+  }
+
+  @Get(':id/delete-check')
+  deleteCheck(@Param('id') id: string) {
+    return this.tenants.getDeleteCheck(id);
   }
 
   @Get(':id')
@@ -48,5 +53,14 @@ export class TenantsController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.tenants.update(id, body, user.id);
+  }
+
+  @Delete(':id')
+  remove(
+    @Param('id') id: string,
+    @Body() body: { confirmSlug?: string },
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.tenants.delete(id, body ?? {}, user.id);
   }
 }

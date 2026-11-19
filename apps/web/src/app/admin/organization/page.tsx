@@ -742,13 +742,16 @@ export default function OrganizationPage() {
           downloadCsv(`kvartyry-${new Date().toISOString().slice(0, 10)}.csv`, rows);
         }}
         onImportCsv={async (csv) => {
+          if (!confirm(t('orgImportConfirm'))) return;
           const token = getToken();
           if (!token) return;
           setError('');
           try {
             const res = await apiFetch<{
               created: number;
-              skipped: number;
+              updated: number;
+              removed: number;
+              skipped?: number;
               errors: Array<{ line: number; message: string }>;
             }>('/building/apartments/import', {
               method: 'POST',
@@ -756,7 +759,11 @@ export default function OrganizationPage() {
               body: JSON.stringify({ csv }),
             });
             setMessage(
-              t('orgImportResult', { created: res.created, skipped: res.skipped }) +
+              t('orgImportResult', {
+                created: res.created,
+                updated: res.updated ?? 0,
+                removed: res.removed ?? 0,
+              }) +
                 (res.errors.length ? t('orgImportErrors', { count: res.errors.length }) : ''),
             );
             await loadApartments(token);

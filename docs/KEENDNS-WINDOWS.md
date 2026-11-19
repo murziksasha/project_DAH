@@ -17,6 +17,8 @@ npm run status:native:win    # порти / health / task
 npm run update:native:win    # оновлення + restart
 npm run backup:native        # pg_dump без Docker
 npm run smoke:native:win     # smoke після змін
+npm run uninstall:native:win # stop + зняти Task + firewall (Postgres/Node лишаються)
+# повний снос: npm run uninstall:native:win -- -FullWipe -ConfirmYes
 ```
 
 | Компонент | Порт | Публікувати назовні? |
@@ -200,15 +202,21 @@ Self-signed на телефонах часто **ламає PWA і Web Push** �
 | UI є, API 502 | `npm run start:native:win`; логи `logs\native-windows\api.err.log` |
 | Login / CORS з телефону | `NEXT_PUBLIC_API_URL` і `CORS_ORIGIN` = публічний host + rebuild |
 | Після update 502 | `npm run restart:native:win` або `update:native:win` ще раз |
-| `EPERM` … `query_engine-windows.dll.node` | API/worker тримають DLL: `npm run stop:native:win`, потім знову generate/update |
+| `EPERM` / stop Access denied | `update:native:win` сам робить stop; якщо Access denied — Admin PowerShell: `stop:native:win`, `taskkill /IM node.exe /F`, потім update |
 | backup:native fail | `pg_dump` у PATH; Postgres running |
 | PWA не ставиться | Потрібен валідний HTTPS (не self-signed) |
 
-Команди stop/restart:
+Команди stop/restart / uninstall:
 
 ```powershell
 npm run stop:native:win
 npm run start:native:win
 # або
 npm run restart:native:win
+
+# зняти стек (не чіпає PostgreSQL / Node / папку)
+npm run uninstall:native:win
+
+# повний снос ноута (незворотньо). KeenDNS / port-forward на роутері зніміть вручну.
+npm run uninstall:native:win -- -FullWipe -ConfirmYes
 ```

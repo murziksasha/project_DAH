@@ -98,7 +98,9 @@ if ($Unregister) {
   Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
   Get-NetFirewallRule -DisplayName "DAH Web $WebPort" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
   Get-NetFirewallRule -DisplayName "DAH API 3001" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
-  Write-Host "Done. (Processes may still be running - stop via Task Manager or restart PC)"
+  Write-Host "Done. (Processes may still be running.)"
+  Write-Host "Prefer: npm run uninstall:native:win   (stop + unregister + firewall)"
+  Write-Host "Full wipe: npm run uninstall:native:win -- -FullWipe -ConfirmYes"
   exit 0
 }
 
@@ -413,7 +415,8 @@ Write-Host "    Health:  http://127.0.0.1:3001/api/health"
 Write-Host "    Web:     http://127.0.0.1:$WebPort/   (if nginx configured)"
 Write-Host "    Logs:    $DahRoot\logs\native-windows\"
 Write-Host "    Task:    taskschd.msc -> $TaskName"
-Write-Host "    Remove:  powershell -File infra\scripts\install-native-windows.ps1 -Unregister"
+Write-Host "    Remove:  npm run uninstall:native:win"
+Write-Host "    Wipe:    npm run uninstall:native:win -- -FullWipe -ConfirmYes"
 Write-Host ""
 Write-Host "PostgreSQL must be set to Automatic start (services.msc)."
 Write-Host "Docs: docs\NATIVE-HOST-WINDOWS.md"
