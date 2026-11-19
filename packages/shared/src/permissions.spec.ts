@@ -53,4 +53,13 @@ describe('ROLE_PERMISSIONS matrix', () => {
       'super_admin',
     ].sort());
   });
+
+  it('Phase 4 permissions map to exact SPEC/03 role sets', () => {
+    const holders = (p: Permission) =>
+      Object.keys(ROLE_PERMISSIONS).filter((r) => ROLE_PERMISSIONS[r].includes(p)).sort();
+    assert.deepEqual(holders(Permission.MANAGE_COMMUNICATIONS), ['board', 'chairman']);
+    assert.deepEqual(holders(Permission.READ_AUDIT), ['auditor', 'chairman']);
+    assert.deepEqual(holders(Permission.PLATFORM_ADMIN), ['super_admin']);
+    assert.deepEqual(holders(Permission.FINANCE_ADMIN), ['accountant', 'chairman']);
+  });
 });

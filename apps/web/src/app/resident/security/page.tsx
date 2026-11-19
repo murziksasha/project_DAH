@@ -16,7 +16,8 @@ import {
   subscribeToPush,
   unsubscribeFromPush,
 } from '@/lib/push';
-import { getQuietHours, setQuietHours, type QuietHours } from '@/lib/push-quiet-hours';
+import { getQuietHours, setQuietHours, type QuietHours } from '@/lib/push-quiet-hours';
+import type { ApiResponse } from '@/lib/api-types';
 
 export default function ResidentSecurityPage() {
   const { t } = useI18n();
@@ -48,14 +49,9 @@ export default function ResidentSecurityPage() {
     }
     try {
       const [s, p, profile] = await Promise.all([
-        apiFetch<{ emailNotifyEnabled: boolean }>('/auth/2fa/status', { token }),
+        apiFetch<ApiResponse<'/auth/2fa/status'>>('/auth/2fa/status', { token }),
         getPushSubscriptionStatus(),
-        apiFetch<{
-          phone: string | null;
-          firstName: string;
-          lastName: string;
-          emailNotifyEnabled?: boolean;
-        }>('/auth/profile', { token }),
+        apiFetch<ApiResponse<'/auth/profile'>>('/auth/profile', { token }),
       ]);
       setEmailNotify(s.emailNotifyEnabled);
       setPushStatus(p);

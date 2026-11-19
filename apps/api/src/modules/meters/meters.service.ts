@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { MeterType, UserRole } from '@prisma/client';
+import { MeterType, UserRole } from '../../prisma/client';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { roundMoney } from '../../common/utils/money';
 import { PrismaService } from '../../prisma/prisma.service';

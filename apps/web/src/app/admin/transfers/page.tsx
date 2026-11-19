@@ -3,7 +3,8 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
-import { formatDateUk, formatMoney } from '@/lib/money';
+import { formatDateUk, formatMoney } from '@/lib/money';
+import type { ApiResponse } from '@/lib/api-types';
 
 interface Fund {
   id: string;
@@ -40,8 +41,8 @@ export default function FundTransfersPage() {
     setLoading(true);
     try {
       const [f, t] = await Promise.all([
-        apiFetch<Fund[]>('/finance/funds', { token }),
-        apiFetch<Transfer[]>('/finance/transfers', { token }),
+        apiFetch<ApiResponse<'/finance/funds'>>('/finance/funds', { token }),
+        apiFetch<ApiResponse<'/finance/transfers'>>('/finance/transfers', { token }),
       ]);
       setFunds(Array.isArray(f) ? f : []);
       setList(Array.isArray(t) ? t : []);

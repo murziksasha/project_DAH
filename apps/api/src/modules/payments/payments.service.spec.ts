@@ -1,6 +1,6 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { PaymentSource, UserRole } from '@prisma/client';
+import { PaymentSource, UserRole } from '../../prisma/client';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { AccountingPeriodsService } from '../accounting-periods/accounting-periods.service';
 import { AuditService } from '../audit/audit.service';

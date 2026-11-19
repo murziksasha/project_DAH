@@ -1,4 +1,4 @@
-import { AccrualLineStatus } from '@prisma/client';
+import { AccrualLineStatus } from '../../prisma/client';
 import { markOverdueAccrualLines } from './mark-overdue';
 
 describe('markOverdueAccrualLines', () => {

@@ -1,5 +1,5 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '../../prisma/client';
 import { BuildingService } from './building.service';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 

@@ -4,7 +4,8 @@ import { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useI18n } from '@/components/LocaleProvider';
 import { apiFetch, getToken } from '@/lib/api';
-import type { I18nKey } from '@/lib/i18n';
+import type { I18nKey } from '@/lib/i18n';
+import type { ApiResponse } from '@/lib/api-types';
 
 interface SetupStatus {
   hasBuilding: boolean;
@@ -145,7 +146,7 @@ export default function SetupPage() {
       window.location.href = '/login';
       return;
     }
-    const s = await apiFetch<SetupStatus>('/setup/status', { token });
+    const s = await apiFetch<ApiResponse<'/setup/status'>>('/setup/status', { token });
     applyStatus(s);
   }
 

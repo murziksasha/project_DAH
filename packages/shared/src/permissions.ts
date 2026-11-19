@@ -14,6 +14,15 @@ export enum Permission {
    * board ❌. Voids, manual adjustments, year-end close, bank accounts, etc.
    */
   FINANCE_ADMIN = 'finance_admin',
+  /**
+   * Communications & community governance — SPEC/03:12 board «комунікації»; SPEC/03:36–37
+   * (GET /auth/pending, PATCH /auth/approve: board ✅ chairman ✅): meetings, polls, mail, approvals.
+   */
+  MANAGE_COMMUNICATIONS = 'manage_communications',
+  /** Audit trail read — SPEC/03:15 auditor «Читання звітів + аудит»; chairman = full admin. */
+  READ_AUDIT = 'read_audit',
+  /** Platform operator only — SPEC/03:9 super_admin «Bootstrap, tenants…» (no tenant finance ops). */
+  PLATFORM_ADMIN = 'platform_admin',
 }
 
 const SUPER_ADMIN = 'super_admin';
@@ -34,6 +43,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     Permission.READ_FINANCE,
     Permission.MANAGE_REQUESTS,
     Permission.WORK_REQUESTS,
+    Permission.PLATFORM_ADMIN,
   ],
   [CHAIRMAN]: [
     Permission.MANAGE_USERS,
@@ -44,6 +54,8 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     Permission.READ_FINANCE,
     Permission.MANAGE_REQUESTS,
     Permission.WORK_REQUESTS,
+    Permission.MANAGE_COMMUNICATIONS,
+    Permission.READ_AUDIT,
   ],
   [ACCOUNTANT]: [Permission.MANAGE_FINANCE, Permission.FINANCE_ADMIN, Permission.READ_FINANCE],
   [BOARD]: [
@@ -51,10 +63,11 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     Permission.READ_FINANCE,
     Permission.MANAGE_REQUESTS,
     Permission.WORK_REQUESTS,
+    Permission.MANAGE_COMMUNICATIONS,
   ],
   [DISPATCHER]: [Permission.MANAGE_REQUESTS, Permission.WORK_REQUESTS],
   [CREW]: [Permission.WORK_REQUESTS],
-  [AUDITOR]: [Permission.READ_FINANCE],
+  [AUDITOR]: [Permission.READ_FINANCE, Permission.READ_AUDIT],
   [RESIDENT]: [],
 };
 

@@ -17,7 +17,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '../../prisma/client';
 import { Response } from 'express';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';

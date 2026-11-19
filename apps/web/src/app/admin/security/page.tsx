@@ -6,7 +6,8 @@ import { SessionsPanel } from '@/components/SessionsPanel';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
 import type { ApiSchema } from '@/lib/api-types';
-import { logout, logoutAll } from '@/lib/auth';
+import { logout, logoutAll } from '@/lib/auth';
+import type { ApiResponse } from '@/lib/api-types';
 import {
   canUsePush,
   getPushSubscriptionStatus,
@@ -58,10 +59,10 @@ export default function SecurityPage() {
     }
     try {
       const [s, m, p, profile] = await Promise.all([
-        apiFetch<TwoFaStatus>('/auth/2fa/status', { token }),
-        apiFetch<MailStatus>('/mail/status', { token }).catch(() => null),
+        apiFetch<ApiResponse<'/auth/2fa/status'>>('/auth/2fa/status', { token }),
+        apiFetch<ApiResponse<'/mail/status'>>('/mail/status', { token }).catch(() => null),
         getPushSubscriptionStatus(),
-        apiFetch<{ phone: string | null }>('/auth/profile', { token }).catch(() => ({
+        apiFetch<ApiResponse<'/auth/profile'>>('/auth/profile', { token }).catch(() => ({
           phone: null as string | null,
         })),
       ]);

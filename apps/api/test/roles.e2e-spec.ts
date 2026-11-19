@@ -1,6 +1,6 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '../src/prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { disconnectTestDatabase, resetTestDatabase, seedTestFixtures } from './helpers/seed-test';

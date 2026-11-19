@@ -1,4 +1,4 @@
-import { AccrualLineStatus } from '@prisma/client';
+import { AccrualLineStatus } from '../../prisma/client';
 import { minMinor, subMinor, toMajor, toMinor } from './money';
 
 export interface FifoLineInput {

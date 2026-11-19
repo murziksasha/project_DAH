@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { VoteWeightMode } from '@prisma/client';
+import { VoteWeightMode } from '../../../prisma/client';
 import {
   IsArray,
   IsDateString,

@@ -6,7 +6,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '@/components/LocaleProvider';
 import { NavIcon, type NavIconName } from '@/components/ui/NavIcon';
 import { apiFetch, getToken } from '@/lib/api';
-import { resolveResidentApartmentId } from '@/lib/apartment-context';
+import { resolveResidentApartmentId } from '@/lib/apartment-context';
+import type { ApiResponse } from '@/lib/api-types';
 import {
   countQueuedMeterReadings,
   METER_QUEUE_EVENT,
@@ -79,10 +80,10 @@ export function ResidentBottomNav() {
     if (!token) return;
     try {
       const [unread, requests] = await Promise.all([
-        apiFetch<{ unread: number }>('/communications/announcements/unread-count', {
+        apiFetch<ApiResponse<'/communications/announcements/unread-count'>>('/communications/announcements/unread-count', {
           token,
         }).catch(() => ({ unread: 0 })),
-        apiFetch<Array<{ status: string }>>('/communications/requests', { token }).catch(
+        apiFetch<ApiResponse<'/communications/requests'>>('/communications/requests', { token }).catch(
           () => [] as Array<{ status: string }>,
         ),
       ]);

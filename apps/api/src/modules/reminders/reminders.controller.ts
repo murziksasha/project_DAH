@@ -4,16 +4,13 @@ import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { CreateReminderDto } from './dto/create-reminder.dto';
 import { RemindersService } from './reminders.service';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { TenantAccessService } from '../../common/tenant-access/tenant-access.service';
 
-const WRITE = [UserRole.chairman, UserRole.accountant, UserRole.board];
 
 @ApiTags('reminders')
 @ApiBearerAuth()
@@ -61,7 +58,7 @@ export class RemindersController {
   }
 
   /** Runs only for the caller's organization (worker processes all tenants). */
-  @Roles(...WRITE, UserRole.super_admin)
+  @RequirePermissions(Permission.MANAGE_FINANCE, Permission.PLATFORM_ADMIN)
   @Post('process')
   process(@CurrentUser() user: AuthUser, @TenantId() tenantId: string | null) {
     return this.reminders.processDue(this.access.effectiveTenantId(user, tenantId));

@@ -3,7 +3,8 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
-import { getSelectedBuildingId } from '@/lib/building-context';
+import { getSelectedBuildingId } from '@/lib/building-context';
+import type { ApiResponse } from '@/lib/api-types';
 
 type PeriodStatus = 'open' | 'soft_closed' | 'locked';
 
@@ -80,7 +81,7 @@ export default function AccountingPeriodsPage() {
     }
     void (async () => {
       try {
-        const list = await apiFetch<BuildingRow[]>('/building', { token });
+        const list = await apiFetch<ApiResponse<'/building'>>('/building', { token });
         const rows = Array.isArray(list) ? list : [];
         setBuildings(rows);
         const stored = getSelectedBuildingId();

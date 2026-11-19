@@ -15,7 +15,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '../../prisma/client';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -154,8 +154,8 @@ export class BuildingController {
     return this.building.getDocumentTemplates(buildingId, user);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.super_admin, UserRole.chairman, UserRole.board, UserRole.accountant)
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_FINANCE, Permission.PLATFORM_ADMIN)
   @Patch('document-templates')
   updateDocumentTemplates(
     @Body() dto: UpdateDocumentTemplatesDto,

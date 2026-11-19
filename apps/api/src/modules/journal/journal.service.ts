@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { JournalEntryType, Prisma } from '@prisma/client';
+import { JournalEntryType, Prisma } from '../../prisma/client';
 import { roundMoney } from '../../common/utils/money';
 import { financeFlags } from '../../common/utils/finance-sot';
 import { mergeBuildingSettings, parseBuildingSettings } from '../building/building-settings';

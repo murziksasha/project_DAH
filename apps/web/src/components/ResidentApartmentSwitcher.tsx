@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '@/components/LocaleProvider';
-import { apiFetch, getToken } from '@/lib/api';
+import { apiFetch, getToken } from '@/lib/api';
+import type { ApiResponse } from '@/lib/api-types';
 import {
   applyResidentApartmentSelection,
   getSelectedApartmentId,
@@ -29,10 +30,7 @@ export function ResidentApartmentSwitcher() {
     const token = getToken();
     if (!token) return;
     try {
-      const profile = await apiFetch<{
-        apartments?: ResidentApartment[];
-        apartmentId?: string | null;
-      }>('/auth/profile', { token });
+      const profile = await apiFetch<ApiResponse<'/auth/profile'>>('/auth/profile', { token });
       const apts = profile.apartments ?? [];
       setList(apts);
       if (apts.length <= 1) return;

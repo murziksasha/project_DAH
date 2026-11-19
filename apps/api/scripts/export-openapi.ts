@@ -11,6 +11,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { AppModule } from '../src/app.module';
 import { buildOpenApiDocument } from '../src/openapi';
+import { applyResponseSchemas, collectResponseSchemas } from './response-schemas';
 import {
   effectiveMatrix,
   renderApiReference,
@@ -18,7 +19,7 @@ import {
   RbacRow,
   stableOpenApi,
 } from '../src/openapi-reference';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '../src/prisma/client';
 import { GUARDS_METADATA, METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { RequestMethod } from '@nestjs/common';
 import { ROLE_PERMISSIONS } from '@dah/shared';
@@ -78,7 +79,12 @@ async function main() {
   process.env.SWAGGER_ENABLED = 'true';
   const app = await NestFactory.create(AppModule, { preview: true, logger: false, abortOnError: false });
   app.setGlobalPrefix('api');
-  const doc = stableOpenApi(buildOpenApiDocument(app));
+  const raw = buildOpenApiDocument(app);
+  // Phase 4: response schemas from the handlers' TypeScript return types (see response-schemas.ts)
+  const { handlers } = collectResponseSchemas();
+  const applied = applyResponseSchemas(raw as unknown as Parameters<typeof applyResponseSchemas>[0], handlers);
+  if (!process.argv.includes('--check')) console.log(`response schemas: ${applied} operations`);
+  const doc = stableOpenApi(raw);
   const rbac = collectRbac(app);
   if (process.env.RBAC_DUMP) writeFileSync(process.env.RBAC_DUMP, JSON.stringify(rbac, null, 2));
   const outDir = resolve(__dirname, '../../../docs/api');

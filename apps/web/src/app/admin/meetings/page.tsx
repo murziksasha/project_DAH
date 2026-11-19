@@ -2,7 +2,8 @@
 
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { apiFetch, getToken } from '@/lib/api';
+import { apiFetch, getToken } from '@/lib/api';
+import type { ApiResponse } from '@/lib/api-types';
 
 interface MeetingListItem {
   id: string;
@@ -53,7 +54,7 @@ export default function MeetingsPage() {
       window.location.href = '/login';
       return;
     }
-    const data = await apiFetch<MeetingListItem[]>('/meetings', { token });
+    const data = await apiFetch<ApiResponse<'/meetings'>>('/meetings', { token });
     setList(data);
   }, []);
 

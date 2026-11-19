@@ -1,6 +1,6 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { UserRole, UserStatus } from '@prisma/client';
+import { UserRole, UserStatus } from '../../prisma/client';
 import { JwtStrategy } from './jwt.strategy';
 
 describe('JwtStrategy - Session & Revocation Validation', () => {

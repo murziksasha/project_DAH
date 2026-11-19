@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { apiRoute, type ApiRequestBody, type ApiSchema } from './api-types';
+import { apiRoute, type ApiRequestBody, type ApiResponse, type ApiSchema } from './api-types';
 
 describe('api-types (generated @dah/api-client contract)', () => {
   it('builds routes and encodes path params', () => {
@@ -13,5 +13,12 @@ describe('api-types (generated @dah/api-client contract)', () => {
     const sot: ApiRequestBody<'/journal/sot', 'post'> = { buildingId: 'b', enabled: false };
     assert.equal(login.email, 'a@b.c');
     assert.equal(sot.enabled, false);
+  });
+
+  it('response types follow the generated schemas (compile-time)', () => {
+    const me: ApiResponse<'/auth/me'> = { id: 'u', email: 'a@b.c', role: 'chairman' };
+    const ready: ApiResponse<'/health/ready'> = { status: 'ok' };
+    assert.equal(me.role, 'chairman');
+    assert.equal(ready.status, 'ok');
   });
 });

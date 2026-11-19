@@ -14,7 +14,7 @@ import {
   Prisma,
   SupplierInvoiceStatus,
   UserRole,
-} from '@prisma/client';
+} from '../../prisma/client';
 import { roundMoney } from '../../common/utils/money';
 import { resolveAccrualLineStatus } from '../../common/utils/fifo-allocation';
 import { PrismaService } from '../../prisma/prisma.service';

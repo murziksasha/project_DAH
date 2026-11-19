@@ -1,4 +1,4 @@
-import { JournalEntryType } from '@prisma/client';
+import { JournalEntryType } from '../../prisma/client';
 import { PostingService } from './posting.service';
 
 describe('PostingService', () => {

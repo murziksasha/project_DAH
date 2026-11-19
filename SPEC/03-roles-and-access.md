@@ -99,7 +99,7 @@ Per-tenant каталог керує **чи можна призначати** р
 | Списання боргу: створення / approve (maker-checker: інший користувач) | ❌ | ✅ | ✅ | ✅ | ❌ |
 | Коригування журналу, закриття року, анулювання переказів, банківські рахунки | ❌ | ❌ | ✅ | ✅ | ❌ |
 
-Бекенд перевіряє permissions з `@dah/shared` (`MANAGE_FINANCE`, `FINANCE_ADMIN`, `READ_FINANCE`, …);
+Бекенд перевіряє permissions з `@dah/shared` (`MANAGE_FINANCE`, `FINANCE_ADMIN`, `READ_FINANCE`, `MANAGE_COMMUNICATIONS` = board+chairman, `READ_AUDIT` = auditor+chairman, `PLATFORM_ADMIN` = super_admin, …);
 ефективна матриця доступу — `docs/api/RBAC-MATRIX.md` / `docs/api/rbac-effective.json` (генерується, `npm run check` ловить розбіжності).
 
 ### Accruals & Payments

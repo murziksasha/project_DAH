@@ -1,6 +1,6 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { FundType } from '@prisma/client';
+import { FundType } from '../src/prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { JournalService } from '../src/modules/journal/journal.service';

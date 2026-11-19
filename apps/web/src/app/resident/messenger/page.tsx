@@ -7,7 +7,8 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { SkeletonCards } from '@/components/ui/Skeleton';
 import { apiFetch, getToken } from '@/lib/api';
-import { getStoredUser } from '@/lib/auth';
+import { getStoredUser } from '@/lib/auth';
+import type { ApiResponse } from '@/lib/api-types';
 
 interface Thread {
   id: string;
@@ -53,7 +54,7 @@ export default function ResidentMessengerPage() {
       return;
     }
     try {
-      setThreads(await apiFetch<Thread[]>('/messenger/threads', { token }));
+      setThreads(await apiFetch<ApiResponse<'/messenger/threads'>>('/messenger/threads', { token }));
     } catch (e) {
       setError(e instanceof Error ? e.message : t('error'));
     } finally {

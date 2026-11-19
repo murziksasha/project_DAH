@@ -1,5 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { AccrualLineStatus, FundType, Prisma } from '@prisma/client';
+import { AccrualLineStatus, FundType, Prisma } from '../../prisma/client';
 import { roundMoney } from '../../common/utils/money';
 import { calcDailyPenalty, daysOverdue } from '../../common/utils/penalty';
 import { PrismaService } from '../../prisma/prisma.service';

@@ -12,7 +12,7 @@ import {
   PaymentSource,
   Prisma,
   UserRole,
-} from '@prisma/client';
+} from '../../prisma/client';
 import { createHash } from 'crypto';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import {

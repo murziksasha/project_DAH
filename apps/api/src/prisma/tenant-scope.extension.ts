@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma } from './client';
 import { currentTenantScope } from '../common/tenant-context/tenant-context';
 
 /**

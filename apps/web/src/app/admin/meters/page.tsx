@@ -9,7 +9,8 @@ import { formatApartmentOption } from '@/lib/apartment-label';
 import { apiFetch, getToken } from '@/lib/api';
 import { withBuildingBody } from '@/lib/building-context';
 import { meterDefaultName, meterTypeLabel } from '@/lib/i18n';
-import { useApartmentsQuery } from '@/lib/queries';
+import { useApartmentsQuery } from '@/lib/queries';
+import type { ApiResponse } from '@/lib/api-types';
 
 interface MeterRow {
   id: string;
@@ -56,7 +57,7 @@ export default function MetersPage() {
       return;
     }
     try {
-      setMeters(await apiFetch<MeterRow[]>('/meters', { token }));
+      setMeters(await apiFetch<ApiResponse<'/meters'>>('/meters', { token }));
     } catch (err) {
       setError(err instanceof Error ? err.message : t('error'));
     }

@@ -8,7 +8,8 @@ import { SkeletonCards } from '@/components/ui/Skeleton';
 import { StatCard } from '@/components/ui/StatCard';
 import { apiFetch, getToken } from '@/lib/api';
 import { setSelectedBuildingId } from '@/lib/building-context';
-import { formatMoney } from '@/lib/money';
+import { formatMoney } from '@/lib/money';
+import type { ApiResponse } from '@/lib/api-types';
 
 interface BuildingRow {
   buildingId: string;
@@ -48,7 +49,7 @@ export function PortfolioDashboard() {
     setLoading(true);
     setError('');
     try {
-      const res = await apiFetch<PortfolioResponse>('/building/portfolio', { token });
+      const res = await apiFetch<ApiResponse<'/building/portfolio'>>('/building/portfolio', { token });
       setData(res);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('error'));

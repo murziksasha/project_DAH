@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AccrualDistribution, AccrualLineStatus, JournalEntryType, Prisma } from '@prisma/client';
+import { AccrualDistribution, AccrualLineStatus, JournalEntryType, Prisma } from '../../prisma/client';
 import {
   calcAccrualLineAmount,
   validateAccrualDistribution,

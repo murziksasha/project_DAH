@@ -4,7 +4,7 @@ import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '../../prisma/client';
 import { IsBoolean } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 

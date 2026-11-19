@@ -1,4 +1,4 @@
-import { AccrualDistribution } from '@prisma/client';
+import { AccrualDistribution } from '../../prisma/client';
 import { calcAccrualLineAmount, validateAccrualDistribution } from './accrual-distribution';
 
 describe('calcAccrualLineAmount', () => {

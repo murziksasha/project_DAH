@@ -1,5 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { UserRole, VoteWeightMode } from '@prisma/client';
+import { UserRole, VoteWeightMode } from '../../prisma/client';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { CommunicationsService } from './communications.service';
 

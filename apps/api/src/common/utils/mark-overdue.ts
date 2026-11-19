@@ -1,4 +1,4 @@
-import { AccrualLineStatus, PrismaClient } from '@prisma/client';
+import { AccrualLineStatus, PrismaClient } from '../../prisma/client';
 
 /**
  * Flip open/partial lines past dueDate to overdue.

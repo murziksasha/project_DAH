@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { UserRole, UserStatus } from '@prisma/client';
+import { UserRole, UserStatus } from '../../prisma/client';
 import * as bcrypt from 'bcrypt';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'crypto';
 import { resolveJwtSecret } from '../../common/config/jwt.config';

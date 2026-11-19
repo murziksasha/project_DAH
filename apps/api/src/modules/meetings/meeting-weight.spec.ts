@@ -1,4 +1,4 @@
-import { UserRole, VoteWeightMode } from '@prisma/client';
+import { UserRole, VoteWeightMode } from '../../prisma/client';
 import { MEETING_VOTER_ROLES, apartmentVoteWeight } from './meetings.service';
 
 describe('meeting vote weight (H3)', () => {

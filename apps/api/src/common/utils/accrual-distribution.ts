@@ -1,4 +1,4 @@
-import { AccrualDistribution } from '@prisma/client';
+import { AccrualDistribution } from '../../prisma/client';
 import { roundMoney } from './money';
 
 export interface ApartmentInput {

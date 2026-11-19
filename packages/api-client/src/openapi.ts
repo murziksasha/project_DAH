@@ -4321,7 +4321,44 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        lines: {
+                            id: string;
+                            bankAccountId: string | null;
+                            fundId: string | null;
+                            apartmentId: string | null;
+                            categoryId: string | null;
+                            supplierId: string | null;
+                            entryId: string;
+                            account: string;
+                            accountId: string | null;
+                            serviceId: string | null;
+                            /** @description Decimal */
+                            debit: string;
+                            /** @description Decimal */
+                            credit: string;
+                        }[];
+                        id: string;
+                        buildingId: string | null;
+                        period: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** @enum {string} */
+                        type: "expense" | "accrual" | "payment" | "write_off" | "void_payment" | "void_expense" | "opening" | "fund_transfer" | "penalty" | "accrual_reverse" | "adjustment" | "supplier_invoice" | "supplier_payment" | "bank_fee";
+                        fundId: string | null;
+                        apartmentId: string | null;
+                        createdById: string | null;
+                        description: string | null;
+                        refType: string;
+                        refId: string;
+                        idempotencyKey: string | null;
+                        /** Format: date-time */
+                        valueDate: string | null;
+                        entryNo: number | null;
+                        reversesId: string | null;
+                    };
+                };
             };
         };
     };
@@ -4340,7 +4377,34 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        buildingId: string;
+                        buckets: {
+                            current: number;
+                            d1_30: number;
+                            d31_60: number;
+                            d61_90: number;
+                            d90_plus: number;
+                        };
+                        total: number;
+                        invoices: {
+                            id: string;
+                            number: string | null;
+                            supplier: {
+                                id: string;
+                                name: string;
+                            };
+                            open: number;
+                            /** Format: date-time */
+                            dueDate: string | null;
+                            /** Format: date-time */
+                            date: string;
+                            /** @enum {string} */
+                            bucket: "current" | "d1_30" | "d31_60" | "d61_90" | "d90_plus";
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -4362,7 +4426,28 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        apartment: {
+                            id: string;
+                            number: string;
+                            buildingId: string;
+                            buildingName: string;
+                            advanceBalance: number;
+                        };
+                        openDebt: number;
+                        netBalance: number;
+                        events: {
+                            date: string;
+                            /** @enum {string} */
+                            kind: "accrual" | "payment" | "write_off";
+                            description: string;
+                            debit: number;
+                            credit: number;
+                            balance: number;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -4382,7 +4467,31 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        buildingId: string;
+                        asOf: string;
+                        buckets: {
+                            current: number;
+                            d1_30: number;
+                            d31_60: number;
+                            d61_90: number;
+                            d90_plus: number;
+                        };
+                        totalDebt: number;
+                        apartments: {
+                            apartmentId: string;
+                            number: string;
+                            advance: number;
+                            current: number;
+                            d1_30: number;
+                            d31_60: number;
+                            d61_90: number;
+                            d90_plus: number;
+                            total: number;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -4402,7 +4511,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        buildingId: string;
+                        bankAccountId: string | null;
+                        balance: number;
+                    };
+                };
             };
         };
     };
@@ -4421,7 +4536,34 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        bankAccount: {
+                            id: string;
+                            bankName: string;
+                            iban: string;
+                        };
+                        id: string;
+                        buildingId: string;
+                        period: string;
+                        /** @enum {string} */
+                        status: "open" | "balanced" | "closed";
+                        /** Format: date-time */
+                        closedAt: string | null;
+                        closedById: string | null;
+                        notes: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        bankAccountId: string;
+                        createdById: string;
+                        /** @description Decimal */
+                        statementBalance: string;
+                        /** @description Decimal */
+                        glBalance: string | null;
+                    }[];
+                };
             };
         };
     };
@@ -4442,7 +4584,30 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        difference: number;
+                        id: string;
+                        buildingId: string;
+                        period: string;
+                        /** @enum {string} */
+                        status: "open" | "balanced" | "closed";
+                        /** Format: date-time */
+                        closedAt: string | null;
+                        closedById: string | null;
+                        notes: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        bankAccountId: string;
+                        createdById: string;
+                        /** @description Decimal */
+                        statementBalance: string;
+                        /** @description Decimal */
+                        glBalance: string | null;
+                    };
+                };
             };
         };
     };
@@ -4461,7 +4626,29 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        buildingId: string;
+                        period: string;
+                        /** @enum {string} */
+                        status: "open" | "balanced" | "closed";
+                        /** Format: date-time */
+                        closedAt: string | null;
+                        closedById: string | null;
+                        notes: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        bankAccountId: string;
+                        createdById: string;
+                        /** @description Decimal */
+                        statementBalance: string;
+                        /** @description Decimal */
+                        glBalance: string | null;
+                    };
+                };
             };
         };
     };
@@ -4481,7 +4668,41 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        buildingId: string;
+                        year: number;
+                        lines: {
+                            plannedAmount: number;
+                            actual: number;
+                            encumbrance: number;
+                            committed: number;
+                            variance: number;
+                            usagePct: number;
+                            alert: string | null;
+                            fund: {
+                                id: string;
+                                name: string;
+                            } | null;
+                            category: {
+                                id: string;
+                                name: string;
+                                code: string;
+                            } | null;
+                            id: string;
+                            buildingId: string;
+                            notes: string | null;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            fundId: string | null;
+                            year: number;
+                            categoryId: string | null;
+                            month: number | null;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -4502,7 +4723,25 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        buildingId: string;
+                        from: string | null;
+                        to: string | null;
+                        totalIn: number;
+                        totalOut: number;
+                        lines: {
+                            id: string;
+                            /** Format: date-time */
+                            date: string;
+                            /** @enum {string} */
+                            direction: "in";
+                            amount: number;
+                            description: string;
+                            reference: string | null;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -4521,7 +4760,19 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        buildingId: string | null;
+                        mapping: {
+                            code: string;
+                            name: string;
+                            /** @enum {string} */
+                            type: "expense" | "asset" | "liability" | "equity" | "income" | "off_balance";
+                            externalCode: string | null;
+                            isControl: boolean;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -4540,7 +4791,24 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        buildingId: string;
+                        readyForSot: boolean;
+                        reconcileOk: boolean;
+                        mismatchCount: number;
+                        trialBalance: {
+                            totalDebit: number;
+                            totalCredit: number;
+                            balanced: boolean;
+                        };
+                        arTotalDebt: number;
+                        unmatchedBankLines: number;
+                        openSupplierInvoices: number;
+                        pendingWriteOffs: number;
+                        pendingExpenses: number;
+                    };
+                };
             };
         };
     };
@@ -4559,7 +4827,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        apartmentId: string;
+                        buildingId: string;
+                        number: string;
+                        policy: string;
+                        description: string;
+                        current: {
+                            advanceBalance: number;
+                            openDebt: number;
+                            net: number;
+                        };
+                    };
+                };
             };
         };
     };
@@ -4580,7 +4861,17 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        buildingId: string;
+                        period: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        payload: unknown;
+                        createdById: string;
+                    };
+                };
             };
         };
     };
@@ -4600,7 +4891,17 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        buildingId: string;
+                        period: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        payload: unknown;
+                        createdById: string;
+                    }[];
+                };
             };
         };
     };
@@ -4620,7 +4921,50 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        fund: {
+                            id: string;
+                            name: string;
+                        };
+                        supplier: {
+                            id: string;
+                            name: string;
+                        };
+                        category: {
+                            id: string;
+                            name: string;
+                        } | null;
+                        number: string | null;
+                        id: string;
+                        buildingId: string;
+                        /** @enum {string} */
+                        status: "approved" | "voided" | "draft" | "partially_paid" | "paid";
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        isVoided: boolean;
+                        fundId: string;
+                        /** @description Decimal */
+                        amount: string;
+                        /** @description Decimal */
+                        paidAmount: string;
+                        /** Format: date-time */
+                        dueDate: string | null;
+                        /** Format: date-time */
+                        date: string;
+                        voidReason: string | null;
+                        /** Format: date-time */
+                        approvedAt: string | null;
+                        approvedById: string | null;
+                        createdById: string;
+                        description: string | null;
+                        categoryId: string | null;
+                        supplierId: string;
+                        documentKey: string | null;
+                    }[];
+                };
             };
         };
     };
@@ -4641,7 +4985,38 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        number: string | null;
+                        id: string;
+                        buildingId: string;
+                        /** @enum {string} */
+                        status: "approved" | "voided" | "draft" | "partially_paid" | "paid";
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        isVoided: boolean;
+                        fundId: string;
+                        /** @description Decimal */
+                        amount: string;
+                        /** @description Decimal */
+                        paidAmount: string;
+                        /** Format: date-time */
+                        dueDate: string | null;
+                        /** Format: date-time */
+                        date: string;
+                        voidReason: string | null;
+                        /** Format: date-time */
+                        approvedAt: string | null;
+                        approvedById: string | null;
+                        createdById: string;
+                        description: string | null;
+                        categoryId: string | null;
+                        supplierId: string;
+                        documentKey: string | null;
+                    };
+                };
             };
         };
     };
@@ -4662,7 +5037,27 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        isVoided: boolean;
+                        /** @description Decimal */
+                        amount: string;
+                        /** Format: date-time */
+                        date: string;
+                        /** @enum {string} */
+                        source: "bank" | "cash" | "transfer";
+                        reference: string | null;
+                        voidReason: string | null;
+                        createdById: string;
+                        description: string | null;
+                        supplierId: string;
+                    };
+                };
             };
         };
     };
@@ -4681,7 +5076,38 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        number: string | null;
+                        id: string;
+                        buildingId: string;
+                        /** @enum {string} */
+                        status: "approved" | "voided" | "draft" | "partially_paid" | "paid";
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        isVoided: boolean;
+                        fundId: string;
+                        /** @description Decimal */
+                        amount: string;
+                        /** @description Decimal */
+                        paidAmount: string;
+                        /** Format: date-time */
+                        dueDate: string | null;
+                        /** Format: date-time */
+                        date: string;
+                        voidReason: string | null;
+                        /** Format: date-time */
+                        approvedAt: string | null;
+                        approvedById: string | null;
+                        createdById: string;
+                        description: string | null;
+                        categoryId: string | null;
+                        supplierId: string;
+                        documentKey: string | null;
+                    };
+                };
             };
         };
     };
@@ -4700,7 +5126,33 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        fund: {
+                            id: string;
+                            name: string;
+                        };
+                        id: string;
+                        buildingId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        fundId: string;
+                        /** @enum {string} */
+                        distribution: "manual" | "by_area" | "fixed_per_apartment" | "by_meter";
+                        /** @description Decimal */
+                        rate: string | null;
+                        /** @description Decimal */
+                        fixedAmount: string | null;
+                        isActive: boolean;
+                        /** Format: date-time */
+                        effectiveFrom: string;
+                        /** Format: date-time */
+                        effectiveTo: string | null;
+                    }[];
+                };
             };
         };
     };
@@ -4721,7 +5173,29 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        buildingId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        fundId: string;
+                        /** @enum {string} */
+                        distribution: "manual" | "by_area" | "fixed_per_apartment" | "by_meter";
+                        /** @description Decimal */
+                        rate: string | null;
+                        /** @description Decimal */
+                        fixedAmount: string | null;
+                        isActive: boolean;
+                        /** Format: date-time */
+                        effectiveFrom: string;
+                        /** Format: date-time */
+                        effectiveTo: string | null;
+                    };
+                };
             };
         };
     };
@@ -4742,7 +5216,31 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        buildingId: string;
+                        period: string;
+                        dryRun: boolean;
+                        previews: {
+                            tariffId: string;
+                            name: string;
+                            fundId: string;
+                            lines: number;
+                            total: number;
+                        }[];
+                        created: ({
+                            tariffId: string;
+                            error: string;
+                            accrualId?: unknown;
+                            total?: unknown;
+                        } | {
+                            tariffId: string;
+                            accrualId: string;
+                            total: number;
+                            error?: unknown;
+                        })[];
+                    };
+                };
             };
         };
     };
@@ -4765,7 +5263,29 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        buildingId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        fundId: string;
+                        /** @enum {string} */
+                        distribution: "manual" | "by_area" | "fixed_per_apartment" | "by_meter";
+                        /** @description Decimal */
+                        rate: string | null;
+                        /** @description Decimal */
+                        fixedAmount: string | null;
+                        isActive: boolean;
+                        /** Format: date-time */
+                        effectiveFrom: string;
+                        /** Format: date-time */
+                        effectiveTo: string | null;
+                    };
+                };
             };
         };
     };
@@ -4784,7 +5304,31 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        apartment: {
+                            number: string;
+                            id: string;
+                        };
+                        id: string;
+                        buildingId: string;
+                        /** @enum {string} */
+                        status: "pending" | "approved" | "voided";
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        apartmentId: string;
+                        /** @description Decimal */
+                        amount: string;
+                        accrualLineId: string | null;
+                        /** Format: date-time */
+                        approvedAt: string | null;
+                        approvedById: string | null;
+                        createdById: string;
+                        reason: string;
+                    }[];
+                };
             };
         };
     };
@@ -4805,7 +5349,27 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        buildingId: string;
+                        /** @enum {string} */
+                        status: "pending" | "approved" | "voided";
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        apartmentId: string;
+                        /** @description Decimal */
+                        amount: string;
+                        accrualLineId: string | null;
+                        /** Format: date-time */
+                        approvedAt: string | null;
+                        approvedById: string | null;
+                        createdById: string;
+                        reason: string;
+                    };
+                };
             };
         };
     };
@@ -4824,7 +5388,27 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        buildingId: string;
+                        /** @enum {string} */
+                        status: "pending" | "approved" | "voided";
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        apartmentId: string;
+                        /** @description Decimal */
+                        amount: string;
+                        accrualLineId: string | null;
+                        /** Format: date-time */
+                        approvedAt: string | null;
+                        approvedById: string | null;
+                        createdById: string;
+                        reason: string;
+                    };
+                };
             };
         };
     };
@@ -4845,7 +5429,21 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        buildingId: string;
+                        year: number;
+                        months: {
+                            period: string;
+                            /** @enum {string} */
+                            status: "open" | "soft_closed" | "locked";
+                            canSoftClose: boolean;
+                            statusAction: string | null;
+                            blocking: number;
+                        }[];
+                        yearEndSnapshotId: string;
+                    };
+                };
             };
         };
     };
@@ -4865,7 +5463,78 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        lines: {
+                            apartment: {
+                                number: string;
+                                id: string;
+                                buildingId: string;
+                                /** Format: date-time */
+                                createdAt: string;
+                                /** Format: date-time */
+                                updatedAt: string;
+                                entrance: number;
+                                floor: number | null;
+                                area: number;
+                                /** @description Decimal */
+                                advanceBalance: string;
+                            };
+                            id: string;
+                            /** @enum {string} */
+                            status: "open" | "partially_paid" | "paid" | "overdue";
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            accrualId: string;
+                            apartmentId: string;
+                            /** @description Decimal */
+                            amount: string;
+                            /** @description Decimal */
+                            paidAmount: string;
+                            /** Format: date-time */
+                            dueDate: string | null;
+                        }[];
+                        fund: {
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            name: string;
+                            bankAccountId: string | null;
+                            /** @enum {string} */
+                            type: "maintenance" | "capital_repair" | "special";
+                            /** @description Decimal */
+                            openingBalance: string;
+                        };
+                        template: {
+                            id: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            name: string;
+                            fundId: string;
+                            /** @enum {string} */
+                            distribution: "manual" | "by_area" | "fixed_per_apartment" | "by_meter";
+                            /** @description Decimal */
+                            rate: string | null;
+                            /** @description Decimal */
+                            fixedAmount: string | null;
+                            isActive: boolean;
+                        } | null;
+                        id: string;
+                        period: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        fundId: string;
+                        templateId: string | null;
+                        title: string;
+                    }[];
+                };
             };
         };
     };
@@ -4886,7 +5555,87 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        lines: {
+                            apartment: {
+                                number: string;
+                                id: string;
+                                buildingId: string;
+                                /** Format: date-time */
+                                createdAt: string;
+                                /** Format: date-time */
+                                updatedAt: string;
+                                entrance: number;
+                                floor: number | null;
+                                area: number;
+                                /** @description Decimal */
+                                advanceBalance: string;
+                            };
+                            allocations: {
+                                id: string;
+                                /** Format: date-time */
+                                createdAt: string;
+                                paymentId: string;
+                                /** @description Decimal */
+                                amount: string;
+                                accrualLineId: string;
+                            }[];
+                            id: string;
+                            /** @enum {string} */
+                            status: "open" | "partially_paid" | "paid" | "overdue";
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            accrualId: string;
+                            apartmentId: string;
+                            /** @description Decimal */
+                            amount: string;
+                            /** @description Decimal */
+                            paidAmount: string;
+                            /** Format: date-time */
+                            dueDate: string | null;
+                        }[];
+                        fund: {
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            name: string;
+                            bankAccountId: string | null;
+                            /** @enum {string} */
+                            type: "maintenance" | "capital_repair" | "special";
+                            /** @description Decimal */
+                            openingBalance: string;
+                        };
+                        template: {
+                            id: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            name: string;
+                            fundId: string;
+                            /** @enum {string} */
+                            distribution: "manual" | "by_area" | "fixed_per_apartment" | "by_meter";
+                            /** @description Decimal */
+                            rate: string | null;
+                            /** @description Decimal */
+                            fixedAmount: string | null;
+                            isActive: boolean;
+                        } | null;
+                        id: string;
+                        period: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        fundId: string;
+                        templateId: string | null;
+                        title: string;
+                    } | null;
+                };
             };
         };
     };
@@ -4905,7 +5654,70 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        apartment: {
+                            id: string;
+                            number: string;
+                            entrance: number;
+                            area: number;
+                            buildingId: string;
+                            buildingName: string;
+                        };
+                        summary: {
+                            totalAccrued: number;
+                            totalPaid: number;
+                            debt: number;
+                            debtPrincipal: number;
+                            debtPenalty: number;
+                            advance: number;
+                            advanceLegacy: number;
+                            advanceJournal: number;
+                            advanceComputed: number;
+                            /** @enum {string} */
+                            balanceSource: "journal" | "legacy";
+                            journalSot: boolean;
+                        };
+                        lines: {
+                            id: string;
+                            period: string;
+                            title: string;
+                            fundName: string;
+                            isPenalty: boolean;
+                            amount: number;
+                            paidAmount: number;
+                            balance: number;
+                            /** @enum {string} */
+                            status: "open" | "partially_paid" | "paid" | "overdue";
+                            /** Format: date-time */
+                            dueDate: string | null;
+                            /** Format: date-time */
+                            createdAt: string;
+                        }[];
+                        payments: {
+                            id: string;
+                            amount: number;
+                            allocated: number;
+                            advance: number;
+                            /** Format: date-time */
+                            date: string;
+                            /** @enum {string} */
+                            source: "bank" | "cash" | "transfer";
+                            reference: string | null;
+                        }[];
+                        timeline: {
+                            id: string;
+                            /** @enum {string} */
+                            kind: "accrual" | "payment";
+                            at: string;
+                            title: string;
+                            amount: number;
+                            meta?: {
+                                [key: string]: unknown;
+                            };
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -4924,7 +5736,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/octet-stream": string;
+                };
             };
         };
     };
@@ -4947,7 +5761,29 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        line: {
+                            id: string;
+                            /** @enum {string} */
+                            status: "open" | "partially_paid" | "paid" | "overdue";
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            accrualId: string;
+                            apartmentId: string;
+                            /** @description Decimal */
+                            amount: string;
+                            /** @description Decimal */
+                            paidAmount: string;
+                            /** Format: date-time */
+                            dueDate: string | null;
+                        };
+                        creditNoteAmount: number;
+                        reason: string | null;
+                    };
+                };
             };
         };
     };
@@ -4966,7 +5802,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/octet-stream": string;
+                };
             };
         };
     };
@@ -4985,7 +5823,70 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        apartment: {
+                            id: string;
+                            number: string;
+                            entrance: number;
+                            area: number;
+                            buildingId: string;
+                            buildingName: string;
+                        };
+                        summary: {
+                            totalAccrued: number;
+                            totalPaid: number;
+                            debt: number;
+                            debtPrincipal: number;
+                            debtPenalty: number;
+                            advance: number;
+                            advanceLegacy: number;
+                            advanceJournal: number;
+                            advanceComputed: number;
+                            /** @enum {string} */
+                            balanceSource: "journal" | "legacy";
+                            journalSot: boolean;
+                        };
+                        lines: {
+                            id: string;
+                            period: string;
+                            title: string;
+                            fundName: string;
+                            isPenalty: boolean;
+                            amount: number;
+                            paidAmount: number;
+                            balance: number;
+                            /** @enum {string} */
+                            status: "open" | "partially_paid" | "paid" | "overdue";
+                            /** Format: date-time */
+                            dueDate: string | null;
+                            /** Format: date-time */
+                            createdAt: string;
+                        }[];
+                        payments: {
+                            id: string;
+                            amount: number;
+                            allocated: number;
+                            advance: number;
+                            /** Format: date-time */
+                            date: string;
+                            /** @enum {string} */
+                            source: "bank" | "cash" | "transfer";
+                            reference: string | null;
+                        }[];
+                        timeline: {
+                            id: string;
+                            /** @enum {string} */
+                            kind: "accrual" | "payment";
+                            at: string;
+                            title: string;
+                            amount: number;
+                            meta?: {
+                                [key: string]: unknown;
+                            };
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -5006,7 +5907,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        apartmentId: string;
+                        number: string;
+                        entrance: number;
+                        area: number;
+                        meterConsumption: number;
+                        amount: number;
+                    }[];
+                };
             };
         };
     };
@@ -5025,7 +5935,38 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        fund: {
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            name: string;
+                            bankAccountId: string | null;
+                            /** @enum {string} */
+                            type: "maintenance" | "capital_repair" | "special";
+                            /** @description Decimal */
+                            openingBalance: string;
+                        };
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        fundId: string;
+                        /** @enum {string} */
+                        distribution: "manual" | "by_area" | "fixed_per_apartment" | "by_meter";
+                        /** @description Decimal */
+                        rate: string | null;
+                        /** @description Decimal */
+                        fixedAmount: string | null;
+                        isActive: boolean;
+                    }[];
+                };
             };
         };
     };
@@ -5046,7 +5987,38 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        fund: {
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            name: string;
+                            bankAccountId: string | null;
+                            /** @enum {string} */
+                            type: "maintenance" | "capital_repair" | "special";
+                            /** @description Decimal */
+                            openingBalance: string;
+                        };
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        fundId: string;
+                        /** @enum {string} */
+                        distribution: "manual" | "by_area" | "fixed_per_apartment" | "by_meter";
+                        /** @description Decimal */
+                        rate: string | null;
+                        /** @description Decimal */
+                        fixedAmount: string | null;
+                        isActive: boolean;
+                    };
+                };
             };
         };
     };
@@ -5065,7 +6037,41 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        fund: {
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            name: string;
+                            bankAccountId: string | null;
+                            /** @enum {string} */
+                            type: "maintenance" | "capital_repair" | "special";
+                            /** @description Decimal */
+                            openingBalance: string;
+                        };
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        fundId: string;
+                        /** @enum {string} */
+                        distribution: "manual" | "by_area" | "fixed_per_apartment" | "by_meter";
+                        /** @description Decimal */
+                        rate: string | null;
+                        /** @description Decimal */
+                        fixedAmount: string | null;
+                        isActive: boolean;
+                    } | {
+                        id: string;
+                        deleted: boolean;
+                    };
+                };
             };
         };
     };
@@ -5084,7 +6090,87 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        lines: {
+                            apartment: {
+                                number: string;
+                                id: string;
+                                buildingId: string;
+                                /** Format: date-time */
+                                createdAt: string;
+                                /** Format: date-time */
+                                updatedAt: string;
+                                entrance: number;
+                                floor: number | null;
+                                area: number;
+                                /** @description Decimal */
+                                advanceBalance: string;
+                            };
+                            allocations: {
+                                id: string;
+                                /** Format: date-time */
+                                createdAt: string;
+                                paymentId: string;
+                                /** @description Decimal */
+                                amount: string;
+                                accrualLineId: string;
+                            }[];
+                            id: string;
+                            /** @enum {string} */
+                            status: "open" | "partially_paid" | "paid" | "overdue";
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            accrualId: string;
+                            apartmentId: string;
+                            /** @description Decimal */
+                            amount: string;
+                            /** @description Decimal */
+                            paidAmount: string;
+                            /** Format: date-time */
+                            dueDate: string | null;
+                        }[];
+                        fund: {
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            name: string;
+                            bankAccountId: string | null;
+                            /** @enum {string} */
+                            type: "maintenance" | "capital_repair" | "special";
+                            /** @description Decimal */
+                            openingBalance: string;
+                        };
+                        template: {
+                            id: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            name: string;
+                            fundId: string;
+                            /** @enum {string} */
+                            distribution: "manual" | "by_area" | "fixed_per_apartment" | "by_meter";
+                            /** @description Decimal */
+                            rate: string | null;
+                            /** @description Decimal */
+                            fixedAmount: string | null;
+                            isActive: boolean;
+                        } | null;
+                        id: string;
+                        period: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        fundId: string;
+                        templateId: string | null;
+                        title: string;
+                    } | null;
+                };
             };
         };
     };
@@ -5103,7 +6189,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/octet-stream": string;
+                };
             };
         };
     };
@@ -5122,7 +6210,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/octet-stream": string;
+                };
             };
         };
     };
@@ -5145,7 +6235,87 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        lines: {
+                            apartment: {
+                                number: string;
+                                id: string;
+                                buildingId: string;
+                                /** Format: date-time */
+                                createdAt: string;
+                                /** Format: date-time */
+                                updatedAt: string;
+                                entrance: number;
+                                floor: number | null;
+                                area: number;
+                                /** @description Decimal */
+                                advanceBalance: string;
+                            };
+                            allocations: {
+                                id: string;
+                                /** Format: date-time */
+                                createdAt: string;
+                                paymentId: string;
+                                /** @description Decimal */
+                                amount: string;
+                                accrualLineId: string;
+                            }[];
+                            id: string;
+                            /** @enum {string} */
+                            status: "open" | "partially_paid" | "paid" | "overdue";
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            accrualId: string;
+                            apartmentId: string;
+                            /** @description Decimal */
+                            amount: string;
+                            /** @description Decimal */
+                            paidAmount: string;
+                            /** Format: date-time */
+                            dueDate: string | null;
+                        }[];
+                        fund: {
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            name: string;
+                            bankAccountId: string | null;
+                            /** @enum {string} */
+                            type: "maintenance" | "capital_repair" | "special";
+                            /** @description Decimal */
+                            openingBalance: string;
+                        };
+                        template: {
+                            id: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            name: string;
+                            fundId: string;
+                            /** @enum {string} */
+                            distribution: "manual" | "by_area" | "fixed_per_apartment" | "by_meter";
+                            /** @description Decimal */
+                            rate: string | null;
+                            /** @description Decimal */
+                            fixedAmount: string | null;
+                            isActive: boolean;
+                        } | null;
+                        id: string;
+                        period: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        fundId: string;
+                        templateId: string | null;
+                        title: string;
+                    } | null;
+                };
             };
         };
     };
@@ -5169,7 +6339,31 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            user: {
+                                id: string;
+                                email: string;
+                                firstName: string;
+                                lastName: string;
+                                /** @enum {string} */
+                                role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                            } | null;
+                            id: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            tenantId: string | null;
+                            isPlatform: boolean;
+                            userId: string | null;
+                            action: string;
+                            entityType: string;
+                            entityId: string;
+                            payload: unknown;
+                        }[];
+                        nextCursor: string | null;
+                    };
+                };
             };
         };
     };
@@ -5190,7 +6384,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        totpEnabled: boolean;
+                    };
+                };
             };
         };
     };
@@ -5211,7 +6409,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        totpEnabled: boolean;
+                    };
+                };
             };
         };
     };
@@ -5228,7 +6430,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        secret: string;
+                        otpauthUrl: string;
+                        qrUrl: string;
+                    };
+                };
             };
         };
     };
@@ -5245,7 +6453,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        totpEnabled: boolean;
+                        available: boolean;
+                        required: boolean;
+                        finance2faRequired: boolean;
+                        emailNotifyEnabled: boolean;
+                        onboardingDone: boolean;
+                    };
+                };
             };
         };
     };
@@ -5266,7 +6483,62 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        accessToken: string;
+                        refreshToken: string;
+                        /** @enum {boolean} */
+                        requires2fa: false;
+                        user: {
+                            id: string;
+                            email: string;
+                            firstName: string;
+                            lastName: string;
+                            /** @enum {string} */
+                            role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                            /** @enum {string} */
+                            status: "pending" | "active" | "blocked";
+                            apartmentId: string | null;
+                            tenantId: string | null;
+                            tenant: {
+                                id: string;
+                                name: string;
+                                slug: string;
+                                orgType: string;
+                            } | null;
+                            memberships: {
+                                tenantId: string;
+                                /** @enum {string} */
+                                role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                                /** @enum {string} */
+                                status: "pending" | "active" | "blocked";
+                                tenant: {
+                                    id: string;
+                                    name: string;
+                                    slug: string;
+                                    orgType: string;
+                                    isActive: boolean;
+                                };
+                            }[];
+                        };
+                        memberships: {
+                            id: string;
+                            tenantId: string;
+                            /** @enum {string} */
+                            role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                            /** @enum {string} */
+                            status: "pending" | "active" | "blocked";
+                            tenant: {
+                                id: string;
+                                name: string;
+                                slug: string;
+                                /** @enum {string} */
+                                orgType: "osbb" | "management_company";
+                                isActive: boolean;
+                            };
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -5285,7 +6557,26 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        requiresInvite: true;
+                        apartments: {
+                            id: string;
+                            entrance: number;
+                            number: string;
+                        }[];
+                        message: string;
+                    } | {
+                        requiresInvite: boolean;
+                        apartments: {
+                            number: string;
+                            id: string;
+                            entrance: number;
+                        }[];
+                        message?: unknown;
+                    };
+                };
             };
         };
     };
@@ -5304,7 +6595,22 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        /** @enum {string} */
+                        status: "pending" | "active" | "blocked";
+                        tenantId: string | null;
+                        email: string;
+                        firstName: string;
+                        lastName: string;
+                        /** @enum {string} */
+                        role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                        /** Format: date-time */
+                        approvedAt: string | null;
+                        approvedById: string | null;
+                    };
+                };
             };
         };
     };
@@ -5325,7 +6631,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        message: string;
+                    };
+                };
             };
         };
     };
@@ -5346,7 +6656,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        emailNotifyEnabled: boolean;
+                    };
+                };
             };
         };
     };
@@ -5367,7 +6681,74 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        accessToken: string;
+                        refreshToken: string;
+                        /** @enum {boolean} */
+                        requires2fa: false;
+                        user: {
+                            id: string;
+                            email: string;
+                            firstName: string;
+                            lastName: string;
+                            /** @enum {string} */
+                            role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                            /** @enum {string} */
+                            status: "pending" | "active" | "blocked";
+                            apartmentId: string | null;
+                            tenantId: string | null;
+                            tenant: {
+                                id: string;
+                                name: string;
+                                slug: string;
+                                orgType: string;
+                            } | null;
+                            memberships: {
+                                tenantId: string;
+                                /** @enum {string} */
+                                role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                                /** @enum {string} */
+                                status: "pending" | "active" | "blocked";
+                                tenant: {
+                                    id: string;
+                                    name: string;
+                                    slug: string;
+                                    orgType: string;
+                                    isActive: boolean;
+                                };
+                            }[];
+                        };
+                        memberships: {
+                            id: string;
+                            tenantId: string;
+                            /** @enum {string} */
+                            role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                            /** @enum {string} */
+                            status: "pending" | "active" | "blocked";
+                            tenant: {
+                                id: string;
+                                name: string;
+                                slug: string;
+                                /** @enum {string} */
+                                orgType: "osbb" | "management_company";
+                                isActive: boolean;
+                            };
+                        }[];
+                    } | {
+                        /** @enum {boolean} */
+                        requires2fa: true;
+                        tempToken: string;
+                        user: {
+                            id: string;
+                            email: string;
+                            firstName: string;
+                            lastName: string;
+                            /** @enum {string} */
+                            role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                        };
+                    };
+                };
             };
         };
     };
@@ -5388,7 +6769,17 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        ok: boolean;
+                        message: string;
+                        expiresInSec?: unknown;
+                    } | {
+                        ok: boolean;
+                        message: string;
+                        expiresInSec: number;
+                    };
+                };
             };
         };
     };
@@ -5409,7 +6800,74 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        accessToken: string;
+                        refreshToken: string;
+                        /** @enum {boolean} */
+                        requires2fa: false;
+                        user: {
+                            id: string;
+                            email: string;
+                            firstName: string;
+                            lastName: string;
+                            /** @enum {string} */
+                            role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                            /** @enum {string} */
+                            status: "pending" | "active" | "blocked";
+                            apartmentId: string | null;
+                            tenantId: string | null;
+                            tenant: {
+                                id: string;
+                                name: string;
+                                slug: string;
+                                orgType: string;
+                            } | null;
+                            memberships: {
+                                tenantId: string;
+                                /** @enum {string} */
+                                role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                                /** @enum {string} */
+                                status: "pending" | "active" | "blocked";
+                                tenant: {
+                                    id: string;
+                                    name: string;
+                                    slug: string;
+                                    orgType: string;
+                                    isActive: boolean;
+                                };
+                            }[];
+                        };
+                        memberships: {
+                            id: string;
+                            tenantId: string;
+                            /** @enum {string} */
+                            role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                            /** @enum {string} */
+                            status: "pending" | "active" | "blocked";
+                            tenant: {
+                                id: string;
+                                name: string;
+                                slug: string;
+                                /** @enum {string} */
+                                orgType: "osbb" | "management_company";
+                                isActive: boolean;
+                            };
+                        }[];
+                    } | {
+                        /** @enum {boolean} */
+                        requires2fa: true;
+                        tempToken: string;
+                        user: {
+                            id: string;
+                            email: string;
+                            firstName: string;
+                            lastName: string;
+                            /** @enum {string} */
+                            role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                        };
+                    };
+                };
             };
         };
     };
@@ -5426,7 +6884,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        message: string;
+                    };
+                };
             };
         };
     };
@@ -5443,7 +6905,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        message: string;
+                    };
+                };
             };
         };
     };
@@ -5460,7 +6926,17 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        email: string;
+                        role: string;
+                        apartmentId?: string | null;
+                        apartmentIds?: string[];
+                        tenantId?: string | null;
+                        sid?: string | null;
+                    };
+                };
             };
         };
     };
@@ -5477,7 +6953,24 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        tenantId: string;
+                        /** @enum {string} */
+                        role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                        /** @enum {string} */
+                        status: "pending" | "active" | "blocked";
+                        tenant: {
+                            id: string;
+                            name: string;
+                            slug: string;
+                            /** @enum {string} */
+                            orgType: "osbb" | "management_company";
+                            isActive: boolean;
+                        };
+                    }[];
+                };
             };
         };
     };
@@ -5494,7 +6987,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        onboardingDone: boolean;
+                    };
+                };
             };
         };
     };
@@ -5515,7 +7012,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        ok: true;
+                        message: string;
+                    };
+                };
             };
         };
     };
@@ -5536,7 +7039,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        ok: boolean;
+                        message: string;
+                    };
+                };
             };
         };
     };
@@ -5553,7 +7061,28 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        email: string;
+                        firstName: string;
+                        lastName: string;
+                        phone: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        apartment: {
+                            id: string;
+                            number: string;
+                            entrance: number;
+                        } | null;
+                        apartments: {
+                            id: string;
+                            number: string;
+                            entrance: number;
+                            isPrimary: boolean;
+                        }[];
+                    }[];
+                };
             };
         };
     };
@@ -5570,7 +7099,40 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        apartments: {
+                            id: string;
+                            number: string;
+                            entrance: number;
+                            isPrimary: boolean;
+                            buildingId: string;
+                            buildingName: string;
+                            buildingAddress: string;
+                        }[];
+                        id: string;
+                        /** @enum {string} */
+                        status: "pending" | "active" | "blocked";
+                        tenantId: string | null;
+                        tenant: {
+                            id: string;
+                            name: string;
+                            isActive: boolean;
+                            slug: string;
+                            /** @enum {string} */
+                            orgType: "osbb" | "management_company";
+                        } | null;
+                        apartmentId: string | null;
+                        email: string;
+                        firstName: string;
+                        lastName: string;
+                        phone: string | null;
+                        /** @enum {string} */
+                        role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                        totpEnabled: boolean;
+                        emailNotifyEnabled: boolean;
+                    };
+                };
             };
         };
     };
@@ -5591,7 +7153,17 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        email: string;
+                        firstName: string;
+                        lastName: string;
+                        phone: string | null;
+                        /** @enum {string} */
+                        role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                    };
+                };
             };
         };
     };
@@ -5612,7 +7184,44 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        accessToken: string;
+                        refreshToken: string;
+                        user: {
+                            id: string;
+                            email: string;
+                            firstName: string;
+                            lastName: string;
+                            /** @enum {string} */
+                            role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                            /** @enum {string} */
+                            status: "pending" | "active" | "blocked";
+                            apartmentId: string | null;
+                            tenantId: string | null;
+                            tenant: {
+                                id: string;
+                                name: string;
+                                slug: string;
+                                orgType: string;
+                            } | null;
+                            memberships: {
+                                tenantId: string;
+                                /** @enum {string} */
+                                role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                                /** @enum {string} */
+                                status: "pending" | "active" | "blocked";
+                                tenant: {
+                                    id: string;
+                                    name: string;
+                                    slug: string;
+                                    orgType: string;
+                                    isActive: boolean;
+                                };
+                            }[];
+                        };
+                    };
+                };
             };
         };
     };
@@ -5633,7 +7242,21 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        user: {
+                            id: string;
+                            /** @enum {string} */
+                            status: "pending" | "active" | "blocked";
+                            email: string;
+                            firstName: string;
+                            lastName: string;
+                            /** @enum {string} */
+                            role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                        };
+                        message: string;
+                    };
+                };
             };
         };
     };
@@ -5656,7 +7279,18 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        /** @enum {string} */
+                        status: "pending" | "active" | "blocked";
+                        email: string;
+                        firstName: string;
+                        lastName: string;
+                        /** @enum {string} */
+                        role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                    };
+                };
             };
         };
     };
@@ -5677,7 +7311,62 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        accessToken: string;
+                        refreshToken: string;
+                        /** @enum {boolean} */
+                        requires2fa: false;
+                        user: {
+                            id: string;
+                            email: string;
+                            firstName: string;
+                            lastName: string;
+                            /** @enum {string} */
+                            role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                            /** @enum {string} */
+                            status: "pending" | "active" | "blocked";
+                            apartmentId: string | null;
+                            tenantId: string | null;
+                            tenant: {
+                                id: string;
+                                name: string;
+                                slug: string;
+                                orgType: string;
+                            } | null;
+                            memberships: {
+                                tenantId: string;
+                                /** @enum {string} */
+                                role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                                /** @enum {string} */
+                                status: "pending" | "active" | "blocked";
+                                tenant: {
+                                    id: string;
+                                    name: string;
+                                    slug: string;
+                                    orgType: string;
+                                    isActive: boolean;
+                                };
+                            }[];
+                        };
+                        memberships: {
+                            id: string;
+                            tenantId: string;
+                            /** @enum {string} */
+                            role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                            /** @enum {string} */
+                            status: "pending" | "active" | "blocked";
+                            tenant: {
+                                id: string;
+                                name: string;
+                                slug: string;
+                                /** @enum {string} */
+                                orgType: "osbb" | "management_company";
+                                isActive: boolean;
+                            };
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -5694,7 +7383,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            userAgent: string | null;
+                            ip: string | null;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            lastUsedAt: string;
+                            current: boolean;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -5713,7 +7415,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        ok: boolean;
+                        currentRevoked: boolean;
+                    };
+                };
             };
         };
     };
@@ -5730,7 +7437,19 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        kind: "manual" | "weekly";
+                        id: string;
+                        weekKey?: string;
+                        finishedAt: string | null;
+                        sizeBytes: number | null;
+                        status: string;
+                        relativePath: string;
+                        source: string | null;
+                    }[];
+                };
             };
         };
     };
@@ -5747,7 +7466,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        kind: "manual" | "weekly";
+                        id: string;
+                        relativePath: string;
+                        finishedAt: string;
+                        sizeBytes: number;
+                        /** @enum {string} */
+                        status: "ok" | "partial";
+                        source: string;
+                        weekKey?: string;
+                    };
+                };
             };
         };
     };
@@ -5764,7 +7496,17 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        backupDir: string;
+                        weekKey: string;
+                        weeklyExists: boolean;
+                        lastBackupAt: string | null;
+                        lastBackupStatus: ("ok" | "partial") | null;
+                        lastFullBackupAt: string | null;
+                        autoSchedule: string;
+                    };
+                };
             };
         };
     };
@@ -5788,7 +7530,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        kind: "manual" | "weekly";
+                        id: string;
+                        relativePath: string;
+                        finishedAt: string;
+                        sizeBytes: number;
+                        /** @enum {string} */
+                        status: "ok" | "partial";
+                        source: string;
+                        weekKey?: string;
+                    };
+                };
             };
         };
     };
@@ -5805,7 +7560,17 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        skipped: boolean;
+                        weekKey: string;
+                        relativePath?: string;
+                        finishedAt?: string;
+                        sizeBytes?: number;
+                        reason?: string;
+                        status?: string;
+                    };
+                };
             };
         };
     };
@@ -5825,7 +7590,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/octet-stream": string;
+                };
             };
         };
     };
@@ -5842,7 +7609,64 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        _count: {
+                            apartments: number;
+                        };
+                        bankAccounts: {
+                            funds: {
+                                id: string;
+                                buildingId: string;
+                                /** Format: date-time */
+                                createdAt: string;
+                                /** Format: date-time */
+                                updatedAt: string;
+                                name: string;
+                                bankAccountId: string | null;
+                                /** @enum {string} */
+                                type: "maintenance" | "capital_repair" | "special";
+                                /** @description Decimal */
+                                openingBalance: string;
+                            }[];
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            description: string | null;
+                            bankName: string;
+                            iban: string;
+                        }[];
+                        funds: {
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            name: string;
+                            bankAccountId: string | null;
+                            /** @enum {string} */
+                            type: "maintenance" | "capital_repair" | "special";
+                            /** @description Decimal */
+                            openingBalance: string;
+                        }[];
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        tenantId: string;
+                        address: string;
+                        edrpou: string | null;
+                        showDebtorsToResidents: boolean;
+                        isInitialized: boolean;
+                        settings: unknown;
+                    } | null;
+                };
             };
         };
     };
@@ -5863,7 +7687,14 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        name: string;
+                        address: string;
+                        edrpou: string | null;
+                    };
+                };
             };
         };
     };
@@ -5880,7 +7711,61 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        users: {
+                            isPrimary: boolean;
+                            id: string;
+                            /** @enum {string} */
+                            status: "pending" | "active" | "blocked";
+                            email: string;
+                            firstName: string;
+                            lastName: string;
+                        }[];
+                        residents: {
+                            id: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            apartmentId: string;
+                            email: string | null;
+                            firstName: string;
+                            lastName: string;
+                            phone: string | null;
+                            iban: string | null;
+                            isOwner: boolean;
+                        }[];
+                        apartmentLinks: {
+                            user: {
+                                id: string;
+                                /** @enum {string} */
+                                status: "pending" | "active" | "blocked";
+                                email: string;
+                                firstName: string;
+                                lastName: string;
+                            };
+                            id: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            apartmentId: string;
+                            userId: string;
+                            isPrimary: boolean;
+                        }[];
+                        number: string;
+                        id: string;
+                        buildingId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        entrance: number;
+                        floor: number | null;
+                        area: number;
+                        /** @description Decimal */
+                        advanceBalance: string;
+                    }[];
+                };
             };
         };
     };
@@ -5901,7 +7786,22 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        number: string;
+                        id: string;
+                        buildingId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        entrance: number;
+                        floor: number | null;
+                        area: number;
+                        /** @description Decimal */
+                        advanceBalance: string;
+                    };
+                };
             };
         };
     };
@@ -5922,7 +7822,19 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        created: number;
+                        updated: number;
+                        removed: number;
+                        linked: number;
+                        skipped: number;
+                        errors: {
+                            line: number;
+                            message: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -5945,7 +7857,22 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        apartmentId: string;
+                        email: string | null;
+                        firstName: string;
+                        lastName: string;
+                        phone: string | null;
+                        iban: string | null;
+                        isOwner: boolean;
+                    };
+                };
             };
         };
     };
@@ -5964,7 +7891,124 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        building: {
+                            id: string;
+                            tenantId: string;
+                        };
+                        residents: {
+                            id: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            apartmentId: string;
+                            email: string | null;
+                            firstName: string;
+                            lastName: string;
+                            phone: string | null;
+                            iban: string | null;
+                            isOwner: boolean;
+                        }[];
+                        accrualLines: {
+                            accrual: {
+                                id: string;
+                                period: string;
+                                /** Format: date-time */
+                                createdAt: string;
+                                fundId: string;
+                                templateId: string | null;
+                                title: string;
+                            };
+                            allocations: {
+                                id: string;
+                                /** Format: date-time */
+                                createdAt: string;
+                                paymentId: string;
+                                /** @description Decimal */
+                                amount: string;
+                                accrualLineId: string;
+                            }[];
+                            id: string;
+                            /** @enum {string} */
+                            status: "open" | "partially_paid" | "paid" | "overdue";
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            accrualId: string;
+                            apartmentId: string;
+                            /** @description Decimal */
+                            amount: string;
+                            /** @description Decimal */
+                            paidAmount: string;
+                            /** Format: date-time */
+                            dueDate: string | null;
+                        }[];
+                        payments: {
+                            id: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            isVoided: boolean;
+                            apartmentId: string;
+                            /** @description Decimal */
+                            amount: string;
+                            /** Format: date-time */
+                            date: string;
+                            /** @enum {string} */
+                            source: "bank" | "cash" | "transfer";
+                            reference: string | null;
+                            voidReason: string | null;
+                        }[];
+                        number: string;
+                        id: string;
+                        buildingId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        entrance: number;
+                        floor: number | null;
+                        area: number;
+                        /** @description Decimal */
+                        advanceBalance: string;
+                    } | {
+                        advanceBalance: null;
+                        accrualLines: unknown[];
+                        payments: unknown[];
+                        building: {
+                            id: string;
+                            tenantId: string;
+                        };
+                        residents: {
+                            id: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            apartmentId: string;
+                            email: string | null;
+                            firstName: string;
+                            lastName: string;
+                            phone: string | null;
+                            iban: string | null;
+                            isOwner: boolean;
+                        }[];
+                        number: string;
+                        id: string;
+                        buildingId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        entrance: number;
+                        floor: number | null;
+                        area: number;
+                    };
+                };
             };
         };
     };
@@ -5983,7 +8027,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        deleted: boolean;
+                    };
+                };
             };
         };
     };
@@ -6006,7 +8054,22 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        number: string;
+                        id: string;
+                        buildingId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        entrance: number;
+                        floor: number | null;
+                        area: number;
+                        /** @description Decimal */
+                        advanceBalance: string;
+                    };
+                };
             };
         };
     };
@@ -6025,7 +8088,64 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        _count: {
+                            apartments: number;
+                        };
+                        bankAccounts: {
+                            funds: {
+                                id: string;
+                                buildingId: string;
+                                /** Format: date-time */
+                                createdAt: string;
+                                /** Format: date-time */
+                                updatedAt: string;
+                                name: string;
+                                bankAccountId: string | null;
+                                /** @enum {string} */
+                                type: "maintenance" | "capital_repair" | "special";
+                                /** @description Decimal */
+                                openingBalance: string;
+                            }[];
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            description: string | null;
+                            bankName: string;
+                            iban: string;
+                        }[];
+                        funds: {
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            name: string;
+                            bankAccountId: string | null;
+                            /** @enum {string} */
+                            type: "maintenance" | "capital_repair" | "special";
+                            /** @description Decimal */
+                            openingBalance: string;
+                        }[];
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        tenantId: string;
+                        address: string;
+                        edrpou: string | null;
+                        showDebtorsToResidents: boolean;
+                        isInitialized: boolean;
+                        settings: unknown;
+                    } | null;
+                };
             };
         };
     };
@@ -6046,7 +8166,22 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        tenantId: string;
+                        address: string;
+                        edrpou: string | null;
+                        showDebtorsToResidents: boolean;
+                        isInitialized: boolean;
+                        settings: unknown;
+                    };
+                };
             };
         };
     };
@@ -6065,7 +8200,119 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        forms: {
+                            id: string;
+                            title: string;
+                            /** @enum {string} */
+                            kind: "receipt" | "board_report" | "custom";
+                            /** @enum {number} */
+                            layoutVersion: 1;
+                            layoutBlocks: ({
+                                id: string;
+                                /** @enum {string} */
+                                type: "heading";
+                                text: string;
+                                level: 1 | 2 | 3;
+                                /** @enum {string} */
+                                align?: "left" | "center" | "right";
+                                /** @enum {string} */
+                                weight?: "bold" | "normal" | "light";
+                            } | {
+                                id: string;
+                                /** @enum {string} */
+                                type: "paragraph";
+                                text: string;
+                                level: 1 | 2 | 3;
+                                /** @enum {string} */
+                                align?: "left" | "center" | "right";
+                                /** @enum {string} */
+                                weight?: "bold" | "normal" | "light";
+                            } | {
+                                id: string;
+                                /** @enum {string} */
+                                type: "fieldRow";
+                                fields: {
+                                    label: unknown;
+                                    value: unknown;
+                                }[];
+                            } | {
+                                id: string;
+                                /** @enum {string} */
+                                type: "fieldGrid";
+                                fields: {
+                                    label: unknown;
+                                    value: unknown;
+                                }[];
+                                columns?: 2 | 3 | 4;
+                            } | {
+                                id: string;
+                                /** @enum {string} */
+                                type: "customTable";
+                                columns: {
+                                    id: unknown;
+                                    label: unknown;
+                                }[];
+                                rows: {
+                                    id: unknown;
+                                    cells: unknown;
+                                }[];
+                            } | {
+                                id: string;
+                                /** @enum {string} */
+                                type: "dataTable";
+                                /** @enum {string} */
+                                kind: "fund_balances" | "expenses_by_category" | "debtors" | "payment_lines";
+                                title?: string;
+                            } | {
+                                id: string;
+                                /** @enum {string} */
+                                type: "signatures";
+                                left: string;
+                                right: string;
+                            } | {
+                                id: string;
+                                /** @enum {string} */
+                                type: "divider";
+                            } | {
+                                id: string;
+                                /** @enum {string} */
+                                type: "spacer";
+                                /** @enum {string} */
+                                size: "small" | "medium" | "large";
+                            } | {
+                                id: string;
+                                /** @enum {string} */
+                                type: "columns";
+                                columns: {
+                                    id: unknown;
+                                    blocks: unknown;
+                                }[];
+                            })[];
+                            /** @enum {string} */
+                            pageSize: "A4";
+                            /** @enum {string} */
+                            orientation: "portrait" | "landscape";
+                            isActive: boolean;
+                            sortOrder: number;
+                            content?: string;
+                        }[];
+                        exports: {
+                            id: string;
+                            title: string;
+                            /** @enum {string} */
+                            kind: "expenses" | "debtors" | "cash_flow" | "statement" | "export_pack";
+                            fields: {
+                                key: string;
+                                label: string;
+                                enabled: boolean;
+                            }[];
+                            isActive: boolean;
+                            sortOrder: number;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -6086,7 +8333,119 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        forms: {
+                            id: string;
+                            title: string;
+                            /** @enum {string} */
+                            kind: "receipt" | "board_report" | "custom";
+                            /** @enum {number} */
+                            layoutVersion: 1;
+                            layoutBlocks: ({
+                                id: string;
+                                /** @enum {string} */
+                                type: "heading";
+                                text: string;
+                                level: 1 | 2 | 3;
+                                /** @enum {string} */
+                                align?: "left" | "center" | "right";
+                                /** @enum {string} */
+                                weight?: "bold" | "normal" | "light";
+                            } | {
+                                id: string;
+                                /** @enum {string} */
+                                type: "paragraph";
+                                text: string;
+                                level: 1 | 2 | 3;
+                                /** @enum {string} */
+                                align?: "left" | "center" | "right";
+                                /** @enum {string} */
+                                weight?: "bold" | "normal" | "light";
+                            } | {
+                                id: string;
+                                /** @enum {string} */
+                                type: "fieldRow";
+                                fields: {
+                                    label: unknown;
+                                    value: unknown;
+                                }[];
+                            } | {
+                                id: string;
+                                /** @enum {string} */
+                                type: "fieldGrid";
+                                fields: {
+                                    label: unknown;
+                                    value: unknown;
+                                }[];
+                                columns?: 2 | 3 | 4;
+                            } | {
+                                id: string;
+                                /** @enum {string} */
+                                type: "customTable";
+                                columns: {
+                                    id: unknown;
+                                    label: unknown;
+                                }[];
+                                rows: {
+                                    id: unknown;
+                                    cells: unknown;
+                                }[];
+                            } | {
+                                id: string;
+                                /** @enum {string} */
+                                type: "dataTable";
+                                /** @enum {string} */
+                                kind: "fund_balances" | "expenses_by_category" | "debtors" | "payment_lines";
+                                title?: string;
+                            } | {
+                                id: string;
+                                /** @enum {string} */
+                                type: "signatures";
+                                left: string;
+                                right: string;
+                            } | {
+                                id: string;
+                                /** @enum {string} */
+                                type: "divider";
+                            } | {
+                                id: string;
+                                /** @enum {string} */
+                                type: "spacer";
+                                /** @enum {string} */
+                                size: "small" | "medium" | "large";
+                            } | {
+                                id: string;
+                                /** @enum {string} */
+                                type: "columns";
+                                columns: {
+                                    id: unknown;
+                                    blocks: unknown;
+                                }[];
+                            })[];
+                            /** @enum {string} */
+                            pageSize: "A4";
+                            /** @enum {string} */
+                            orientation: "portrait" | "landscape";
+                            isActive: boolean;
+                            sortOrder: number;
+                            content?: string;
+                        }[];
+                        exports: {
+                            id: string;
+                            title: string;
+                            /** @enum {string} */
+                            kind: "expenses" | "debtors" | "cash_flow" | "statement" | "export_pack";
+                            fields: {
+                                key: string;
+                                label: string;
+                                enabled: boolean;
+                            }[];
+                            isActive: boolean;
+                            sortOrder: number;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -6103,7 +8462,26 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        _count: {
+                            apartments: number;
+                            funds: number;
+                        };
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        tenantId: string;
+                        address: string;
+                        edrpou: string | null;
+                        showDebtorsToResidents: boolean;
+                        isInitialized: boolean;
+                        settings: unknown;
+                    }[];
+                };
             };
         };
     };
@@ -6122,7 +8500,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        pendingResidents: number;
+                        openRequests: number;
+                        activePolls: number;
+                        openAccrualLines: number;
+                        documents: number;
+                        buildingId: string | null;
+                    };
+                };
             };
         };
     };
@@ -6139,7 +8526,27 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        buildings: {
+                            buildingId: string;
+                            name: string;
+                            address: string;
+                            apartments: number;
+                            debt: number;
+                            openRequests: number;
+                            overdueRequests: number;
+                            collectionRate: number;
+                        }[];
+                        totals: {
+                            debt: number;
+                            buildingCount: number;
+                            openRequests: number;
+                            overdueRequests: number;
+                            apartments: number;
+                        };
+                    };
+                };
             };
         };
     };
@@ -6158,7 +8565,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        deleted: boolean;
+                    };
+                };
             };
         };
     };
@@ -6181,7 +8592,22 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        apartmentId: string;
+                        email: string | null;
+                        firstName: string;
+                        lastName: string;
+                        phone: string | null;
+                        iban: string | null;
+                        isOwner: boolean;
+                    };
+                };
             };
         };
     };
@@ -6198,7 +8624,42 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        apartments: {
+                            number: string;
+                            id: string;
+                            building: {
+                                id: string;
+                                name: string;
+                            };
+                            entrance: number;
+                            area: number;
+                        }[];
+                        users: {
+                            id: string;
+                            /** @enum {string} */
+                            status: "pending" | "active" | "blocked";
+                            apartmentId: string | null;
+                            email: string;
+                            firstName: string;
+                            lastName: string;
+                            /** @enum {string} */
+                            role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                        }[];
+                        requests: {
+                            id: string;
+                            /** @enum {string} */
+                            status: "new" | "in_progress" | "done";
+                            /** Format: date-time */
+                            createdAt: string;
+                            title: string;
+                            category: string;
+                            /** @enum {string} */
+                            priority: "low" | "normal" | "high" | "urgent";
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -6217,7 +8678,51 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        name: string;
+                        address: string;
+                        edrpou: string | null;
+                        isInitialized: boolean;
+                        showDebtorsToResidents: boolean;
+                        registrationEnabled: boolean;
+                        registrationInviteCode: string;
+                        expenseDualApprovalThreshold: number | null;
+                        autoApplyAdvance: boolean;
+                        showBankDetailsToResidents: boolean;
+                        defaultAccrualDueDays: number;
+                        reminderDaysBeforeDue: number;
+                        metersReadingDeadlineDay: number;
+                        /** @enum {string} */
+                        locale: "uk" | "ru";
+                        slaHoursByCategory: {
+                            [key: string]: number;
+                        };
+                        features: {
+                            polls?: boolean;
+                            requests?: boolean;
+                            webPush?: boolean;
+                            email?: boolean;
+                            messenger?: boolean;
+                            meetings?: boolean;
+                            onlinePayments?: boolean;
+                        };
+                        journalSot: boolean;
+                        strictBankRec: boolean;
+                        /** @enum {string} */
+                        defaultCashFlowSource: "journal" | "legacy" | "both";
+                        finance: {
+                            journalSot?: boolean;
+                            journalSotChangedAt?: string;
+                            journalSotChangedBy?: string;
+                            journalSotForced?: boolean;
+                            strictBankRec?: boolean;
+                            /** @enum {string} */
+                            defaultCashFlowSource?: "journal" | "legacy" | "both";
+                        };
+                    } | null;
+                };
             };
         };
     };
@@ -6238,7 +8743,39 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        name: string;
+                        showDebtorsToResidents: boolean;
+                        registrationEnabled: boolean;
+                        registrationInviteCode: string;
+                        expenseDualApprovalThreshold: number | null;
+                        autoApplyAdvance: boolean;
+                        showBankDetailsToResidents: boolean;
+                        defaultAccrualDueDays: number;
+                        reminderDaysBeforeDue: number;
+                        metersReadingDeadlineDay: number;
+                        /** @enum {string} */
+                        locale: "uk" | "ru";
+                        slaHoursByCategory: {
+                            [key: string]: number;
+                        };
+                        journalSot: boolean;
+                        strictBankRec: boolean;
+                        /** @enum {string} */
+                        defaultCashFlowSource: "journal" | "legacy" | "both";
+                        finance: {
+                            journalSot?: boolean;
+                            journalSotChangedAt?: string;
+                            journalSotChangedBy?: string;
+                            journalSotForced?: boolean;
+                            strictBankRec?: boolean;
+                            /** @enum {string} */
+                            defaultCashFlowSource?: "journal" | "legacy" | "both";
+                        };
+                    };
+                };
             };
         };
     };
@@ -6255,7 +8792,27 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        isRead: boolean;
+                        author: {
+                            id: string;
+                            firstName: string;
+                            lastName: string;
+                        };
+                        id: string;
+                        buildingId: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        tenantId: string | null;
+                        title: string;
+                        body: string;
+                        isPinned: boolean;
+                        authorId: string;
+                    }[];
+                };
             };
         };
     };
@@ -6276,7 +8833,26 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        author: {
+                            id: string;
+                            firstName: string;
+                            lastName: string;
+                        };
+                        id: string;
+                        buildingId: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        tenantId: string | null;
+                        title: string;
+                        body: string;
+                        isPinned: boolean;
+                        authorId: string;
+                    };
+                };
             };
         };
     };
@@ -6293,7 +8869,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        marked: number;
+                    };
+                };
             };
         };
     };
@@ -6310,7 +8890,17 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        unread: number;
+                        total?: unknown;
+                        read?: unknown;
+                    } | {
+                        unread: number;
+                        total: number;
+                        read: number;
+                    };
+                };
             };
         };
     };
@@ -6329,7 +8919,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        deleted: boolean;
+                    };
+                };
             };
         };
     };
@@ -6348,7 +8943,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        ok: boolean;
+                        announcementId: string;
+                    };
+                };
             };
         };
     };
@@ -6365,7 +8965,40 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        question: string;
+                        isActive: boolean;
+                        /** Format: date-time */
+                        endsAt: string | null;
+                        /** @enum {string} */
+                        voteWeight: "by_area" | "one_per_user" | "one_per_apartment";
+                        /** @description Decimal */
+                        quorumPercent: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        _count: {
+                            votes: number;
+                        };
+                        options: {
+                            id: string;
+                            text: string;
+                            pollId: string;
+                            voteCount: number;
+                            weightSum: number;
+                        }[];
+                        userVote: string;
+                        stats: {
+                            votedWeight: number;
+                            eligibleWeight: number;
+                            participationPercent: number;
+                            quorumPercent: number | null;
+                            quorumMet: boolean;
+                            voteCount: number;
+                        };
+                    }[];
+                };
             };
         };
     };
@@ -6386,7 +9019,34 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        _count: {
+                            votes: number;
+                        };
+                        options: {
+                            _count: {
+                                votes: number;
+                            };
+                            id: string;
+                            pollId: string;
+                            text: string;
+                        }[];
+                        id: string;
+                        buildingId: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        tenantId: string | null;
+                        isActive: boolean;
+                        question: string;
+                        /** Format: date-time */
+                        endsAt: string | null;
+                        /** @enum {string} */
+                        voteWeight: "by_area" | "one_per_user" | "one_per_apartment";
+                        /** @description Decimal */
+                        quorumPercent: string | null;
+                    };
+                };
             };
         };
     };
@@ -6405,7 +9065,39 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        question: string;
+                        isActive: boolean;
+                        /** Format: date-time */
+                        endsAt: string | null;
+                        /** @enum {string} */
+                        voteWeight: "by_area" | "one_per_user" | "one_per_apartment";
+                        /** @description Decimal */
+                        quorumPercent: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        options: {
+                            id: string;
+                            text: string;
+                            voteCount: number;
+                            weightSum: number;
+                        }[];
+                        _count: {
+                            votes: number;
+                        };
+                        userVote: string;
+                        stats: {
+                            votedWeight: number;
+                            eligibleWeight: number;
+                            participationPercent: number;
+                            quorumPercent: number | null;
+                            quorumMet: boolean;
+                            voteCount: number;
+                        };
+                    };
+                };
             };
         };
     };
@@ -6424,7 +9116,42 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        stats: {
+                            votedWeight: number;
+                            eligibleWeight: number;
+                            participationPercent: number;
+                            quorumPercent: number | null;
+                            quorumMet: boolean;
+                            voteCount: number;
+                        };
+                        _count: {
+                            votes: number;
+                        };
+                        options: {
+                            _count: {
+                                votes: number;
+                            };
+                            id: string;
+                            pollId: string;
+                            text: string;
+                        }[];
+                        id: string;
+                        buildingId: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        tenantId: string | null;
+                        isActive: boolean;
+                        question: string;
+                        /** Format: date-time */
+                        endsAt: string | null;
+                        /** @enum {string} */
+                        voteWeight: "by_area" | "one_per_user" | "one_per_apartment";
+                        /** @description Decimal */
+                        quorumPercent: string | null;
+                    };
+                };
             };
         };
     };
@@ -6447,7 +9174,39 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        question: string;
+                        isActive: boolean;
+                        /** Format: date-time */
+                        endsAt: string | null;
+                        /** @enum {string} */
+                        voteWeight: "by_area" | "one_per_user" | "one_per_apartment";
+                        /** @description Decimal */
+                        quorumPercent: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        options: {
+                            id: string;
+                            text: string;
+                            voteCount: number;
+                            weightSum: number;
+                        }[];
+                        _count: {
+                            votes: number;
+                        };
+                        userVote: string;
+                        stats: {
+                            votedWeight: number;
+                            eligibleWeight: number;
+                            participationPercent: number;
+                            quorumPercent: number | null;
+                            quorumMet: boolean;
+                            voteCount: number;
+                        };
+                    };
+                };
             };
         };
     };
@@ -6464,7 +9223,86 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        author: {
+                            id: string;
+                            email: string;
+                            firstName: string;
+                            lastName: string;
+                        };
+                        assignee: {
+                            id: string;
+                            firstName: string;
+                            lastName: string;
+                        } | null;
+                        id: string;
+                        buildingId: string | null;
+                        /** @enum {string} */
+                        status: "new" | "in_progress" | "done";
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        tenantId: string | null;
+                        title: string;
+                        apartmentId: string | null;
+                        /** Format: date-time */
+                        dueAt: string | null;
+                        authorId: string;
+                        clientRequestId: string | null;
+                        description: string;
+                        category: string;
+                        /** @enum {string} */
+                        priority: "low" | "normal" | "high" | "urgent";
+                        assigneeId: string | null;
+                        photoKeys: ({
+                            length: number;
+                        } & {
+                            [key: string]: string;
+                        }) | ({
+                            length: number;
+                        } & {
+                            [key: string]: (string | number | false | true | unknown | ({
+                                length: number;
+                            } & {
+                                [key: string]: unknown;
+                            })) | null;
+                        }) | ({
+                            length: number;
+                        } & {
+                            [key: string]: string | ({
+                                length: number;
+                            } & {
+                                [key: string]: (string | number | false | true | unknown | ({
+                                    length: number;
+                                } & {
+                                    [key: string]: unknown;
+                                })) | null;
+                            }) | ({
+                                length: number;
+                            } & {
+                                [key: string]: string | ({
+                                    length: number;
+                                } & {
+                                    [key: string]: (string | number | false | true | unknown | ({
+                                        length: number;
+                                    } & {
+                                        [key: string]: unknown;
+                                    })) | null;
+                                }) | unknown;
+                            });
+                        });
+                        /** Format: date-time */
+                        slaWarnedAt: string | null;
+                        /** Format: date-time */
+                        slaBreachedAt: string | null;
+                        /** @enum {string} */
+                        slaStatus: "ok" | "warning" | "breached" | "none";
+                        isOverdue: boolean;
+                        photoUrls: string[];
+                    }[];
+                };
             };
         };
     };
@@ -6485,7 +9323,80 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        author: {
+                            id: string;
+                            firstName: string;
+                            lastName: string;
+                        };
+                        id: string;
+                        buildingId: string | null;
+                        /** @enum {string} */
+                        status: "new" | "in_progress" | "done";
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        tenantId: string | null;
+                        title: string;
+                        apartmentId: string | null;
+                        /** Format: date-time */
+                        dueAt: string | null;
+                        authorId: string;
+                        clientRequestId: string | null;
+                        description: string;
+                        category: string;
+                        /** @enum {string} */
+                        priority: "low" | "normal" | "high" | "urgent";
+                        assigneeId: string | null;
+                        photoKeys: ({
+                            length: number;
+                        } & {
+                            [key: string]: string;
+                        }) | ({
+                            length: number;
+                        } & {
+                            [key: string]: (string | number | false | true | unknown | ({
+                                length: number;
+                            } & {
+                                [key: string]: unknown;
+                            })) | null;
+                        }) | ({
+                            length: number;
+                        } & {
+                            [key: string]: string | ({
+                                length: number;
+                            } & {
+                                [key: string]: (string | number | false | true | unknown | ({
+                                    length: number;
+                                } & {
+                                    [key: string]: unknown;
+                                })) | null;
+                            }) | ({
+                                length: number;
+                            } & {
+                                [key: string]: string | ({
+                                    length: number;
+                                } & {
+                                    [key: string]: (string | number | false | true | unknown | ({
+                                        length: number;
+                                    } & {
+                                        [key: string]: unknown;
+                                    })) | null;
+                                }) | unknown;
+                            });
+                        });
+                        /** Format: date-time */
+                        slaWarnedAt: string | null;
+                        /** Format: date-time */
+                        slaBreachedAt: string | null;
+                        /** @enum {string} */
+                        slaStatus: "ok" | "warning" | "breached" | "none";
+                        isOverdue: boolean;
+                        photoUrls: string[];
+                    };
+                };
             };
         };
     };
@@ -6508,7 +9419,58 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            author: {
+                                id: string;
+                                email: string;
+                                firstName: string;
+                                lastName: string;
+                            };
+                            assignee: {
+                                id: string;
+                                firstName: string;
+                                lastName: string;
+                            } | null;
+                            id: string;
+                            buildingId: string | null;
+                            /** @enum {string} */
+                            status: "new" | "in_progress" | "done";
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            tenantId: string | null;
+                            title: string;
+                            apartmentId: string | null;
+                            /** Format: date-time */
+                            dueAt: string | null;
+                            authorId: string;
+                            clientRequestId: string | null;
+                            description: string;
+                            category: string;
+                            /** @enum {string} */
+                            priority: "low" | "normal" | "high" | "urgent";
+                            assigneeId: string | null;
+                            photoKeys: unknown;
+                            /** Format: date-time */
+                            slaWarnedAt: string | null;
+                            /** Format: date-time */
+                            slaBreachedAt: string | null;
+                            /** @enum {string} */
+                            slaStatus: "ok" | "warning" | "breached" | "none";
+                            isOverdue: boolean;
+                        }[];
+                        summary: {
+                            open: number;
+                            overdue: number;
+                            warning: number;
+                            unassigned: number;
+                            urgent: number;
+                        };
+                    };
+                };
             };
         };
     };
@@ -6531,7 +9493,87 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        author: {
+                            id: string;
+                            email: string;
+                            firstName: string;
+                            lastName: string;
+                            emailNotifyEnabled: boolean;
+                        };
+                        assignee: {
+                            id: string;
+                            firstName: string;
+                            lastName: string;
+                        } | null;
+                        id: string;
+                        buildingId: string | null;
+                        /** @enum {string} */
+                        status: "new" | "in_progress" | "done";
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        tenantId: string | null;
+                        title: string;
+                        apartmentId: string | null;
+                        /** Format: date-time */
+                        dueAt: string | null;
+                        authorId: string;
+                        clientRequestId: string | null;
+                        description: string;
+                        category: string;
+                        /** @enum {string} */
+                        priority: "low" | "normal" | "high" | "urgent";
+                        assigneeId: string | null;
+                        photoKeys: ({
+                            length: number;
+                        } & {
+                            [key: string]: string;
+                        }) | ({
+                            length: number;
+                        } & {
+                            [key: string]: (string | number | false | true | unknown | ({
+                                length: number;
+                            } & {
+                                [key: string]: unknown;
+                            })) | null;
+                        }) | ({
+                            length: number;
+                        } & {
+                            [key: string]: string | ({
+                                length: number;
+                            } & {
+                                [key: string]: (string | number | false | true | unknown | ({
+                                    length: number;
+                                } & {
+                                    [key: string]: unknown;
+                                })) | null;
+                            }) | ({
+                                length: number;
+                            } & {
+                                [key: string]: string | ({
+                                    length: number;
+                                } & {
+                                    [key: string]: (string | number | false | true | unknown | ({
+                                        length: number;
+                                    } & {
+                                        [key: string]: unknown;
+                                    })) | null;
+                                }) | unknown;
+                            });
+                        });
+                        /** Format: date-time */
+                        slaWarnedAt: string | null;
+                        /** Format: date-time */
+                        slaBreachedAt: string | null;
+                        /** @enum {string} */
+                        slaStatus: "ok" | "warning" | "breached" | "none";
+                        isOverdue: boolean;
+                        photoUrls: string[];
+                    };
+                };
             };
         };
     };
@@ -6552,7 +9594,17 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        priority: "low" | "normal" | "high" | "urgent";
+                        category: string;
+                        slaHoursHint: number;
+                        reasons: string[];
+                    } | {
+                        enabled: boolean;
+                    };
+                };
             };
         };
     };
@@ -6573,7 +9625,14 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        title: string;
+                        body: string;
+                    } | {
+                        enabled: boolean;
+                    };
+                };
             };
         };
     };
@@ -6594,7 +9653,15 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        hints: string[];
+                        lookForApartment: boolean;
+                        lookForIban: boolean;
+                    } | {
+                        enabled: boolean;
+                    };
+                };
             };
         };
     };
@@ -6611,7 +9678,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        enabled: boolean;
+                        mode: string;
+                        note: string;
+                    };
+                };
             };
         };
     };
@@ -6628,7 +9701,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        fileUrl: string;
+                        fileKey: string;
+                    }[];
+                };
             };
         };
     };
@@ -6649,7 +9727,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        fileUrl: string;
+                        id: string;
+                        buildingId: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        tenantId: string | null;
+                        title: string;
+                        description: string | null;
+                        fileKey: string;
+                        isPublic: boolean;
+                    };
+                };
             };
         };
     };
@@ -6666,7 +9757,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        fileUrl: string;
+                        fileKey: string;
+                    }[];
+                };
             };
         };
     };
@@ -6685,7 +9781,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        deleted: boolean;
+                    };
+                };
             };
         };
     };
@@ -6708,7 +9809,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        fileUrl: string;
+                        id: string;
+                        buildingId: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        tenantId: string | null;
+                        title: string;
+                        description: string | null;
+                        fileKey: string;
+                        isPublic: boolean;
+                    };
+                };
             };
         };
     };
@@ -6725,7 +9839,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/octet-stream": string;
+                };
             };
         };
     };
@@ -6749,7 +9865,14 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        url: string;
+                        key: string;
+                        bucket: string;
+                        contentType: string;
+                    };
+                };
             };
         };
     };
@@ -6768,7 +9891,19 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        buildingId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        description: string | null;
+                        bankName: string;
+                        iban: string;
+                    }[];
+                };
             };
         };
     };
@@ -6789,7 +9924,19 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        buildingId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        description: string | null;
+                        bankName: string;
+                        iban: string;
+                    };
+                };
             };
         };
     };
@@ -6808,7 +9955,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        deleted: boolean;
+                    };
+                };
             };
         };
     };
@@ -6831,7 +9983,19 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        buildingId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        description: string | null;
+                        bankName: string;
+                        iban: string;
+                    };
+                };
             };
         };
     };
@@ -6851,7 +10015,32 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        fund: {
+                            id: string;
+                            name: string;
+                        } | null;
+                        category: {
+                            id: string;
+                            name: string;
+                            code: string;
+                        } | null;
+                        id: string;
+                        buildingId: string;
+                        notes: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        fundId: string | null;
+                        year: number;
+                        categoryId: string | null;
+                        month: number | null;
+                        /** @description Decimal */
+                        plannedAmount: string;
+                    }[];
+                };
             };
         };
     };
@@ -6872,7 +10061,31 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        fund: {
+                            id: string;
+                            name: string;
+                        } | null;
+                        category: {
+                            id: string;
+                            name: string;
+                        } | null;
+                        id: string;
+                        buildingId: string;
+                        notes: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        fundId: string | null;
+                        year: number;
+                        categoryId: string | null;
+                        month: number | null;
+                        /** @description Decimal */
+                        plannedAmount: string;
+                    };
+                };
             };
         };
     };
@@ -6892,7 +10105,54 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        buildingId: string;
+                        year: number;
+                        plannedTotal: number;
+                        actualTotal: number;
+                        variance: number;
+                        variancePercent: number | null;
+                        byFund: {
+                            variance: number;
+                            fundId: string | null;
+                            fundName: string;
+                            planned: number;
+                            actual: number;
+                        }[];
+                        byCategory: {
+                            variance: number;
+                            categoryId: string | null;
+                            categoryName: string;
+                            planned: number;
+                            actual: number;
+                        }[];
+                        lines: {
+                            fund: {
+                                id: string;
+                                name: string;
+                            } | null;
+                            category: {
+                                id: string;
+                                name: string;
+                                code: string;
+                            } | null;
+                            id: string;
+                            buildingId: string;
+                            notes: string | null;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            fundId: string | null;
+                            year: number;
+                            categoryId: string | null;
+                            month: number | null;
+                            /** @description Decimal */
+                            plannedAmount: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -6911,7 +10171,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        deleted: boolean;
+                    };
+                };
             };
         };
     };
@@ -6934,7 +10199,31 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        fund: {
+                            id: string;
+                            name: string;
+                        } | null;
+                        category: {
+                            id: string;
+                            name: string;
+                        } | null;
+                        id: string;
+                        buildingId: string;
+                        notes: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        fundId: string | null;
+                        year: number;
+                        categoryId: string | null;
+                        month: number | null;
+                        /** @description Decimal */
+                        plannedAmount: string;
+                    };
+                };
             };
         };
     };
@@ -6951,7 +10240,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        name: string;
+                        tenantId: string | null;
+                        code: string;
+                    }[];
+                };
             };
         };
     };
@@ -6972,7 +10270,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        name: string;
+                        tenantId: string | null;
+                        code: string;
+                    };
+                };
             };
         };
     };
@@ -6991,7 +10298,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        deleted: boolean;
+                    };
+                };
             };
         };
     };
@@ -7014,7 +10326,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        name: string;
+                        tenantId: string | null;
+                        code: string;
+                    };
+                };
             };
         };
     };
@@ -7039,7 +10360,84 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            needsApproval: boolean;
+                            documentUrl: string | null;
+                            fund: {
+                                id: string;
+                                buildingId: string;
+                                /** Format: date-time */
+                                createdAt: string;
+                                /** Format: date-time */
+                                updatedAt: string;
+                                name: string;
+                                bankAccountId: string | null;
+                                /** @enum {string} */
+                                type: "maintenance" | "capital_repair" | "special";
+                                /** @description Decimal */
+                                openingBalance: string;
+                            };
+                            supplier: {
+                                id: string;
+                                buildingId: string;
+                                /** Format: date-time */
+                                createdAt: string;
+                                /** Format: date-time */
+                                updatedAt: string;
+                                name: string;
+                                edrpou: string | null;
+                                phone: string | null;
+                                iban: string | null;
+                                serviceType: string | null;
+                            } | null;
+                            approvedBy: {
+                                id: string;
+                                firstName: string;
+                                lastName: string;
+                            } | null;
+                            category: {
+                                id: string;
+                                /** Format: date-time */
+                                createdAt: string;
+                                name: string;
+                                tenantId: string | null;
+                                code: string;
+                            };
+                            createdBy: {
+                                id: string;
+                                firstName: string;
+                                lastName: string;
+                            };
+                            id: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            isVoided: boolean;
+                            approvalStatus: string;
+                            fundId: string;
+                            /** @description Decimal */
+                            amount: string;
+                            /** Format: date-time */
+                            date: string;
+                            voidReason: string | null;
+                            /** Format: date-time */
+                            approvedAt: string | null;
+                            approvedById: string | null;
+                            createdById: string;
+                            description: string | null;
+                            categoryId: string;
+                            supplierId: string | null;
+                            documentKey: string | null;
+                        }[];
+                        total: number;
+                        page: number;
+                        limit: number;
+                        totalPages: number;
+                    };
+                };
             };
         };
     };
@@ -7060,7 +10458,68 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        needsApproval: boolean;
+                        documentUrl: string | null;
+                        fund: {
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            name: string;
+                            bankAccountId: string | null;
+                            /** @enum {string} */
+                            type: "maintenance" | "capital_repair" | "special";
+                            /** @description Decimal */
+                            openingBalance: string;
+                        };
+                        supplier: {
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            name: string;
+                            edrpou: string | null;
+                            phone: string | null;
+                            iban: string | null;
+                            serviceType: string | null;
+                        } | null;
+                        category: {
+                            id: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            name: string;
+                            tenantId: string | null;
+                            code: string;
+                        };
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        isVoided: boolean;
+                        approvalStatus: string;
+                        fundId: string;
+                        /** @description Decimal */
+                        amount: string;
+                        /** Format: date-time */
+                        date: string;
+                        voidReason: string | null;
+                        /** Format: date-time */
+                        approvedAt: string | null;
+                        approvedById: string | null;
+                        createdById: string;
+                        description: string | null;
+                        categoryId: string;
+                        supplierId: string | null;
+                        documentKey: string | null;
+                    };
+                };
             };
         };
     };
@@ -7079,7 +10538,74 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        documentUrl: string | null;
+                        fund: {
+                            building: {
+                                tenantId: string;
+                            };
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            name: string;
+                            bankAccountId: string | null;
+                            /** @enum {string} */
+                            type: "maintenance" | "capital_repair" | "special";
+                            /** @description Decimal */
+                            openingBalance: string;
+                        };
+                        supplier: {
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            name: string;
+                            edrpou: string | null;
+                            phone: string | null;
+                            iban: string | null;
+                            serviceType: string | null;
+                        } | null;
+                        category: {
+                            id: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            name: string;
+                            tenantId: string | null;
+                            code: string;
+                        };
+                        createdBy: {
+                            firstName: string;
+                            lastName: string;
+                        };
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        isVoided: boolean;
+                        approvalStatus: string;
+                        fundId: string;
+                        /** @description Decimal */
+                        amount: string;
+                        /** Format: date-time */
+                        date: string;
+                        voidReason: string | null;
+                        /** Format: date-time */
+                        approvedAt: string | null;
+                        approvedById: string | null;
+                        createdById: string;
+                        description: string | null;
+                        categoryId: string;
+                        supplierId: string | null;
+                        documentKey: string | null;
+                    };
+                };
             };
         };
     };
@@ -7098,7 +10624,105 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        fund: {
+                            building: {
+                                tenantId: string;
+                            };
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            name: string;
+                            bankAccountId: string | null;
+                            /** @enum {string} */
+                            type: "maintenance" | "capital_repair" | "special";
+                            /** @description Decimal */
+                            openingBalance: string;
+                        };
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        isVoided: boolean;
+                        approvalStatus: string;
+                        fundId: string;
+                        /** @description Decimal */
+                        amount: string;
+                        /** Format: date-time */
+                        date: string;
+                        voidReason: string | null;
+                        /** Format: date-time */
+                        approvedAt: string | null;
+                        approvedById: string | null;
+                        createdById: string;
+                        description: string | null;
+                        categoryId: string;
+                        supplierId: string | null;
+                        documentKey: string | null;
+                    } | {
+                        fund: {
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            name: string;
+                            bankAccountId: string | null;
+                            /** @enum {string} */
+                            type: "maintenance" | "capital_repair" | "special";
+                            /** @description Decimal */
+                            openingBalance: string;
+                        };
+                        supplier: {
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            name: string;
+                            edrpou: string | null;
+                            phone: string | null;
+                            iban: string | null;
+                            serviceType: string | null;
+                        } | null;
+                        category: {
+                            id: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            name: string;
+                            tenantId: string | null;
+                            code: string;
+                        };
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        isVoided: boolean;
+                        approvalStatus: string;
+                        fundId: string;
+                        /** @description Decimal */
+                        amount: string;
+                        /** Format: date-time */
+                        date: string;
+                        voidReason: string | null;
+                        /** Format: date-time */
+                        approvedAt: string | null;
+                        approvedById: string | null;
+                        createdById: string;
+                        description: string | null;
+                        categoryId: string;
+                        supplierId: string | null;
+                        documentKey: string | null;
+                    };
+                };
             };
         };
     };
@@ -7121,7 +10745,31 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        isVoided: boolean;
+                        approvalStatus: string;
+                        fundId: string;
+                        /** @description Decimal */
+                        amount: string;
+                        /** Format: date-time */
+                        date: string;
+                        voidReason: string | null;
+                        /** Format: date-time */
+                        approvedAt: string | null;
+                        approvedById: string | null;
+                        createdById: string;
+                        description: string | null;
+                        categoryId: string;
+                        supplierId: string | null;
+                        documentKey: string | null;
+                    };
+                };
             };
         };
     };
@@ -7140,7 +10788,39 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        balanceLegacy: number;
+                        balanceJournal: number;
+                        balance: number;
+                        /** @enum {string} */
+                        balanceSource: "journal" | "legacy";
+                        journalSot: boolean;
+                        bankAccount: {
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            description: string | null;
+                            bankName: string;
+                            iban: string;
+                        } | null;
+                        id: string;
+                        buildingId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        bankAccountId: string | null;
+                        /** @enum {string} */
+                        type: "maintenance" | "capital_repair" | "special";
+                        /** @description Decimal */
+                        openingBalance: string;
+                    }[];
+                };
             };
         };
     };
@@ -7161,7 +10841,33 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        bankAccount: {
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            description: string | null;
+                            bankName: string;
+                            iban: string;
+                        } | null;
+                        id: string;
+                        buildingId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        bankAccountId: string | null;
+                        /** @enum {string} */
+                        type: "maintenance" | "capital_repair" | "special";
+                        /** @description Decimal */
+                        openingBalance: string;
+                    };
+                };
             };
         };
     };
@@ -7184,7 +10890,33 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        bankAccount: {
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            description: string | null;
+                            bankName: string;
+                            iban: string;
+                        } | null;
+                        id: string;
+                        buildingId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        bankAccountId: string | null;
+                        /** @enum {string} */
+                        type: "maintenance" | "capital_repair" | "special";
+                        /** @description Decimal */
+                        openingBalance: string;
+                    };
+                };
             };
         };
     };
@@ -7203,7 +10935,23 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        buildingId: string;
+                        period: string;
+                        /** @enum {string} */
+                        status: "open" | "soft_closed" | "locked";
+                        /** Format: date-time */
+                        closedAt: string | null;
+                        closedById: string | null;
+                        notes: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                    }[];
+                };
             };
         };
     };
@@ -7224,7 +10972,23 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        buildingId: string;
+                        period: string;
+                        /** @enum {string} */
+                        status: "open" | "soft_closed" | "locked";
+                        /** Format: date-time */
+                        closedAt: string | null;
+                        closedById: string | null;
+                        notes: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                    };
+                };
             };
         };
     };
@@ -7244,7 +11008,24 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        buildingId: string;
+                        period: string;
+                        /** @enum {string} */
+                        status: "open" | "soft_closed" | "locked";
+                        canSoftClose: boolean;
+                        canLock: boolean;
+                        strictBankRec: boolean;
+                        journalSot: boolean;
+                        checks: {
+                            id: string;
+                            ok: boolean;
+                            label: string;
+                            detail: number;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -7261,7 +11042,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/octet-stream": string;
+                };
             };
         };
     };
@@ -7283,7 +11066,114 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        period: {
+                            from?: string;
+                            to?: string;
+                        };
+                        /** @enum {string} */
+                        source: "legacy";
+                        totalIncome: number;
+                        totalExpenses: number;
+                        netFlow: number;
+                        fundBalances: {
+                            fundId: string;
+                            fundName: string;
+                            /** @enum {string} */
+                            fundType: "maintenance" | "capital_repair" | "special";
+                            openingBalance: number;
+                            income: number;
+                            expenses: number;
+                            balance: number;
+                        }[];
+                    } | {
+                        period: {
+                            from?: string;
+                            to?: string;
+                        };
+                        /** @enum {string} */
+                        source: "journal";
+                        totalIncome: number;
+                        totalExpenses: number;
+                        netFlow: number;
+                        fundBalances: {
+                            fundId: string;
+                            fundName: string;
+                            /** @enum {string} */
+                            fundType: "maintenance" | "capital_repair" | "special";
+                            openingBalance: number;
+                            income: number;
+                            expenses: number;
+                            balance: number;
+                            cashFromJournal: number;
+                        }[];
+                    } | {
+                        /** @enum {string} */
+                        source: "both";
+                        journal: {
+                            period: {
+                                from?: string;
+                                to?: string;
+                            };
+                            /** @enum {string} */
+                            source: "journal";
+                            totalIncome: number;
+                            totalExpenses: number;
+                            netFlow: number;
+                            fundBalances: {
+                                fundId: string;
+                                fundName: string;
+                                /** @enum {string} */
+                                fundType: "maintenance" | "capital_repair" | "special";
+                                openingBalance: number;
+                                income: number;
+                                expenses: number;
+                                balance: number;
+                                cashFromJournal: number;
+                            }[];
+                        };
+                        legacy: {
+                            period: {
+                                from?: string;
+                                to?: string;
+                            };
+                            /** @enum {string} */
+                            source: "legacy";
+                            totalIncome: number;
+                            totalExpenses: number;
+                            netFlow: number;
+                            fundBalances: {
+                                fundId: string;
+                                fundName: string;
+                                /** @enum {string} */
+                                fundType: "maintenance" | "capital_repair" | "special";
+                                openingBalance: number;
+                                income: number;
+                                expenses: number;
+                                balance: number;
+                            }[];
+                        };
+                        match: boolean;
+                        period: {
+                            from?: string;
+                            to?: string;
+                        };
+                        totalIncome: number;
+                        totalExpenses: number;
+                        netFlow: number;
+                        fundBalances: {
+                            fundId: string;
+                            fundName: string;
+                            /** @enum {string} */
+                            fundType: "maintenance" | "capital_repair" | "special";
+                            openingBalance: number;
+                            income: number;
+                            expenses: number;
+                            balance: number;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -7304,7 +11194,24 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        period: {
+                            from?: string;
+                            to?: string;
+                        };
+                        total: number;
+                        count: number;
+                        byCategory: {
+                            name: string;
+                            total: number;
+                        }[];
+                        byFund: {
+                            name: string;
+                            total: number;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -7321,7 +11228,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/octet-stream": string;
+                };
             };
         };
     };
@@ -7340,7 +11249,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        readyForSot: (false | true) | null;
+                        reconcileOk: (false | true) | null;
+                        mismatchCount: number | null;
+                        hint: string;
+                        journalSot: boolean;
+                        strictBankRec: boolean;
+                        /** @enum {string} */
+                        defaultCashFlowSource: "journal" | "legacy" | "both";
+                        envOverride: boolean;
+                        buildingId: string | null;
+                    };
+                };
             };
         };
     };
@@ -7359,7 +11281,21 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        buildingId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        edrpou: string | null;
+                        phone: string | null;
+                        iban: string | null;
+                        serviceType: string | null;
+                    }[];
+                };
             };
         };
     };
@@ -7380,7 +11316,21 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        buildingId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        edrpou: string | null;
+                        phone: string | null;
+                        iban: string | null;
+                        serviceType: string | null;
+                    };
+                };
             };
         };
     };
@@ -7403,7 +11353,21 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        buildingId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        edrpou: string | null;
+                        phone: string | null;
+                        iban: string | null;
+                        serviceType: string | null;
+                    };
+                };
             };
         };
     };
@@ -7422,7 +11386,35 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        fromFund: {
+                            id: string;
+                            buildingId: string;
+                            name: string;
+                        };
+                        toFund: {
+                            id: string;
+                            buildingId: string;
+                            name: string;
+                        };
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        isVoided: boolean;
+                        /** @description Decimal */
+                        amount: string;
+                        /** Format: date-time */
+                        date: string;
+                        voidReason: string | null;
+                        createdById: string;
+                        description: string | null;
+                        fromFundId: string;
+                        toFundId: string;
+                    }[];
+                };
             };
         };
     };
@@ -7443,7 +11435,33 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        fromFund: {
+                            id: string;
+                            name: string;
+                        };
+                        toFund: {
+                            id: string;
+                            name: string;
+                        };
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        isVoided: boolean;
+                        /** @description Decimal */
+                        amount: string;
+                        /** Format: date-time */
+                        date: string;
+                        voidReason: string | null;
+                        createdById: string;
+                        description: string | null;
+                        fromFundId: string;
+                        toFundId: string;
+                    } | null;
+                };
             };
         };
     };
@@ -7466,7 +11484,25 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        isVoided: boolean;
+                        /** @description Decimal */
+                        amount: string;
+                        /** Format: date-time */
+                        date: string;
+                        voidReason: string | null;
+                        createdById: string;
+                        description: string | null;
+                        fromFundId: string;
+                        toFundId: string;
+                    };
+                };
             };
         };
     };
@@ -7483,7 +11519,14 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        buildSha?: string;
+                        status: string;
+                        service: string;
+                        timestamp: string;
+                    };
+                };
             };
         };
     };
@@ -7500,7 +11543,36 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        status: string;
+                        service: string;
+                        version: string;
+                        /** @enum {string} */
+                        db: "skipped" | "up" | "down";
+                        /** @enum {string} */
+                        redis: "skipped" | "up" | "down";
+                        /** @enum {string} */
+                        storage: "skipped" | "up" | "down";
+                        backup: {
+                            path: string | null;
+                            lastBackupAt: string | null;
+                            ageHours: number | null;
+                            /** @enum {string} */
+                            status: "skipped" | "ok" | "partial" | "stale" | "missing";
+                        };
+                        worker: {
+                            path: string | null;
+                            updatedAt: string | null;
+                            jobs: {
+                                [key: string]: unknown;
+                            } | null;
+                            /** @enum {string} */
+                            status: "ok" | "stale" | "missing";
+                        };
+                        timestamp: string;
+                    };
+                };
             };
         };
     };
@@ -7517,7 +11589,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        status: string;
+                        uptimeSeconds: number;
+                    };
+                };
             };
         };
     };
@@ -7534,7 +11611,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        status: string;
+                    };
+                };
             };
         };
     };
@@ -7555,7 +11636,19 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        authorizeUrl: string;
+                        state: string;
+                        provider: string;
+                        message?: unknown;
+                    } | {
+                        authorizeUrl: string;
+                        state: string;
+                        provider: unknown;
+                        message: string;
+                    };
+                };
             };
         };
     };
@@ -7576,7 +11669,62 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        accessToken: string;
+                        refreshToken: string;
+                        /** @enum {boolean} */
+                        requires2fa: false;
+                        user: {
+                            id: string;
+                            email: string;
+                            firstName: string;
+                            lastName: string;
+                            /** @enum {string} */
+                            role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                            /** @enum {string} */
+                            status: "pending" | "active" | "blocked";
+                            apartmentId: string | null;
+                            tenantId: string | null;
+                            tenant: {
+                                id: string;
+                                name: string;
+                                slug: string;
+                                orgType: string;
+                            } | null;
+                            memberships: {
+                                tenantId: string;
+                                /** @enum {string} */
+                                role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                                /** @enum {string} */
+                                status: "pending" | "active" | "blocked";
+                                tenant: {
+                                    id: string;
+                                    name: string;
+                                    slug: string;
+                                    orgType: string;
+                                    isActive: boolean;
+                                };
+                            }[];
+                        };
+                        memberships: {
+                            id: string;
+                            tenantId: string;
+                            /** @enum {string} */
+                            role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                            /** @enum {string} */
+                            status: "pending" | "active" | "blocked";
+                            tenant: {
+                                id: string;
+                                name: string;
+                                slug: string;
+                                /** @enum {string} */
+                                orgType: "osbb" | "management_company";
+                                isActive: boolean;
+                            };
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -7596,7 +11744,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/octet-stream": string;
+                };
             };
         };
     };
@@ -7613,7 +11763,14 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        enabled: boolean;
+                        provider: unknown;
+                        clientIdConfigured: boolean;
+                        redirectUri: unknown;
+                    };
+                };
             };
         };
     };
@@ -7637,7 +11794,44 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        lines: {
+                            id: string;
+                            bankAccountId: string | null;
+                            fundId: string | null;
+                            apartmentId: string | null;
+                            categoryId: string | null;
+                            supplierId: string | null;
+                            entryId: string;
+                            account: string;
+                            accountId: string | null;
+                            serviceId: string | null;
+                            /** @description Decimal */
+                            debit: string;
+                            /** @description Decimal */
+                            credit: string;
+                        }[];
+                        id: string;
+                        buildingId: string | null;
+                        period: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** @enum {string} */
+                        type: "expense" | "accrual" | "payment" | "write_off" | "void_payment" | "void_expense" | "opening" | "fund_transfer" | "penalty" | "accrual_reverse" | "adjustment" | "supplier_invoice" | "supplier_payment" | "bank_fee";
+                        fundId: string | null;
+                        apartmentId: string | null;
+                        createdById: string | null;
+                        description: string | null;
+                        refType: string;
+                        refId: string;
+                        idempotencyKey: string | null;
+                        /** Format: date-time */
+                        valueDate: string | null;
+                        entryNo: number | null;
+                        reversesId: string | null;
+                    }[];
+                };
             };
         };
     };
@@ -7659,7 +11853,46 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        account: string;
+                        buildingId: string | null;
+                        period: string | null;
+                        totalDebit: number;
+                        totalCredit: number;
+                        balance: number;
+                        lines: {
+                            entry: {
+                                id: string;
+                                period: string | null;
+                                /** Format: date-time */
+                                createdAt: string;
+                                /** @enum {string} */
+                                type: "expense" | "accrual" | "payment" | "write_off" | "void_payment" | "void_expense" | "opening" | "fund_transfer" | "penalty" | "accrual_reverse" | "adjustment" | "supplier_invoice" | "supplier_payment" | "bank_fee";
+                                description: string | null;
+                                refType: string;
+                                refId: string;
+                                /** Format: date-time */
+                                valueDate: string | null;
+                                entryNo: number | null;
+                            };
+                            id: string;
+                            bankAccountId: string | null;
+                            fundId: string | null;
+                            apartmentId: string | null;
+                            categoryId: string | null;
+                            supplierId: string | null;
+                            entryId: string;
+                            account: string;
+                            accountId: string | null;
+                            serviceId: string | null;
+                            /** @description Decimal */
+                            debit: string;
+                            /** @description Decimal */
+                            credit: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -7678,7 +11911,24 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        buildingId: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        /** @enum {string} */
+                        type: "expense" | "asset" | "liability" | "equity" | "income" | "off_balance";
+                        isActive: boolean;
+                        code: string;
+                        isControl: boolean;
+                        parentId: string | null;
+                        externalCode: string | null;
+                    }[];
+                };
             };
         };
     };
@@ -7695,7 +11945,24 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        buildingId: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        /** @enum {string} */
+                        type: "expense" | "asset" | "liability" | "equity" | "income" | "off_balance";
+                        isActive: boolean;
+                        code: string;
+                        isControl: boolean;
+                        parentId: string | null;
+                        externalCode: string | null;
+                    }[];
+                };
             };
         };
     };
@@ -7718,7 +11985,24 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        buildingId: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        /** @enum {string} */
+                        type: "expense" | "asset" | "liability" | "equity" | "income" | "off_balance";
+                        isActive: boolean;
+                        code: string;
+                        isControl: boolean;
+                        parentId: string | null;
+                        externalCode: string | null;
+                    };
+                };
             };
         };
     };
@@ -7737,7 +12021,21 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        buildingId: string;
+                        funds: {
+                            fundId: string;
+                            name: string;
+                            /** @enum {string} */
+                            type: "maintenance" | "capital_repair" | "special";
+                            openingBalanceLegacy: number;
+                            cashFromJournal: number;
+                            expenseFromJournal: number;
+                            fundEquityFromJournal: number;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -7756,7 +12054,48 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        checkedAt: string;
+                        buildingId: string | null;
+                        mismatchCount: number;
+                        ok: boolean;
+                        trialBalance: {
+                            totalDebit: number;
+                            totalCredit: number;
+                            balanced: boolean;
+                        };
+                        mismatches: {
+                            /** @enum {string} */
+                            kind: "advance" | "fund_balance" | "orphan_ref" | "receivable" | "entry_balance" | "trial_balance";
+                            id: string;
+                            label: string;
+                            legacy: number;
+                            journal: number;
+                            diff: number;
+                        }[];
+                    } | {
+                        checkedAt: string;
+                        buildingId: null;
+                        buildingIds: string[];
+                        mismatchCount: number;
+                        ok: boolean;
+                        trialBalance: {
+                            totalDebit: number;
+                            totalCredit: number;
+                            balanced: boolean;
+                        };
+                        mismatches: {
+                            /** @enum {string} */
+                            kind: "advance" | "fund_balance" | "orphan_ref" | "receivable" | "entry_balance" | "trial_balance";
+                            id: string;
+                            label: string;
+                            legacy: number;
+                            journal: number;
+                            diff: number;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -7775,7 +12114,37 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        buildingId: string;
+                        reconcileOk: boolean;
+                        mismatchCount: number;
+                        trialBalance: {
+                            totalDebit: number;
+                            totalCredit: number;
+                            balanced: boolean;
+                        };
+                        fundBalances: {
+                            fundId: string;
+                            name: string;
+                            /** @enum {string} */
+                            type: "maintenance" | "capital_repair" | "special";
+                            openingBalanceLegacy: number;
+                            cashFromJournal: number;
+                            expenseFromJournal: number;
+                            fundEquityFromJournal: number;
+                        }[];
+                        advances: {
+                            apartmentId: string;
+                            number: string;
+                            legacy: number;
+                            journal: number;
+                            match: boolean;
+                        }[];
+                        advancesOk: boolean;
+                        readyForSot: boolean;
+                    };
+                };
             };
         };
     };
@@ -7794,7 +12163,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        readyForSot: boolean;
+                        reconcileOk: boolean;
+                        advancesOk: boolean;
+                        mismatchCount: number;
+                        buildingId: string;
+                        day: string;
+                    };
+                };
             };
         };
     };
@@ -7815,7 +12193,24 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        readiness: {
+                            requiredDays: number;
+                            streakDays: number;
+                            eligible: boolean;
+                        };
+                        journalSot: boolean;
+                        strictBankRec: boolean;
+                        /** @enum {string} */
+                        defaultCashFlowSource: "journal" | "legacy" | "both";
+                        envOverride: boolean;
+                        buildingId: string;
+                        previous: boolean;
+                        changed: boolean;
+                        forced: boolean;
+                    };
+                };
             };
         };
     };
@@ -7834,7 +12229,33 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        journalSot: boolean;
+                        strictBankRec: boolean;
+                        /** @enum {string} */
+                        defaultCashFlowSource: "journal" | "legacy" | "both";
+                        envOverride: boolean;
+                        buildingId: string;
+                        requiredDays: number;
+                        streakDays: number;
+                        eligible: boolean;
+                        lastRun: {
+                            day: string;
+                            readyForSot: boolean;
+                            reconcileOk: boolean;
+                            advancesOk: boolean;
+                            mismatchCount: number;
+                        };
+                        history: {
+                            day: string;
+                            readyForSot: boolean;
+                            reconcileOk: boolean;
+                            advancesOk: boolean;
+                            mismatchCount: number;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -7854,7 +12275,21 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        buildingId: string | null;
+                        period: string | null;
+                        totalDebit: number;
+                        totalCredit: number;
+                        balanced: boolean;
+                        accounts: {
+                            account: string;
+                            debit: number;
+                            credit: number;
+                            balance: number;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -7873,7 +12308,84 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        lines: {
+                            id: string;
+                            bankAccountId: string | null;
+                            fundId: string | null;
+                            apartmentId: string | null;
+                            categoryId: string | null;
+                            supplierId: string | null;
+                            entryId: string;
+                            account: string;
+                            accountId: string | null;
+                            serviceId: string | null;
+                            /** @description Decimal */
+                            debit: string;
+                            /** @description Decimal */
+                            credit: string;
+                        }[];
+                        reverses: {
+                            id: string;
+                            buildingId: string | null;
+                            period: string | null;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** @enum {string} */
+                            type: "expense" | "accrual" | "payment" | "write_off" | "void_payment" | "void_expense" | "opening" | "fund_transfer" | "penalty" | "accrual_reverse" | "adjustment" | "supplier_invoice" | "supplier_payment" | "bank_fee";
+                            fundId: string | null;
+                            apartmentId: string | null;
+                            createdById: string | null;
+                            description: string | null;
+                            refType: string;
+                            refId: string;
+                            idempotencyKey: string | null;
+                            /** Format: date-time */
+                            valueDate: string | null;
+                            entryNo: number | null;
+                            reversesId: string | null;
+                        } | null;
+                        reversedBy: {
+                            id: string;
+                            buildingId: string | null;
+                            period: string | null;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** @enum {string} */
+                            type: "expense" | "accrual" | "payment" | "write_off" | "void_payment" | "void_expense" | "opening" | "fund_transfer" | "penalty" | "accrual_reverse" | "adjustment" | "supplier_invoice" | "supplier_payment" | "bank_fee";
+                            fundId: string | null;
+                            apartmentId: string | null;
+                            createdById: string | null;
+                            description: string | null;
+                            refType: string;
+                            refId: string;
+                            idempotencyKey: string | null;
+                            /** Format: date-time */
+                            valueDate: string | null;
+                            entryNo: number | null;
+                            reversesId: string | null;
+                        }[];
+                        id: string;
+                        buildingId: string | null;
+                        period: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** @enum {string} */
+                        type: "expense" | "accrual" | "payment" | "write_off" | "void_payment" | "void_expense" | "opening" | "fund_transfer" | "penalty" | "accrual_reverse" | "adjustment" | "supplier_invoice" | "supplier_payment" | "bank_fee";
+                        fundId: string | null;
+                        apartmentId: string | null;
+                        createdById: string | null;
+                        description: string | null;
+                        refType: string;
+                        refId: string;
+                        idempotencyKey: string | null;
+                        /** Format: date-time */
+                        valueDate: string | null;
+                        entryNo: number | null;
+                        reversesId: string | null;
+                    };
+                };
             };
         };
     };
@@ -7896,7 +12408,21 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        sessionId: string;
+                        /** @enum {string} */
+                        provider: "mock" | "diia" | "cloud_kep" | "cades";
+                        /** @enum {string} */
+                        status: "pending" | "cancelled" | "expired" | "signed" | "waiting_user" | "failed";
+                        digest: string;
+                        authorizeUrl?: string | null;
+                        deeplink?: string | null;
+                        signed: boolean;
+                        message: string;
+                        expiresAt: string;
+                    };
+                };
             };
         };
     };
@@ -7915,7 +12441,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/octet-stream": string;
+                };
             };
         };
     };
@@ -7934,7 +12462,28 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        sessionId: string;
+                        purpose: string;
+                        refType: string;
+                        refId: string;
+                        provider: string;
+                        status: string;
+                        digest: string;
+                        documentTitle: string;
+                        authorizeUrl: string | null;
+                        deeplink: string | null;
+                        certificateSubject: string | null;
+                        certificateSerial: string | null;
+                        errorMessage: string | null;
+                        expiresAt: string;
+                        completedAt: string | null;
+                        createdAt: string;
+                        signed: boolean;
+                        verified: boolean;
+                    };
+                };
             };
         };
     };
@@ -7957,7 +12506,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        sessionId: string;
+                        status: string;
+                        signed: boolean;
+                    };
+                };
             };
         };
     };
@@ -7980,7 +12535,28 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        sessionId: string;
+                        purpose: string;
+                        refType: string;
+                        refId: string;
+                        provider: string;
+                        status: string;
+                        digest: string;
+                        documentTitle: string;
+                        authorizeUrl: string | null;
+                        deeplink: string | null;
+                        certificateSubject: string | null;
+                        certificateSerial: string | null;
+                        errorMessage: string | null;
+                        expiresAt: string;
+                        completedAt: string | null;
+                        createdAt: string;
+                        signed: boolean;
+                        verified: boolean;
+                    };
+                };
             };
         };
     };
@@ -7997,7 +12573,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        enabled: boolean;
+                        /** @enum {string} */
+                        provider: "mock" | "diia" | "cloud_kep" | "cades";
+                        providers: ("mock" | "diia" | "cloud_kep" | "cades")[];
+                        mockAllowed: boolean;
+                        diiaConfigured: boolean;
+                        cloudConfigured: boolean;
+                        productionReady: boolean;
+                        webhookPath: string;
+                        docs: string;
+                    };
+                };
             };
         };
     };
@@ -8014,7 +12603,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        ok: boolean;
+                        sessionId: string;
+                        status: string;
+                    };
+                };
             };
         };
     };
@@ -8033,7 +12628,18 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        error: string | null;
+                        id: string;
+                        status: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        template: string;
+                        to: string;
+                        subject: string;
+                    }[];
+                };
             };
         };
     };
@@ -8050,7 +12656,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        smtpConfigured: boolean;
+                        appUrl: string;
+                        mode: string;
+                    };
+                };
             };
         };
     };
@@ -8067,7 +12679,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        to: string;
+                        ok: boolean;
+                        skipped?: boolean;
+                    };
+                };
             };
         };
     };
@@ -8084,7 +12702,45 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        _count: {
+                            signatures: number;
+                            participants: number;
+                        };
+                        agendaItems: {
+                            id: string;
+                            title: string;
+                            sortOrder: number;
+                            description: string | null;
+                            options: unknown;
+                            meetingId: string;
+                        }[];
+                        id: string;
+                        buildingId: string | null;
+                        /** @enum {string} */
+                        status: "open" | "closed" | "draft" | "scheduled" | "cancelled";
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        /** @enum {string} */
+                        type: "other" | "board" | "general" | "founding";
+                        tenantId: string | null;
+                        title: string;
+                        createdById: string | null;
+                        description: string | null;
+                        /** Format: date-time */
+                        endsAt: string | null;
+                        /** @enum {string} */
+                        voteWeight: "by_area" | "one_per_user" | "one_per_apartment";
+                        /** @description Decimal */
+                        quorumPercent: string | null;
+                        /** Format: date-time */
+                        scheduledAt: string | null;
+                        protocolText: string | null;
+                    }[];
+                };
             };
         };
     };
@@ -8105,7 +12761,41 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        agendaItems: {
+                            id: string;
+                            title: string;
+                            sortOrder: number;
+                            description: string | null;
+                            options: unknown;
+                            meetingId: string;
+                        }[];
+                        id: string;
+                        buildingId: string | null;
+                        /** @enum {string} */
+                        status: "open" | "closed" | "draft" | "scheduled" | "cancelled";
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        /** @enum {string} */
+                        type: "other" | "board" | "general" | "founding";
+                        tenantId: string | null;
+                        title: string;
+                        createdById: string | null;
+                        description: string | null;
+                        /** Format: date-time */
+                        endsAt: string | null;
+                        /** @enum {string} */
+                        voteWeight: "by_area" | "one_per_user" | "one_per_apartment";
+                        /** @description Decimal */
+                        quorumPercent: string | null;
+                        /** Format: date-time */
+                        scheduledAt: string | null;
+                        protocolText: string | null;
+                    };
+                };
             };
         };
     };
@@ -8124,7 +12814,95 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        agendaItems: {
+                            id: string;
+                            title: string;
+                            description: string | null;
+                            sortOrder: number;
+                            options: unknown;
+                            totals: {
+                                [key: string]: number;
+                            };
+                            totalWeight: number;
+                            myVote: string | null;
+                        }[];
+                        stats: {
+                            participants: number;
+                            participantWeight: number;
+                            eligibleWeight: number;
+                            participationPercent: number;
+                            signedCount: number;
+                            verifiedCount: number;
+                            quorumPercent: number | null;
+                            quorumMet: boolean;
+                        };
+                        signatures: {
+                            user: {
+                                id: string;
+                                firstName: string;
+                                lastName: string;
+                            };
+                            id: string;
+                            status: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            userId: string;
+                            provider: string;
+                            meetingId: string;
+                            sessionId: string | null;
+                            signaturePayload: unknown;
+                            /** Format: date-time */
+                            signedAt: string | null;
+                        }[];
+                        createdBy: {
+                            id: string;
+                            firstName: string;
+                            lastName: string;
+                        } | null;
+                        participants: {
+                            user: {
+                                id: string;
+                                firstName: string;
+                                lastName: string;
+                                /** @enum {string} */
+                                role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                            };
+                            id: string;
+                            apartmentId: string | null;
+                            userId: string;
+                            /** @description Decimal */
+                            weight: string;
+                            meetingId: string;
+                            /** Format: date-time */
+                            registeredAt: string;
+                        }[];
+                        id: string;
+                        buildingId: string | null;
+                        /** @enum {string} */
+                        status: "open" | "closed" | "draft" | "scheduled" | "cancelled";
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        /** @enum {string} */
+                        type: "other" | "board" | "general" | "founding";
+                        tenantId: string | null;
+                        title: string;
+                        createdById: string | null;
+                        description: string | null;
+                        /** Format: date-time */
+                        endsAt: string | null;
+                        /** @enum {string} */
+                        voteWeight: "by_area" | "one_per_user" | "one_per_apartment";
+                        /** @description Decimal */
+                        quorumPercent: string | null;
+                        /** Format: date-time */
+                        scheduledAt: string | null;
+                        protocolText: string | null;
+                    };
+                };
             };
         };
     };
@@ -8148,7 +12926,19 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        apartmentId: string | null;
+                        userId: string;
+                        /** @description Decimal */
+                        weight: string;
+                        agendaItemId: string;
+                        optionKey: string;
+                    };
+                };
             };
         };
     };
@@ -8167,7 +12957,33 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        buildingId: string | null;
+                        /** @enum {string} */
+                        status: "open" | "closed" | "draft" | "scheduled" | "cancelled";
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        /** @enum {string} */
+                        type: "other" | "board" | "general" | "founding";
+                        tenantId: string | null;
+                        title: string;
+                        createdById: string | null;
+                        description: string | null;
+                        /** Format: date-time */
+                        endsAt: string | null;
+                        /** @enum {string} */
+                        voteWeight: "by_area" | "one_per_user" | "one_per_apartment";
+                        /** @description Decimal */
+                        quorumPercent: string | null;
+                        /** Format: date-time */
+                        scheduledAt: string | null;
+                        protocolText: string | null;
+                    };
+                };
             };
         };
     };
@@ -8186,7 +13002,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/octet-stream": string;
+                };
             };
         };
     };
@@ -8209,7 +13027,28 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        participants: {
+                            id: string;
+                            apartmentId: string | null;
+                            userId: string;
+                            /** @description Decimal */
+                            weight: string;
+                            meetingId: string;
+                            /** Format: date-time */
+                            registeredAt: string;
+                        }[];
+                        id: string;
+                        apartmentId: string | null;
+                        userId: string;
+                        /** @description Decimal */
+                        weight: string;
+                        meetingId: string;
+                        /** Format: date-time */
+                        registeredAt: string;
+                    };
+                };
             };
         };
     };
@@ -8232,7 +13071,21 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        sessionId: string;
+                        /** @enum {string} */
+                        provider: "mock" | "diia" | "cloud_kep" | "cades";
+                        /** @enum {string} */
+                        status: "pending" | "cancelled" | "expired" | "signed" | "waiting_user" | "failed";
+                        digest: string;
+                        authorizeUrl?: string | null;
+                        deeplink?: string | null;
+                        signed: boolean;
+                        message: string;
+                        expiresAt: string;
+                    };
+                };
             };
         };
     };
@@ -8255,7 +13108,33 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        buildingId: string | null;
+                        /** @enum {string} */
+                        status: "open" | "closed" | "draft" | "scheduled" | "cancelled";
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        /** @enum {string} */
+                        type: "other" | "board" | "general" | "founding";
+                        tenantId: string | null;
+                        title: string;
+                        createdById: string | null;
+                        description: string | null;
+                        /** Format: date-time */
+                        endsAt: string | null;
+                        /** @enum {string} */
+                        voteWeight: "by_area" | "one_per_user" | "one_per_apartment";
+                        /** @description Decimal */
+                        quorumPercent: string | null;
+                        /** Format: date-time */
+                        scheduledAt: string | null;
+                        protocolText: string | null;
+                    };
+                };
             };
         };
     };
@@ -8272,7 +13151,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        email: string;
+                        firstName: string;
+                        lastName: string;
+                        /** @enum {string} */
+                        role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                    }[];
+                };
             };
         };
     };
@@ -8289,7 +13177,54 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        lastMessage: {
+                            author: {
+                                id: string;
+                                firstName: string;
+                                lastName: string;
+                            };
+                            id: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            body: string;
+                            authorId: string;
+                            threadId: string;
+                        };
+                        /** Format: date-time */
+                        lastReadAt: string | null;
+                        memberCount: number;
+                        messageCount: number;
+                        _count: {
+                            messages: number;
+                            members: number;
+                        };
+                        messages: {
+                            author: {
+                                id: string;
+                                firstName: string;
+                                lastName: string;
+                            };
+                            id: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            body: string;
+                            authorId: string;
+                            threadId: string;
+                        }[];
+                        id: string;
+                        buildingId: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        entrance: number | null;
+                        title: string | null;
+                        /** @enum {string} */
+                        kind: "building" | "entrance" | "board_residents" | "direct";
+                    }[];
+                };
             };
         };
     };
@@ -8310,7 +13245,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        buildingId: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        entrance: number | null;
+                        title: string | null;
+                        /** @enum {string} */
+                        kind: "building" | "entrance" | "board_residents" | "direct";
+                    };
+                };
             };
         };
     };
@@ -8331,7 +13279,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        buildingId: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        entrance: number | null;
+                        title: string | null;
+                        /** @enum {string} */
+                        kind: "building" | "entrance" | "board_residents" | "direct";
+                    };
+                };
             };
         };
     };
@@ -8352,7 +13313,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        buildingId: string | null;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        entrance: number | null;
+                        title: string | null;
+                        /** @enum {string} */
+                        kind: "building" | "entrance" | "board_residents" | "direct";
+                    };
+                };
             };
         };
     };
@@ -8373,7 +13347,23 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        author: {
+                            id: string;
+                            firstName: string;
+                            lastName: string;
+                            /** @enum {string} */
+                            role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                        };
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        body: string;
+                        authorId: string;
+                        threadId: string;
+                    }[];
+                };
             };
         };
     };
@@ -8396,7 +13386,23 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        author: {
+                            id: string;
+                            firstName: string;
+                            lastName: string;
+                            /** @enum {string} */
+                            role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                        };
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        body: string;
+                        authorId: string;
+                        threadId: string;
+                    };
+                };
             };
         };
     };
@@ -8415,7 +13421,40 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        apartment: {
+                            number: string;
+                            id: string;
+                            entrance: number;
+                        };
+                        readings: {
+                            id: string;
+                            period: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            meterId: string;
+                            /** @description Decimal */
+                            value: string;
+                            /** @description Decimal */
+                            previousValue: string | null;
+                            /** @description Decimal */
+                            consumption: string;
+                        }[];
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        /** @enum {string} */
+                        type: "cold_water" | "hot_water" | "heating" | "electricity" | "other";
+                        isActive: boolean;
+                        apartmentId: string;
+                        unit: string;
+                        serialNumber: string | null;
+                    }[];
+                };
             };
         };
     };
@@ -8436,7 +13475,22 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        /** @enum {string} */
+                        type: "cold_water" | "hot_water" | "heating" | "electricity" | "other";
+                        isActive: boolean;
+                        apartmentId: string;
+                        unit: string;
+                        serialNumber: string | null;
+                    };
+                };
             };
         };
     };
@@ -8455,7 +13509,35 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        readings: {
+                            id: string;
+                            period: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            meterId: string;
+                            /** @description Decimal */
+                            value: string;
+                            /** @description Decimal */
+                            previousValue: string | null;
+                            /** @description Decimal */
+                            consumption: string;
+                        }[];
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        /** @enum {string} */
+                        type: "cold_water" | "hot_water" | "heating" | "electricity" | "other";
+                        isActive: boolean;
+                        apartmentId: string;
+                        unit: string;
+                        serialNumber: string | null;
+                    }[];
+                };
             };
         };
     };
@@ -8474,7 +13556,22 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        /** @enum {string} */
+                        type: "cold_water" | "hot_water" | "heating" | "electricity" | "other";
+                        isActive: boolean;
+                        apartmentId: string;
+                        unit: string;
+                        serialNumber: string | null;
+                    };
+                };
             };
         };
     };
@@ -8497,7 +13594,21 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        period: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        meterId: string;
+                        /** @description Decimal */
+                        value: string;
+                        /** @description Decimal */
+                        previousValue: string | null;
+                        /** @description Decimal */
+                        consumption: string;
+                    };
+                };
             };
         };
     };
@@ -8520,7 +13631,21 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        period: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        meterId: string;
+                        /** @description Decimal */
+                        value: string;
+                        /** @description Decimal */
+                        previousValue: string | null;
+                        /** @description Decimal */
+                        consumption: string;
+                    };
+                };
             };
         };
     };
@@ -8539,7 +13664,23 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            title: string;
+                            userId: string;
+                            body: string;
+                            /** Format: date-time */
+                            readAt: string | null;
+                            kind: string;
+                            url: string | null;
+                        }[];
+                        unread: number;
+                    };
+                };
             };
         };
     };
@@ -8556,7 +13697,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        ok: boolean;
+                    };
+                };
             };
         };
     };
@@ -8575,7 +13720,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        ok: boolean;
+                    };
+                };
             };
         };
     };
@@ -8596,7 +13745,17 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        userId: string;
+                        endpoint: string;
+                        p256dh: string;
+                        auth: string;
+                    };
+                };
             };
         };
     };
@@ -8613,7 +13772,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        unsubscribed: boolean;
+                    };
+                };
             };
         };
     };
@@ -8630,7 +13793,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        publicKey: string | null;
+                    };
+                };
             };
         };
     };
@@ -8647,7 +13814,79 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            apartment: {
+                                number: string;
+                                id: string;
+                                buildingId: string;
+                                /** Format: date-time */
+                                createdAt: string;
+                                /** Format: date-time */
+                                updatedAt: string;
+                                entrance: number;
+                                floor: number | null;
+                                area: number;
+                                /** @description Decimal */
+                                advanceBalance: string;
+                            };
+                            allocations: {
+                                accrualLine: {
+                                    accrual: {
+                                        id: unknown;
+                                        period: unknown;
+                                        createdAt: unknown;
+                                        fundId: unknown;
+                                        templateId: unknown;
+                                        title: unknown;
+                                    };
+                                    id: string;
+                                    /** @enum {string} */
+                                    status: "open" | "partially_paid" | "paid" | "overdue";
+                                    /** Format: date-time */
+                                    createdAt: string;
+                                    /** Format: date-time */
+                                    updatedAt: string;
+                                    accrualId: string;
+                                    apartmentId: string;
+                                    /** @description Decimal */
+                                    amount: string;
+                                    /** @description Decimal */
+                                    paidAmount: string;
+                                    /** Format: date-time */
+                                    dueDate: string | null;
+                                };
+                                id: string;
+                                /** Format: date-time */
+                                createdAt: string;
+                                paymentId: string;
+                                /** @description Decimal */
+                                amount: string;
+                                accrualLineId: string;
+                            }[];
+                            id: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            isVoided: boolean;
+                            apartmentId: string;
+                            /** @description Decimal */
+                            amount: string;
+                            /** Format: date-time */
+                            date: string;
+                            /** @enum {string} */
+                            source: "bank" | "cash" | "transfer";
+                            reference: string | null;
+                            voidReason: string | null;
+                        }[];
+                        total: number;
+                        page: number;
+                        limit: number;
+                        totalPages: number;
+                    };
+                };
             };
         };
     };
@@ -8668,7 +13907,88 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        apartment: {
+                            building: {
+                                id: string;
+                                /** Format: date-time */
+                                createdAt: string;
+                                /** Format: date-time */
+                                updatedAt: string;
+                                name: string;
+                                tenantId: string;
+                                address: string;
+                                edrpou: string | null;
+                                showDebtorsToResidents: boolean;
+                                isInitialized: boolean;
+                                settings: unknown;
+                            };
+                            number: string;
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            entrance: number;
+                            floor: number | null;
+                            area: number;
+                            /** @description Decimal */
+                            advanceBalance: string;
+                        };
+                        allocations: {
+                            accrualLine: {
+                                accrual: {
+                                    id: string;
+                                    period: string;
+                                    /** Format: date-time */
+                                    createdAt: string;
+                                    fundId: string;
+                                    templateId: string | null;
+                                    title: string;
+                                };
+                                id: string;
+                                /** @enum {string} */
+                                status: "open" | "partially_paid" | "paid" | "overdue";
+                                /** Format: date-time */
+                                createdAt: string;
+                                /** Format: date-time */
+                                updatedAt: string;
+                                accrualId: string;
+                                apartmentId: string;
+                                /** @description Decimal */
+                                amount: string;
+                                /** @description Decimal */
+                                paidAmount: string;
+                                /** Format: date-time */
+                                dueDate: string | null;
+                            };
+                            id: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            paymentId: string;
+                            /** @description Decimal */
+                            amount: string;
+                            accrualLineId: string;
+                        }[];
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        isVoided: boolean;
+                        apartmentId: string;
+                        /** @description Decimal */
+                        amount: string;
+                        /** Format: date-time */
+                        date: string;
+                        /** @enum {string} */
+                        source: "bank" | "cash" | "transfer";
+                        reference: string | null;
+                        voidReason: string | null;
+                    };
+                };
             };
         };
     };
@@ -8689,7 +14009,18 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        created: number;
+                        failed: number;
+                        paymentIds: string[];
+                        errors: {
+                            index: number;
+                            message: string;
+                        }[];
+                        statementId: string | null;
+                    };
+                };
             };
         };
     };
@@ -8712,7 +14043,32 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        /** @enum {string} */
+                        status: "matched" | "unmatched" | "skipped" | "invalid" | "manual" | "imported" | "ignored";
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        paymentId: string | null;
+                        apartmentId: string | null;
+                        /** @description Decimal */
+                        amount: string | null;
+                        /** Format: date-time */
+                        date: string | null;
+                        reference: string;
+                        message: string | null;
+                        lineNo: number;
+                        counterpartyIban: string | null;
+                        extractedApartment: string | null;
+                        raw: string;
+                        matchMethod: string | null;
+                        confidence: number | null;
+                        statementId: string;
+                    };
+                };
             };
         };
     };
@@ -8731,7 +14087,32 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        /** @enum {string} */
+                        status: "matched" | "unmatched" | "skipped" | "invalid" | "manual" | "imported" | "ignored";
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        paymentId: string | null;
+                        apartmentId: string | null;
+                        /** @description Decimal */
+                        amount: string | null;
+                        /** Format: date-time */
+                        date: string | null;
+                        reference: string;
+                        message: string | null;
+                        lineNo: number;
+                        counterpartyIban: string | null;
+                        extractedApartment: string | null;
+                        raw: string;
+                        matchMethod: string | null;
+                        confidence: number | null;
+                        statementId: string;
+                    };
+                };
             };
         };
     };
@@ -8752,7 +14133,50 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        statementId: string;
+                        rows: {
+                            lineId: string;
+                            confidence: number | null;
+                            matchMethod: ("name" | "manual" | "apartment" | "iban" | "iban_alias") | null;
+                            candidates: {
+                                apartmentId: string;
+                                apartmentNumber: string;
+                                /** @enum {string} */
+                                method: "name" | "manual" | "apartment" | "iban" | "iban_alias";
+                                confidence: number;
+                            }[];
+                            apartmentId: string | null;
+                            apartmentNumber: string | null;
+                            line: number;
+                            raw: string;
+                            date: string | null;
+                            amount: number | null;
+                            reference: string;
+                            counterpartyIban?: string | null;
+                            extractedApartment: string | null;
+                            /** @enum {string} */
+                            status: "matched" | "unmatched" | "skipped" | "invalid";
+                            message?: string;
+                            /** @enum {string} */
+                            format?: "auto" | "generic_csv" | "privatbank" | "monobank" | "oschadbank" | "mt940";
+                        }[];
+                        summary: {
+                            total: number;
+                            matched: number;
+                            unmatched: number;
+                            skipped: number;
+                            invalid: number;
+                            totalAmount: number;
+                        };
+                        /** @enum {string} */
+                        format: "auto" | "generic_csv" | "privatbank" | "monobank" | "oschadbank" | "mt940";
+                        /** @enum {string} */
+                        detectedFormat: "auto" | "generic_csv" | "privatbank" | "monobank" | "oschadbank" | "mt940";
+                        formats: ("auto" | "generic_csv" | "privatbank" | "monobank" | "oschadbank" | "mt940")[];
+                    };
+                };
             };
         };
     };
@@ -8772,7 +14196,45 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        days: number;
+                        since: string;
+                        count: number;
+                        totalAmount: number;
+                        lines: {
+                            statement: {
+                                id: string;
+                                buildingId: string | null;
+                                format: string;
+                                /** Format: date-time */
+                                importedAt: string;
+                            };
+                            id: string;
+                            /** @enum {string} */
+                            status: "matched" | "unmatched" | "skipped" | "invalid" | "manual" | "imported" | "ignored";
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            paymentId: string | null;
+                            apartmentId: string | null;
+                            /** @description Decimal */
+                            amount: string | null;
+                            /** Format: date-time */
+                            date: string | null;
+                            reference: string;
+                            message: string | null;
+                            lineNo: number;
+                            counterpartyIban: string | null;
+                            extractedApartment: string | null;
+                            raw: string;
+                            matchMethod: string | null;
+                            confidence: number | null;
+                            statementId: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -8793,7 +14255,23 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        orderId: string;
+                        amount: number;
+                        apartmentId: string;
+                        data: string;
+                        signature: string;
+                        checkoutUrl: string;
+                        formAction?: string;
+                        form?: {
+                            [key: string]: string;
+                        };
+                        provider: unknown;
+                        sandbox: boolean;
+                        message: string;
+                    };
+                };
             };
         };
     };
@@ -8812,7 +14290,27 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        status: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        paymentId: string | null;
+                        apartmentId: string;
+                        /** @description Decimal */
+                        amount: string;
+                        userId: string | null;
+                        description: string | null;
+                        provider: string;
+                        orderId: string;
+                        providerMeta: unknown;
+                        /** Format: date-time */
+                        paidAt: string | null;
+                    };
+                };
             };
         };
     };
@@ -8833,7 +14331,42 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        orderId: string;
+                        sandbox: boolean;
+                        ok: boolean;
+                        paymentId: string;
+                        duplicate: boolean;
+                        pending?: unknown;
+                    } | {
+                        orderId: string;
+                        sandbox: boolean;
+                        ok: boolean;
+                        pending: boolean;
+                        paymentId?: unknown;
+                        duplicate?: unknown;
+                    } | {
+                        orderId: string;
+                        sandbox: boolean;
+                        ok: boolean;
+                        pending: boolean;
+                        message?: unknown;
+                    } | {
+                        orderId: string;
+                        sandbox: boolean;
+                        ok: boolean;
+                        orderReference: string;
+                        status: string;
+                        time: number;
+                        signature: string;
+                    } | {
+                        orderId: string;
+                        sandbox: boolean;
+                        ok: boolean;
+                        message: string;
+                    };
+                };
             };
         };
     };
@@ -8850,7 +14383,17 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        enabled: boolean;
+                        provider: unknown;
+                        sandbox: boolean;
+                        publicKeyConfigured: boolean;
+                        secretConfigured: boolean;
+                        productionReady: boolean;
+                        webhookPath: string;
+                    };
+                };
             };
         };
     };
@@ -8867,7 +14410,35 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        ok: boolean;
+                        paymentId: string;
+                        duplicate: boolean;
+                        orderId: string;
+                        pending?: unknown;
+                    } | {
+                        ok: boolean;
+                        pending: boolean;
+                        orderId: string;
+                        paymentId?: unknown;
+                        duplicate?: unknown;
+                    } | {
+                        ok: boolean;
+                        pending: boolean;
+                        orderId: string;
+                        message?: unknown;
+                    } | {
+                        ok: boolean;
+                        orderReference: string;
+                        status: string;
+                        time: number;
+                        signature: string;
+                    } | {
+                        ok: boolean;
+                        message: string;
+                    };
+                };
             };
         };
     };
@@ -8887,7 +14458,24 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        apartment: {
+                            id: string;
+                            number: string;
+                        };
+                        amount: number;
+                        allocations: {
+                            accrualLineId: string;
+                            amount: number;
+                            period: string;
+                            title: string;
+                            lineBalance: number;
+                        }[];
+                        advance: number;
+                        totalAllocated: number;
+                    };
+                };
             };
         };
     };
@@ -8906,7 +14494,19 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        isOverdue: boolean;
+                        apartmentId: string;
+                        number: string;
+                        entrance: number;
+                        buildingId: string;
+                        debt: number;
+                        /** Format: date-time */
+                        oldestDue: string | null;
+                        lines: number;
+                    }[];
+                };
             };
         };
     };
@@ -8925,7 +14525,88 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        apartment: {
+                            building: {
+                                id: string;
+                                /** Format: date-time */
+                                createdAt: string;
+                                /** Format: date-time */
+                                updatedAt: string;
+                                name: string;
+                                tenantId: string;
+                                address: string;
+                                edrpou: string | null;
+                                showDebtorsToResidents: boolean;
+                                isInitialized: boolean;
+                                settings: unknown;
+                            };
+                            number: string;
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            entrance: number;
+                            floor: number | null;
+                            area: number;
+                            /** @description Decimal */
+                            advanceBalance: string;
+                        };
+                        allocations: {
+                            accrualLine: {
+                                accrual: {
+                                    id: string;
+                                    period: string;
+                                    /** Format: date-time */
+                                    createdAt: string;
+                                    fundId: string;
+                                    templateId: string | null;
+                                    title: string;
+                                };
+                                id: string;
+                                /** @enum {string} */
+                                status: "open" | "partially_paid" | "paid" | "overdue";
+                                /** Format: date-time */
+                                createdAt: string;
+                                /** Format: date-time */
+                                updatedAt: string;
+                                accrualId: string;
+                                apartmentId: string;
+                                /** @description Decimal */
+                                amount: string;
+                                /** @description Decimal */
+                                paidAmount: string;
+                                /** Format: date-time */
+                                dueDate: string | null;
+                            };
+                            id: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            paymentId: string;
+                            /** @description Decimal */
+                            amount: string;
+                            accrualLineId: string;
+                        }[];
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        isVoided: boolean;
+                        apartmentId: string;
+                        /** @description Decimal */
+                        amount: string;
+                        /** Format: date-time */
+                        date: string;
+                        /** @enum {string} */
+                        source: "bank" | "cash" | "transfer";
+                        reference: string | null;
+                        voidReason: string | null;
+                    };
+                };
             };
         };
     };
@@ -8948,7 +14629,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        isVoided: boolean;
+                    };
+                };
             };
         };
     };
@@ -8967,7 +14653,41 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        apartment: {
+                            number: string;
+                            id: string;
+                            entrance: number;
+                        } | null;
+                        user: {
+                            id: string;
+                            email: string;
+                            firstName: string;
+                            lastName: string;
+                        } | null;
+                        createdBy: {
+                            id: string;
+                            firstName: string;
+                            lastName: string;
+                        } | null;
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        type: string;
+                        tenantId: string | null;
+                        title: string;
+                        apartmentId: string | null;
+                        userId: string | null;
+                        body: string | null;
+                        /** Format: date-time */
+                        dueAt: string;
+                        /** Format: date-time */
+                        sentAt: string | null;
+                        createdById: string | null;
+                        meta: unknown;
+                    }[];
+                };
             };
         };
     };
@@ -8988,7 +14708,25 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        type: string;
+                        tenantId: string | null;
+                        title: string;
+                        apartmentId: string | null;
+                        userId: string | null;
+                        body: string | null;
+                        /** Format: date-time */
+                        dueAt: string;
+                        /** Format: date-time */
+                        sentAt: string | null;
+                        createdById: string | null;
+                        meta: unknown;
+                    };
+                };
             };
         };
     };
@@ -9005,7 +14743,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        debtSent: number;
+                    };
+                };
             };
         };
     };
@@ -9022,7 +14764,15 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        customSent: number;
+                        debtSent: number;
+                        markedOverdue: number;
+                        penaltyLines: number;
+                        skipped?: boolean;
+                    };
+                };
             };
         };
     };
@@ -9041,7 +14791,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        deleted: boolean;
+                    };
+                };
             };
         };
     };
@@ -9061,7 +14816,25 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            /** @enum {string} */
+                            code: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                            isActive: boolean;
+                            labelUk: string | null;
+                            labelRu: string | null;
+                            labelDefault: {
+                                uk: string;
+                                ru: string;
+                            };
+                            sortOrder: number;
+                            memberCount: number;
+                            canDelete: boolean;
+                            isProtected: boolean;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -9082,7 +14855,25 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            /** @enum {string} */
+                            code: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                            isActive: boolean;
+                            labelUk: string | null;
+                            labelRu: string | null;
+                            labelDefault: {
+                                uk: string;
+                                ru: string;
+                            };
+                            sortOrder: number;
+                            memberCount: number;
+                            canDelete: boolean;
+                            isProtected: boolean;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -9101,7 +14892,25 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            /** @enum {string} */
+                            code: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                            isActive: boolean;
+                            labelUk: string | null;
+                            labelRu: string | null;
+                            labelDefault: {
+                                uk: string;
+                                ru: string;
+                            };
+                            sortOrder: number;
+                            memberCount: number;
+                            canDelete: boolean;
+                            isProtected: boolean;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -9124,7 +14933,25 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            /** @enum {string} */
+                            code: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                            isActive: boolean;
+                            labelUk: string | null;
+                            labelRu: string | null;
+                            labelDefault: {
+                                uk: string;
+                                ru: string;
+                            };
+                            sortOrder: number;
+                            memberCount: number;
+                            canDelete: boolean;
+                            isProtected: boolean;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -9145,7 +14972,25 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        count: number;
+                        apartments: {
+                            number: string;
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            entrance: number;
+                            floor: number | null;
+                            area: number;
+                            /** @description Decimal */
+                            advanceBalance: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -9166,7 +15011,74 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        skipped: boolean;
+                        bankAccount: {
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            description: string | null;
+                            bankName: string;
+                            iban: string;
+                        } | null;
+                        funds: {
+                            bankAccount: {
+                                id: string;
+                                buildingId: string;
+                                /** Format: date-time */
+                                createdAt: string;
+                                /** Format: date-time */
+                                updatedAt: string;
+                                description: string | null;
+                                bankName: string;
+                                iban: string;
+                            } | null;
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            name: string;
+                            bankAccountId: string | null;
+                            /** @enum {string} */
+                            type: "maintenance" | "capital_repair" | "special";
+                            /** @description Decimal */
+                            openingBalance: string;
+                        }[];
+                    } | {
+                        skipped: boolean;
+                        bankAccount: {
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            description: string | null;
+                            bankName: string;
+                            iban: string;
+                        };
+                        funds: {
+                            id: string;
+                            buildingId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            name: string;
+                            bankAccountId: string | null;
+                            /** @enum {string} */
+                            type: "maintenance" | "capital_repair" | "special";
+                            /** @description Decimal */
+                            openingBalance: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -9187,7 +15099,22 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        tenantId: string;
+                        address: string;
+                        edrpou: string | null;
+                        showDebtorsToResidents: boolean;
+                        isInitialized: boolean;
+                        settings: unknown;
+                    };
+                };
             };
         };
     };
@@ -9204,7 +15131,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        name: string;
+                        isInitialized: boolean;
+                    };
+                };
             };
         };
     };
@@ -9221,7 +15154,61 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        hasBuilding: boolean;
+                        isInitialized: boolean;
+                        buildingName: string | null;
+                        apartmentCount: number;
+                        fundCount: number;
+                        hasChairman: boolean;
+                        hasAccountant: boolean;
+                        hasAuditor: boolean;
+                        canComplete: boolean;
+                        deferredSetupRoles: ("accountant" | "auditor")[];
+                        pendingDeferredRoles: ("accountant" | "auditor")[];
+                        nextStep: number;
+                        stepDone: {
+                            building: boolean;
+                            bank: boolean;
+                            apartments: boolean;
+                            users: boolean;
+                        };
+                        building: {
+                            name: string;
+                            address: string;
+                            edrpou: string | null;
+                        } | null;
+                        bankAccount: {
+                            description: string | null;
+                            bankName: string;
+                            iban: string;
+                        } | null;
+                        existingUsers: {
+                            chairman: {
+                                email: string;
+                                firstName: string;
+                                lastName: string;
+                                /** @enum {string} */
+                                role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                            } | null;
+                            accountant: {
+                                email: string;
+                                firstName: string;
+                                lastName: string;
+                                /** @enum {string} */
+                                role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                            } | null;
+                            auditor: {
+                                email: string;
+                                firstName: string;
+                                lastName: string;
+                                /** @enum {string} */
+                                role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                            } | null;
+                        };
+                    };
+                };
             };
         };
     };
@@ -9242,7 +15229,20 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        skipped: boolean;
+                        users: {
+                            id: string;
+                            email: string;
+                            firstName: string;
+                            lastName: string;
+                            /** @enum {string} */
+                            role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                        }[];
+                        deferredSetupRoles: ("accountant" | "auditor")[];
+                    };
+                };
             };
         };
     };
@@ -9263,7 +15263,12 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        ok: boolean;
+                        expiresInSec: number;
+                    };
+                };
             };
         };
     };
@@ -9284,7 +15289,11 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        ok: boolean;
+                    };
+                };
             };
         };
     };
@@ -9301,7 +15310,14 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        enabled: boolean;
+                        provider: unknown;
+                        sender: unknown;
+                        apiKeyConfigured: boolean;
+                    };
+                };
             };
         };
     };
@@ -9322,7 +15338,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        ok: boolean;
+                        providerId?: string;
+                        logged?: boolean;
+                    };
+                };
             };
         };
     };
@@ -9339,7 +15361,25 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        _count: {
+                            buildings: number;
+                            users: number;
+                        };
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        isActive: boolean;
+                        settings: unknown;
+                        slug: string;
+                        /** @enum {string} */
+                        orgType: "osbb" | "management_company";
+                    }[];
+                };
             };
         };
     };
@@ -9360,7 +15400,30 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        _count: {
+                            buildings: number;
+                            users: number;
+                        };
+                        buildings: {
+                            id: string;
+                            name: string;
+                            address: string;
+                        }[];
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        isActive: boolean;
+                        settings: unknown;
+                        slug: string;
+                        /** @enum {string} */
+                        orgType: "osbb" | "management_company";
+                    };
+                };
             };
         };
     };
@@ -9379,7 +15442,30 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        _count: {
+                            buildings: number;
+                            users: number;
+                        };
+                        buildings: {
+                            id: string;
+                            name: string;
+                            address: string;
+                        }[];
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        isActive: boolean;
+                        settings: unknown;
+                        slug: string;
+                        /** @enum {string} */
+                        orgType: "osbb" | "management_company";
+                    };
+                };
             };
         };
     };
@@ -9402,7 +15488,13 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        deleted: boolean;
+                        id: string;
+                        slug: string;
+                    };
+                };
             };
         };
     };
@@ -9425,7 +15517,21 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        name: string;
+                        isActive: boolean;
+                        settings: unknown;
+                        slug: string;
+                        /** @enum {string} */
+                        orgType: "osbb" | "management_company";
+                    };
+                };
             };
         };
     };
@@ -9444,7 +15550,38 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        name: string;
+                        slug: string;
+                        isActive: boolean;
+                        canDelete: boolean;
+                        blockers: {
+                            code: string;
+                            label: string;
+                            count: number;
+                        }[];
+                        summary: {
+                            buildings: number;
+                            apartments: number;
+                            users: number;
+                            memberships: number;
+                            payments: number;
+                            accrualLines: number;
+                            accruals: number;
+                            expenses: number;
+                            journalEntries: number;
+                            bankStatements: number;
+                            supplierInvoices: number;
+                            supplierPayments: number;
+                            debtWriteOffs: number;
+                            bankReconciliations: number;
+                            fundTransfers: number;
+                            onlinePaymentOrders: number;
+                        };
+                    };
+                };
             };
         };
     };
@@ -9461,7 +15598,79 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        building: {
+                            name: string;
+                            address: string;
+                            edrpou: string | null;
+                            showDebtorsToResidents: boolean;
+                            showBankDetailsToResidents: boolean;
+                        } | null;
+                        expenseSummary: {
+                            period: {
+                                from?: string;
+                                to?: string;
+                            };
+                            total: number;
+                            count: number;
+                            byCategory: {
+                                name: string;
+                                total: number;
+                            }[];
+                            byFund: {
+                                name: string;
+                                total: number;
+                            }[];
+                        };
+                        cashFlow: {
+                            totalIncome: number;
+                            totalExpenses: number;
+                            netFlow: number;
+                            fundBalances: {
+                                fundId: string;
+                                fundName: string;
+                                /** @enum {string} */
+                                fundType: "maintenance" | "capital_repair" | "special";
+                                openingBalance: number;
+                                income: number;
+                                expenses: number;
+                                balance: number;
+                            }[] | {
+                                fundId: string;
+                                fundName: string;
+                                /** @enum {string} */
+                                fundType: "maintenance" | "capital_repair" | "special";
+                                openingBalance: number;
+                                income: number;
+                                expenses: number;
+                                balance: number;
+                                cashFromJournal: number;
+                            }[];
+                        };
+                        documents: {
+                            fileUrl: string;
+                            fileKey: string;
+                        }[];
+                        debtors: {
+                            isOverdue: boolean;
+                            apartmentId: string;
+                            number: string;
+                            entrance: number;
+                            buildingId: string;
+                            debt: number;
+                            /** Format: date-time */
+                            oldestDue: string | null;
+                            lines: number;
+                        }[] | null;
+                        bankAccounts: {
+                            id: string;
+                            description: string | null;
+                            bankName: string;
+                            iban: string;
+                        }[] | null;
+                    };
+                };
             };
         };
     };
@@ -9478,7 +15687,19 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        isOverdue: boolean;
+                        apartmentId: string;
+                        number: string;
+                        entrance: number;
+                        buildingId: string;
+                        debt: number;
+                        /** Format: date-time */
+                        oldestDue: string | null;
+                        lines: number;
+                    }[];
+                };
             };
         };
     };
@@ -9503,7 +15724,59 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            email: string;
+                            firstName: string;
+                            lastName: string;
+                            phone: string | null;
+                            /** @enum {string} */
+                            role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                            /** @enum {string} */
+                            status: "pending" | "active" | "blocked";
+                            tenantId: string | null;
+                            tenant: {
+                                id: string;
+                                name: string;
+                                slug: string;
+                                orgType?: string;
+                            } | null;
+                            apartmentId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            approvedAt: string | null;
+                            approvedBy: {
+                                id: string;
+                                email: string;
+                                firstName: string;
+                                lastName: string;
+                                /** @enum {string} */
+                                role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                            } | null;
+                            apartments: {
+                                id: string;
+                                number: string;
+                                entrance: number;
+                                isPrimary: boolean;
+                            }[];
+                            apartment: {
+                                id: string;
+                                number: string;
+                                entrance: number;
+                            } | null;
+                        }[];
+                        total: number;
+                        page: number;
+                        limit: number;
+                        /** @enum {string} */
+                        sortBy: "status" | "createdAt" | "name" | "email" | "role";
+                        /** @enum {string} */
+                        sortDir: "asc" | "desc";
+                    };
+                };
             };
         };
     };
@@ -9524,7 +15797,50 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        email: string;
+                        firstName: string;
+                        lastName: string;
+                        phone: string | null;
+                        /** @enum {string} */
+                        role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                        /** @enum {string} */
+                        status: "pending" | "active" | "blocked";
+                        tenantId: string | null;
+                        tenant: {
+                            id: string;
+                            name: string;
+                            slug: string;
+                            orgType?: string;
+                        } | null;
+                        apartmentId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        approvedAt: string | null;
+                        approvedBy: {
+                            id: string;
+                            email: string;
+                            firstName: string;
+                            lastName: string;
+                            /** @enum {string} */
+                            role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                        } | null;
+                        apartments: {
+                            id: string;
+                            number: string;
+                            entrance: number;
+                            isPrimary: boolean;
+                        }[];
+                        apartment: {
+                            id: string;
+                            number: string;
+                            entrance: number;
+                        } | null;
+                    };
+                };
             };
         };
     };
@@ -9547,7 +15863,50 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        email: string;
+                        firstName: string;
+                        lastName: string;
+                        phone: string | null;
+                        /** @enum {string} */
+                        role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                        /** @enum {string} */
+                        status: "pending" | "active" | "blocked";
+                        tenantId: string | null;
+                        tenant: {
+                            id: string;
+                            name: string;
+                            slug: string;
+                            orgType?: string;
+                        } | null;
+                        apartmentId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        approvedAt: string | null;
+                        approvedBy: {
+                            id: string;
+                            email: string;
+                            firstName: string;
+                            lastName: string;
+                            /** @enum {string} */
+                            role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                        } | null;
+                        apartments: {
+                            id: string;
+                            number: string;
+                            entrance: number;
+                            isPrimary: boolean;
+                        }[];
+                        apartment: {
+                            id: string;
+                            number: string;
+                            entrance: number;
+                        } | null;
+                    };
+                };
             };
         };
     };
@@ -9567,7 +15926,50 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        email: string;
+                        firstName: string;
+                        lastName: string;
+                        phone: string | null;
+                        /** @enum {string} */
+                        role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                        /** @enum {string} */
+                        status: "pending" | "active" | "blocked";
+                        tenantId: string | null;
+                        tenant: {
+                            id: string;
+                            name: string;
+                            slug: string;
+                            orgType?: string;
+                        } | null;
+                        apartmentId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        approvedAt: string | null;
+                        approvedBy: {
+                            id: string;
+                            email: string;
+                            firstName: string;
+                            lastName: string;
+                            /** @enum {string} */
+                            role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                        } | null;
+                        apartments: {
+                            id: string;
+                            number: string;
+                            entrance: number;
+                            isPrimary: boolean;
+                        }[];
+                        apartment: {
+                            id: string;
+                            number: string;
+                            entrance: number;
+                        } | null;
+                    } | null;
+                };
             };
         };
     };
@@ -9587,7 +15989,50 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        email: string;
+                        firstName: string;
+                        lastName: string;
+                        phone: string | null;
+                        /** @enum {string} */
+                        role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                        /** @enum {string} */
+                        status: "pending" | "active" | "blocked";
+                        tenantId: string | null;
+                        tenant: {
+                            id: string;
+                            name: string;
+                            slug: string;
+                            orgType?: string;
+                        } | null;
+                        apartmentId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        approvedAt: string | null;
+                        approvedBy: {
+                            id: string;
+                            email: string;
+                            firstName: string;
+                            lastName: string;
+                            /** @enum {string} */
+                            role: "resident" | "super_admin" | "chairman" | "accountant" | "board" | "dispatcher" | "crew" | "auditor";
+                        } | null;
+                        apartments: {
+                            id: string;
+                            number: string;
+                            entrance: number;
+                            isPrimary: boolean;
+                        }[];
+                        apartment: {
+                            id: string;
+                            number: string;
+                            entrance: number;
+                        } | null;
+                    } | null;
+                };
             };
         };
     };
@@ -9606,7 +16051,14 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id: string;
+                        /** @enum {string} */
+                        status: "pending" | "active" | "blocked";
+                        email: string;
+                    };
+                };
             };
         };
     };

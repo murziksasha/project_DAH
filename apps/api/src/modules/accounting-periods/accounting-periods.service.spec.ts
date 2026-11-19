@@ -1,5 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
-import { AccountingPeriodStatus } from '@prisma/client';
+import { AccountingPeriodStatus } from '../../prisma/client';
 import { AccountingPeriodsService } from './accounting-periods.service';
 
 describe('AccountingPeriodsService', () => {

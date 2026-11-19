@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { JournalEntryType, Prisma, UserRole } from '@prisma/client';
+import { JournalEntryType, Prisma, UserRole } from '../../prisma/client';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { resolveBuildingId } from '../../common/utils/building-scope';
 import { rowsToXlsxBuffer } from '../../common/utils/xlsx-export';

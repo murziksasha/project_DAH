@@ -15,12 +15,11 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '../../prisma/client';
 import { createReadStream } from 'fs';
 import { memoryStorage } from 'multer';
 import type { Response } from 'express';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { BackupsService } from './backups.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -28,12 +27,6 @@ import { PrismaService } from '../../prisma/prisma.service';
 /** Read/list/download: board + auditor */
 
 /** Create/upload: no auditor, no resident */
-const WRITE_ROLES = [
-  UserRole.super_admin,
-  UserRole.chairman,
-  UserRole.board,
-  UserRole.accountant,
-] as const;
 
 @ApiTags('backups')
 @ApiBearerAuth()
@@ -74,14 +67,14 @@ export class BackupsController {
     return this.backups.list();
   }
 
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE, Permission.PLATFORM_ADMIN)
   @Post()
   async createManual(@CurrentUser() user: AuthUser) {
     await this.assertInstallLevel(user);
     return this.backups.createManualBackup({ source: 'api', userId: user.id });
   }
 
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE, Permission.PLATFORM_ADMIN)
   @Post('weekly')
   async ensureWeekly(@CurrentUser() user: AuthUser) {
     await this.assertInstallLevel(user);

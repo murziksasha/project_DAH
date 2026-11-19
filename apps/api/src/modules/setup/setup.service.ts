@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { FundType, UserRole, UserStatus } from '@prisma/client';
+import { FundType, UserRole, UserStatus } from '../../prisma/client';
 import * as bcrypt from 'bcrypt';
 import {
   DeferredSetupRole,

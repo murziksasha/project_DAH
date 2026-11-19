@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '@/components/LocaleProvider';
 import { apiFetch, getToken } from '@/lib/api';
-import { getStoredUser } from '@/lib/auth';
+import { getStoredUser } from '@/lib/auth';
+import type { ApiResponse } from '@/lib/api-types';
 
 const STEPS = ['balance', 'meters', 'request'] as const;
 type Step = (typeof STEPS)[number];
@@ -24,7 +25,7 @@ export function ResidentTour() {
     if (user?.role !== 'resident') return;
     const token = getToken();
     if (!token) return;
-    apiFetch<{ onboardingDone?: boolean }>('/auth/2fa/status', { token })
+    apiFetch<ApiResponse<'/auth/2fa/status'>>('/auth/2fa/status', { token })
       .then((s) => {
         if (!s.onboardingDone) setOpen(true);
       })

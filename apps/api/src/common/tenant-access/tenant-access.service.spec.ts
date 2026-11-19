@@ -1,5 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '../../prisma/client';
 import { AuthUser } from '../decorators/current-user.decorator';
 import { TenantAccessService, assertTenantMatch, effectiveTenantId } from './tenant-access.service';
 

@@ -1,3 +1,6 @@
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { Permission } from '@dah/shared';
 import {
   Body,
   Controller,
@@ -12,9 +15,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../common/guards/roles.guard';
+import { UserRole } from '../../prisma/client';
 import { AuthUser, CurrentUser } from '../../common/decorators/current-user.decorator';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { TenantAccessService } from '../../common/tenant-access/tenant-access.service';
@@ -27,14 +28,8 @@ import { JournalService } from './journal.service';
 
 @ApiTags('journal')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'), RolesGuard)
-@Roles(
-  UserRole.chairman,
-  UserRole.accountant,
-  UserRole.board,
-  UserRole.auditor,
-  UserRole.super_admin,
-)
+@UseGuards(AuthGuard('jwt'), PermissionsGuard)
+@RequirePermissions(Permission.READ_FINANCE)
 @Controller('journal')
 export class JournalController {
   constructor(
@@ -104,7 +99,7 @@ export class JournalController {
    * (409 otherwise; super_admin may force with a reason). Disabling = instant rollback.
    */
   @Post('sot')
-  @Roles(UserRole.chairman, UserRole.accountant, UserRole.super_admin)
+  @RequirePermissions(Permission.FINANCE_ADMIN, Permission.PLATFORM_ADMIN)
   async setSot(
     @CurrentUser() user: AuthUser,
     @TenantId() tenantId: string | null,
@@ -133,7 +128,7 @@ export class JournalController {
 
   /** Record today's shadow-compare now (otherwise the worker does it daily). */
   @Post('shadow-runs')
-  @Roles(UserRole.chairman, UserRole.accountant, UserRole.super_admin)
+  @RequirePermissions(Permission.FINANCE_ADMIN, Permission.PLATFORM_ADMIN)
   async recordShadowRun(
     @CurrentUser() user: AuthUser,
     @TenantId() tenantId: string | null,
@@ -193,13 +188,13 @@ export class JournalController {
 
   /** Global default CoA rows are platform data — only super_admin may (re)create them. */
   @Post('coa/ensure-defaults')
-  @Roles(UserRole.super_admin)
+  @RequirePermissions(Permission.PLATFORM_ADMIN)
   ensureDefaults() {
     return this.journal.ensureDefaultChartOfAccounts();
   }
 
   @Patch('coa/:id/external-code')
-  @Roles(UserRole.chairman, UserRole.accountant, UserRole.super_admin)
+  @RequirePermissions(Permission.FINANCE_ADMIN, Permission.PLATFORM_ADMIN)
   async setExternalCode(
     @CurrentUser() user: AuthUser,
     @TenantId() tenantId: string | null,

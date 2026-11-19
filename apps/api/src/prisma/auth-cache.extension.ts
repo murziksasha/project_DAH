@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma } from './client';
 import { invalidateAuthCache } from '../common/auth-cache';
 
 /** Models whose writes can change who is authenticated / with which role. */

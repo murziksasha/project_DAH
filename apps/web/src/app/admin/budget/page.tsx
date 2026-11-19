@@ -5,7 +5,8 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { StatCard } from '@/components/ui/StatCard';
 import { apiFetch, getToken } from '@/lib/api';
 import { getSelectedBuildingId } from '@/lib/building-context';
-import { formatMoney } from '@/lib/money';
+import { formatMoney } from '@/lib/money';
+import type { ApiResponse } from '@/lib/api-types';
 
 interface Fund {
   id: string;
@@ -89,8 +90,8 @@ export default function BudgetPage() {
           `/finance/budget/plan-fact?buildingId=${encodeURIComponent(bid)}&year=${y}`,
           { token },
         ),
-        apiFetch<Fund[]>('/finance/funds', { token }),
-        apiFetch<Category[]>('/finance/categories', { token }),
+        apiFetch<ApiResponse<'/finance/funds'>>('/finance/funds', { token }),
+        apiFetch<ApiResponse<'/finance/categories'>>('/finance/categories', { token }),
         apiFetch<{ lines: EncumbranceLine[] }>(
           `/accounting/budget/plan-fact-encumbrance?buildingId=${encodeURIComponent(bid)}&year=${y}`,
           { token },
@@ -115,7 +116,7 @@ export default function BudgetPage() {
     void (async () => {
       const token = getToken()!;
       try {
-        const list = await apiFetch<Array<{ id: string; name: string }>>('/building', {
+        const list = await apiFetch<ApiResponse<'/building'>>('/building', {
           token,
         });
         const rows = Array.isArray(list) ? list : [];

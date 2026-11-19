@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, RequestPriority, RequestStatus, UserRole, VoteWeightMode } from '@prisma/client';
+import { Prisma, RequestPriority, RequestStatus, UserRole, VoteWeightMode } from '../../prisma/client';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { roundMoney } from '../../common/utils/money';
 import {

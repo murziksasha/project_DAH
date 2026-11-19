@@ -5,7 +5,8 @@ import { useI18n } from '@/components/LocaleProvider';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
-import { formatDateUk } from '@/lib/money';
+import { formatDateUk } from '@/lib/money';
+import type { ApiResponse } from '@/lib/api-types';
 
 interface PendingUser {
   id: string;
@@ -48,7 +49,7 @@ export default function ResidentsPage() {
     setLoading(true);
     setError('');
     try {
-      const data = await apiFetch<PendingUser[]>('/auth/pending', { token });
+      const data = await apiFetch<ApiResponse<'/auth/pending'>>('/auth/pending', { token });
       setUsers(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('residentsLoadError'));

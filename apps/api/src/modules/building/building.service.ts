@@ -3,7 +3,7 @@ import {
   normalizeDocumentTemplatesConfig,
   type DocumentTemplatesConfig,
 } from '@dah/shared';
-import { Prisma, UserRole } from '@prisma/client';
+import { Prisma, UserRole } from '../../prisma/client';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import {
   extractEmailsFromResidentsCell,

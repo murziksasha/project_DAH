@@ -12,7 +12,7 @@ import {
   Prisma,
   UserRole,
   VoteWeightMode,
-} from '@prisma/client';
+} from '../../prisma/client';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';

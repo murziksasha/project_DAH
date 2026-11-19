@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { RequestPriority } from '@prisma/client';
+import { RequestPriority } from '../../../prisma/client';
 import { IsArray, IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
 
 export class CreateRequestDto {

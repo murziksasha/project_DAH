@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useI18n } from '@/components/LocaleProvider';
 import { apiFetch, getToken } from '@/lib/api';
-import { getStoredUser } from '@/lib/auth';
+import { getStoredUser } from '@/lib/auth';
+import type { ApiResponse } from '@/lib/api-types';
 
 function dismiss2faStorageKey(userId: string) {
   return `dah-dismiss-2fa-banner:${userId}`;
@@ -55,16 +56,12 @@ export function OnboardingBanner() {
 
     // Residents use ResidentTour instead of welcome onboarding card
     if (userRole === 'resident') {
-      apiFetch<{ required?: boolean }>('/auth/2fa/status', { token })
+      apiFetch<ApiResponse<'/auth/2fa/status'>>('/auth/2fa/status', { token })
         .then((s) => applyRequired(s.required))
         .catch(() => undefined);
       return;
     }
-    apiFetch<{
-      onboardingDone?: boolean;
-      required?: boolean;
-      totpEnabled?: boolean;
-    }>('/auth/2fa/status', { token })
+    apiFetch<ApiResponse<'/auth/2fa/status'>>('/auth/2fa/status', { token })
       .then((s) => {
         applyRequired(s.required);
         if (!s.onboardingDone) setShow(true);

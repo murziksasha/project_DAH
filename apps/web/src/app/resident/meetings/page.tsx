@@ -8,7 +8,8 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { SkeletonCards } from '@/components/ui/Skeleton';
 import { apiFetch, getToken } from '@/lib/api';
-import { formatDateUk } from '@/lib/money';
+import { formatDateUk } from '@/lib/money';
+import type { ApiResponse } from '@/lib/api-types';
 
 interface MeetingListItem {
   id: string;
@@ -67,7 +68,7 @@ export default function ResidentMeetingsPage() {
       return;
     }
     try {
-      setList(await apiFetch<MeetingListItem[]>('/meetings', { token }));
+      setList(await apiFetch<ApiResponse<'/meetings'>>('/meetings', { token }));
     } catch (e) {
       setError(e instanceof Error ? e.message : t('error'));
     } finally {

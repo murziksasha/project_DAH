@@ -1,16 +1,16 @@
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { Permission } from '@dah/shared';
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../common/guards/roles.guard';
 import { AuditService } from './audit.service';
 
 @ApiTags('audit')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'), RolesGuard)
-@Roles(UserRole.super_admin, UserRole.chairman, UserRole.auditor)
+@UseGuards(AuthGuard('jwt'), PermissionsGuard)
+@RequirePermissions(Permission.READ_AUDIT, Permission.PLATFORM_ADMIN)
 @Controller('audit')
 export class AuditController {
   constructor(private audit: AuditService) {}

@@ -1,6 +1,6 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { UserRole, UserStatus } from '@prisma/client';
+import { UserRole, UserStatus } from '../src/prisma/client';
 import * as bcrypt from 'bcrypt';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';

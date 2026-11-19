@@ -15,7 +15,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '../../prisma/client';
 import type { Response } from 'express';
 import { memoryStorage } from 'multer';
 import { ConfigService } from '@nestjs/config';

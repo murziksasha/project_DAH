@@ -14,7 +14,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '../../prisma/client';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -83,8 +83,8 @@ export class CommunicationsController {
     );
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.chairman, UserRole.board)
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_COMMUNICATIONS)
   @Delete('announcements/:id')
   deleteAnnouncement(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.communications.deleteAnnouncement(
@@ -153,8 +153,8 @@ export class CommunicationsController {
     );
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.chairman, UserRole.board)
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_COMMUNICATIONS)
   @Post('polls')
   createPoll(@Body() dto: CreatePollDto, @CurrentUser() user: AuthUser) {
     return this.communications.createPoll(
@@ -180,8 +180,8 @@ export class CommunicationsController {
     );
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.chairman, UserRole.board)
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_COMMUNICATIONS)
   @Patch('polls/:id/close')
   closePoll(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.communications.closePoll(

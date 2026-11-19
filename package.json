@@ -79,6 +79,12 @@
   "allowScripts": {},
   "overrides": {
     "postcss": "^8.5.33",
-    "brace-expansion@1": "^1.1.22"
+    "brace-expansion@1": "^1.1.22",
+    "@nestjs/cli": {
+      "glob": "^14.0.6"
+    },
+    "exceljs": {
+      "uuid": "^11.1.1"
+    }
   }
 }

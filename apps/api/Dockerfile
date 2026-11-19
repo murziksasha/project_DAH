@@ -37,7 +37,6 @@ COPY --from=builder --chown=node:node /app/apps/api/prisma ./apps/api/prisma
 # Prisma 7: CLI config (migrate deploy reads DATABASE_URL from here)
 COPY --from=builder --chown=node:node /app/apps/api/prisma.config.ts ./apps/api/prisma.config.ts
 COPY --from=builder --chown=node:node /app/apps/api/assets ./apps/api/assets
-COPY --from=builder --chown=node:node /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder --chown=node:node /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder --chown=node:node /app/package.json ./
 

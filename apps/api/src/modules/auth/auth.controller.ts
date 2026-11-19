@@ -1,3 +1,6 @@
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { Permission } from '@dah/shared';
 import {
   Body,
   Controller,
@@ -14,11 +17,8 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { UserRole } from '@prisma/client';
 import type { Request, Response } from 'express';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../common/guards/roles.guard';
 import { clearAuthCookies, REFRESH_COOKIE, setAuthCookies } from './auth-cookies';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
@@ -294,24 +294,24 @@ export class AuthController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(UserRole.chairman, UserRole.board)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_COMMUNICATIONS)
   @Get('pending')
   pending() {
     return this.auth.getPendingUsers();
   }
 
   @ApiBearerAuth()
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(UserRole.chairman, UserRole.board)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_COMMUNICATIONS)
   @Patch('approve/:id')
   approve(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.auth.approveUser(id, user.id);
   }
 
   @ApiBearerAuth()
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(UserRole.chairman, UserRole.board)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_COMMUNICATIONS)
   @Patch('reject/:id')
   reject(
     @Param('id') id: string,

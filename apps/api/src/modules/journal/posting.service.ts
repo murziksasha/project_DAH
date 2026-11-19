@@ -1,6 +1,6 @@
 import { roundMoney } from '../../common/utils/money';
 import { Injectable } from '@nestjs/common';
-import { JournalEntryType } from '@prisma/client';
+import { JournalEntryType } from '../../prisma/client';
 import { JournalService, type JournalLineInput, type TxClient } from './journal.service';
 
 export type PostingContext = {

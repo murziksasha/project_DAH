@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { MeetingStatus, MeetingType, VoteWeightMode } from '@prisma/client';
+import { MeetingStatus, MeetingType, VoteWeightMode } from '../../../prisma/client';
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,

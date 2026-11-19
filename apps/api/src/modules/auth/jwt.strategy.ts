@@ -2,7 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { AUTH_CACHE_MAX, authCache, invalidateAuthCache } from '../../common/auth-cache';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
-import { UserRole, UserStatus } from '@prisma/client';
+import { UserRole, UserStatus } from '../../prisma/client';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { resolveJwtSecret } from '../../common/config/jwt.config';
 import { AuthUser } from '../../common/decorators/current-user.decorator';

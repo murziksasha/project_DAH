@@ -6,7 +6,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PaymentSource, Prisma, UserRole } from '@prisma/client';
+import { PaymentSource, Prisma, UserRole } from '../../prisma/client';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { toMinor } from '@dah/money';
 import { PrismaService } from '../../prisma/prisma.service';

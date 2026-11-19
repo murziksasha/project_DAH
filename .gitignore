@@ -49,3 +49,4 @@ infra/nginx/dah-windows.conf
 infra/certs/*.pem
 infra/certs/*.key
 !infra/certs/.gitkeep
+apps/api/src/generated/

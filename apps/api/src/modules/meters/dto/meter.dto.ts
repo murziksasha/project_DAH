@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { MeterType } from '@prisma/client';
+import { MeterType } from '../../../prisma/client';
 import { Type } from 'class-transformer';
 import { IsEnum, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
 

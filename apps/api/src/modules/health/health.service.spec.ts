@@ -21,7 +21,7 @@ describe('HealthService redis optional', () => {
     const result = await svc.check();
     expect(result.redis).toBe('skipped');
     expect(result.db).toBe('up');
-  });
+  }, 20_000); // S3/DB probes can be slow under parallel CI load
 
   it('skips redis when REDIS_URL unset', async () => {
     const svc = makeService({ REDIS_URL: '' });

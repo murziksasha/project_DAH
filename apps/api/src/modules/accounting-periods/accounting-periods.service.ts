@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AccountingPeriodStatus, Prisma, UserRole } from '@prisma/client';
+import { AccountingPeriodStatus, Prisma, UserRole } from '../../prisma/client';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { isJournalSotEnabled } from '../../common/utils/finance-sot';
 import { parseBuildingSettings } from '../building/building-settings';

@@ -7,7 +7,8 @@ import { StatCard } from '@/components/ui/StatCard';
 import { apiFetch, getApiBaseUrl, getToken, refreshAccessToken } from '@/lib/api';
 import { getStoredUser, StoredUser } from '@/lib/auth';
 import { downloadAuthFile } from '@/lib/download';
-import type { I18nKey } from '@/lib/i18n';
+import type { I18nKey } from '@/lib/i18n';
+import type { ApiResponse } from '@/lib/api-types';
 
 interface MailStatus {
   smtpConfigured: boolean;
@@ -128,15 +129,15 @@ export default function OpsPage() {
     setError('');
     try {
       const [hRes, m, l, bStatus, bList] = await Promise.all([
-        apiFetch<HealthStatus>('/health/details', { token }).catch(async () => {
+        apiFetch<ApiResponse<'/health/details'>>('/health/details', { token }).catch(async () => {
           // fallback public probe if details forbidden
           const r = await fetch(`${getApiBaseUrl()}/health`, { cache: 'no-store' });
           return r.json() as Promise<HealthStatus>;
         }),
-        apiFetch<MailStatus>('/mail/status', { token }),
+        apiFetch<ApiResponse<'/mail/status'>>('/mail/status', { token }),
         apiFetch<EmailLog[]>('/mail/logs?limit=15', { token }).catch(() => [] as EmailLog[]),
-        apiFetch<BackupStatus>('/backups/status', { token }).catch(() => null),
-        apiFetch<BackupListItem[]>('/backups', { token }).catch(() => [] as BackupListItem[]),
+        apiFetch<ApiResponse<'/backups/status'>>('/backups/status', { token }).catch(() => null),
+        apiFetch<ApiResponse<'/backups'>>('/backups', { token }).catch(() => [] as BackupListItem[]),
       ]);
       setHealth(hRes);
       setMail(m);
@@ -243,11 +244,7 @@ export default function OpsPage() {
     setBusy(true);
     setError('');
     try {
-      const res = await apiFetch<{
-        ok: boolean;
-        mismatchCount: number;
-        mismatches: Array<{ kind: string; label: string; diff: number }>;
-      }>('/journal/reconcile', { token });
+      const res = await apiFetch<ApiResponse<'/journal/reconcile'>>('/journal/reconcile', { token });
       setMessage(
         res.ok
           ? 'Journal reconcile: OK (розбіжностей немає)'

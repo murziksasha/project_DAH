@@ -7,7 +7,8 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
 import { downloadAuthFile } from '@/lib/download';
 import { meterTypeLabel } from '@/lib/i18n';
-import { formatMoney } from '@/lib/money';
+import { formatMoney } from '@/lib/money';
+import type { ApiResponse } from '@/lib/api-types';
 
 interface Fund {
   id: string;
@@ -79,8 +80,8 @@ export default function AccrualsPage() {
       return;
     }
     Promise.all([
-      apiFetch<Fund[]>('/finance/funds', { token }),
-      apiFetch<Template[]>('/accruals/templates', { token }),
+      apiFetch<ApiResponse<'/finance/funds'>>('/finance/funds', { token }),
+      apiFetch<ApiResponse<'/accruals/templates'>>('/accruals/templates', { token }),
     ]).then(([f, tpl]) => {
       setFunds(f);
       setTemplates(tpl);
@@ -169,7 +170,7 @@ export default function AccrualsPage() {
         }),
       });
       setMessage(t('accrualTemplateSaved'));
-      const tpl = await apiFetch<Template[]>('/accruals/templates', { token });
+      const tpl = await apiFetch<ApiResponse<'/accruals/templates'>>('/accruals/templates', { token });
       setTemplates(tpl);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('accrualTemplateError'));

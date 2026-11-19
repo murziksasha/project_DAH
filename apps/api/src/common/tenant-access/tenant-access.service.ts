@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '../../prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthUser } from '../decorators/current-user.decorator';
 import { resolveTenantId } from '../utils/tenant-scope';

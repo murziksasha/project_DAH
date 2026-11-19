@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { AccrualDistribution, PaymentSource } from '@prisma/client';
+import { AccrualDistribution, PaymentSource } from '../../../prisma/client';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,

@@ -129,14 +129,14 @@ Endpoints: **268**; лише JWT: **65**; розбіжностей Roles↔Permi
 | `GET` | `/api/accruals/templates` | jwt | — | read_finance | accountant, auditor, board, chairman, super_admin |
 | `POST` | `/api/accruals/templates` | jwt | — | manage_finance | accountant, board, chairman |
 | `DELETE` | `/api/accruals/templates/:id` | jwt | — | manage_finance | accountant, board, chairman |
-| `GET` | `/api/audit/logs` | jwt | auditor, chairman, super_admin | — | auditor, chairman, super_admin |
+| `GET` | `/api/audit/logs` | jwt | — | platform_admin, read_audit | auditor, chairman, super_admin |
 | `POST` | `/api/auth/2fa/disable` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `POST` | `/api/auth/2fa/enable` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `POST` | `/api/auth/2fa/setup` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `GET` | `/api/auth/2fa/status` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `POST` | `/api/auth/2fa/verify` | public | — | — | *public* |
 | `GET` | `/api/auth/apartments` | public | — | — | *public* |
-| `PATCH` | `/api/auth/approve/:id` | jwt | board, chairman | — | board, chairman |
+| `PATCH` | `/api/auth/approve/:id` | jwt | — | manage_communications | board, chairman |
 | `POST` | `/api/auth/change-password` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `PATCH` | `/api/auth/email-notify` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `POST` | `/api/auth/login` | public | — | — | *public* |
@@ -149,21 +149,21 @@ Endpoints: **268**; лише JWT: **65**; розбіжностей Roles↔Permi
 | `POST` | `/api/auth/onboarding/complete` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `POST` | `/api/auth/password/forgot` | public | — | — | *public* |
 | `POST` | `/api/auth/password/reset` | public | — | — | *public* |
-| `GET` | `/api/auth/pending` | jwt | board, chairman | — | board, chairman |
+| `GET` | `/api/auth/pending` | jwt | — | manage_communications | board, chairman |
 | `GET` | `/api/auth/profile` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `PATCH` | `/api/auth/profile` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `POST` | `/api/auth/refresh` | public | — | — | *public* |
 | `POST` | `/api/auth/register` | public | — | — | *public* |
-| `PATCH` | `/api/auth/reject/:id` | jwt | board, chairman | — | board, chairman |
+| `PATCH` | `/api/auth/reject/:id` | jwt | — | manage_communications | board, chairman |
 | `POST` | `/api/auth/select-tenant` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `GET` | `/api/auth/sessions` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `DELETE` | `/api/auth/sessions/:id` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `GET` | `/api/backups` | jwt | — | read_finance | accountant, auditor, board, chairman, super_admin |
-| `POST` | `/api/backups` | jwt | accountant, board, chairman, super_admin | — | accountant, board, chairman, super_admin |
+| `POST` | `/api/backups` | jwt | — | manage_finance, platform_admin | accountant, board, chairman, super_admin |
 | `GET` | `/api/backups/:kind/:id/download` | jwt | — | manage_setup | super_admin |
 | `GET` | `/api/backups/status` | jwt | — | read_finance | accountant, auditor, board, chairman, super_admin |
 | `POST` | `/api/backups/upload` | jwt | — | manage_setup | super_admin |
-| `POST` | `/api/backups/weekly` | jwt | accountant, board, chairman, super_admin | — | accountant, board, chairman, super_admin |
+| `POST` | `/api/backups/weekly` | jwt | — | manage_finance, platform_admin | accountant, board, chairman, super_admin |
 | `GET` | `/api/building` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `PATCH` | `/api/building` | jwt | board, chairman, super_admin | — | board, chairman, super_admin |
 | `GET` | `/api/building/apartments` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
@@ -176,7 +176,7 @@ Endpoints: **268**; лише JWT: **65**; розбіжностей Roles↔Permi
 | `GET` | `/api/building/by/:id` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `POST` | `/api/building/create` | jwt | — | manage_building | chairman, super_admin |
 | `GET` | `/api/building/document-templates` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
-| `PATCH` | `/api/building/document-templates` | jwt | accountant, board, chairman, super_admin | — | accountant, board, chairman, super_admin |
+| `PATCH` | `/api/building/document-templates` | jwt | — | manage_finance, platform_admin | accountant, board, chairman, super_admin |
 | `GET` | `/api/building/list` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `GET` | `/api/building/ops-summary` | jwt | — | read_finance | accountant, auditor, board, chairman, super_admin |
 | `GET` | `/api/building/portfolio` | jwt | accountant, auditor, board, chairman, dispatcher, super_admin | — | accountant, auditor, board, chairman, dispatcher, super_admin |
@@ -187,22 +187,22 @@ Endpoints: **268**; лише JWT: **65**; розбіжностей Roles↔Permi
 | `PATCH` | `/api/building/settings` | jwt | board, chairman, super_admin | — | board, chairman, super_admin |
 | `GET` | `/api/communications/announcements` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `POST` | `/api/communications/announcements` | jwt | — | manage_finance | accountant, board, chairman |
-| `DELETE` | `/api/communications/announcements/:id` | jwt | board, chairman | — | board, chairman |
+| `DELETE` | `/api/communications/announcements/:id` | jwt | — | manage_communications | board, chairman |
 | `PATCH` | `/api/communications/announcements/:id/read` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `PATCH` | `/api/communications/announcements/read-all` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `GET` | `/api/communications/announcements/unread-count` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `GET` | `/api/communications/polls` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
-| `POST` | `/api/communications/polls` | jwt | board, chairman | — | board, chairman |
+| `POST` | `/api/communications/polls` | jwt | — | manage_communications | board, chairman |
 | `GET` | `/api/communications/polls/:id` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
-| `PATCH` | `/api/communications/polls/:id/close` | jwt | board, chairman | — | board, chairman |
+| `PATCH` | `/api/communications/polls/:id/close` | jwt | — | manage_communications | board, chairman |
 | `POST` | `/api/communications/polls/:id/vote` | jwt | accountant, board, chairman, resident | — | accountant, board, chairman, resident |
 | `GET` | `/api/communications/requests` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `POST` | `/api/communications/requests` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `PATCH` | `/api/communications/requests/:id` | jwt | accountant, board, chairman, crew, dispatcher | — | accountant, board, chairman, crew, dispatcher |
 | `GET` | `/api/communications/requests/queue` | jwt | accountant, board, chairman, crew, dispatcher | — | accountant, board, chairman, crew, dispatcher |
 | `POST` | `/api/copilot/classify-request` | jwt | — | work_requests | board, chairman, crew, dispatcher, super_admin |
-| `POST` | `/api/copilot/draft-note` | jwt | board, chairman, super_admin | — | board, chairman, super_admin |
-| `POST` | `/api/copilot/match-hint` | jwt | accountant, board, chairman, super_admin | — | accountant, board, chairman, super_admin |
+| `POST` | `/api/copilot/draft-note` | jwt | — | manage_communications, platform_admin | board, chairman, super_admin |
+| `POST` | `/api/copilot/match-hint` | jwt | — | manage_finance, platform_admin | accountant, board, chairman, super_admin |
 | `GET` | `/api/copilot/status` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `GET` | `/api/documents` | jwt | — | manage_finance | accountant, board, chairman |
 | `POST` | `/api/documents` | jwt | — | manage_finance | accountant, board, chairman |
@@ -233,7 +233,7 @@ Endpoints: **268**; лише JWT: **65**; розбіжностей Roles↔Permi
 | `POST` | `/api/finance/funds` | jwt | — | manage_finance | accountant, board, chairman |
 | `PATCH` | `/api/finance/funds/:id` | jwt | — | finance_admin | accountant, chairman |
 | `GET` | `/api/finance/periods` | jwt | — | read_finance | accountant, auditor, board, chairman, super_admin |
-| `PATCH` | `/api/finance/periods` | jwt | accountant, board, chairman, super_admin | — | accountant, board, chairman, super_admin |
+| `PATCH` | `/api/finance/periods` | jwt | — | manage_finance, platform_admin | accountant, board, chairman, super_admin |
 | `GET` | `/api/finance/periods/checklist` | jwt | — | read_finance | accountant, auditor, board, chairman, super_admin |
 | `GET` | `/api/finance/reports/board.pdf` | jwt | — | read_finance | accountant, auditor, board, chairman, super_admin |
 | `GET` | `/api/finance/reports/cash-flow` | jwt | — | read_finance | accountant, auditor, board, chairman, super_admin |
@@ -254,19 +254,19 @@ Endpoints: **268**; лише JWT: **65**; розбіжностей Roles↔Permi
 | `POST` | `/api/identity/callback` | public | — | — | *public* |
 | `GET` | `/api/identity/mock/authorize` | public | — | — | *public* |
 | `GET` | `/api/identity/status` | public | — | — | *public* |
-| `GET` | `/api/journal` | jwt | accountant, auditor, board, chairman, super_admin | — | accountant, auditor, board, chairman, super_admin |
-| `GET` | `/api/journal/:id` | jwt | accountant, auditor, board, chairman, super_admin | — | accountant, auditor, board, chairman, super_admin |
-| `GET` | `/api/journal/account-card` | jwt | accountant, auditor, board, chairman, super_admin | — | accountant, auditor, board, chairman, super_admin |
-| `GET` | `/api/journal/coa` | jwt | accountant, auditor, board, chairman, super_admin | — | accountant, auditor, board, chairman, super_admin |
-| `PATCH` | `/api/journal/coa/:id/external-code` | jwt | accountant, chairman, super_admin | — | accountant, chairman, super_admin |
-| `POST` | `/api/journal/coa/ensure-defaults` | jwt | super_admin | — | super_admin |
-| `GET` | `/api/journal/fund-balances` | jwt | accountant, auditor, board, chairman, super_admin | — | accountant, auditor, board, chairman, super_admin |
-| `GET` | `/api/journal/reconcile` | jwt | accountant, auditor, board, chairman, super_admin | — | accountant, auditor, board, chairman, super_admin |
-| `GET` | `/api/journal/shadow-compare` | jwt | accountant, auditor, board, chairman, super_admin | — | accountant, auditor, board, chairman, super_admin |
-| `POST` | `/api/journal/shadow-runs` | jwt | accountant, chairman, super_admin | — | accountant, chairman, super_admin |
-| `POST` | `/api/journal/sot` | jwt | accountant, chairman, super_admin | — | accountant, chairman, super_admin |
-| `GET` | `/api/journal/sot-readiness` | jwt | accountant, auditor, board, chairman, super_admin | — | accountant, auditor, board, chairman, super_admin |
-| `GET` | `/api/journal/trial-balance` | jwt | accountant, auditor, board, chairman, super_admin | — | accountant, auditor, board, chairman, super_admin |
+| `GET` | `/api/journal` | jwt | — | read_finance | accountant, auditor, board, chairman, super_admin |
+| `GET` | `/api/journal/:id` | jwt | — | read_finance | accountant, auditor, board, chairman, super_admin |
+| `GET` | `/api/journal/account-card` | jwt | — | read_finance | accountant, auditor, board, chairman, super_admin |
+| `GET` | `/api/journal/coa` | jwt | — | read_finance | accountant, auditor, board, chairman, super_admin |
+| `PATCH` | `/api/journal/coa/:id/external-code` | jwt | — | finance_admin, platform_admin | accountant, chairman, super_admin |
+| `POST` | `/api/journal/coa/ensure-defaults` | jwt | — | platform_admin | super_admin |
+| `GET` | `/api/journal/fund-balances` | jwt | — | read_finance | accountant, auditor, board, chairman, super_admin |
+| `GET` | `/api/journal/reconcile` | jwt | — | read_finance | accountant, auditor, board, chairman, super_admin |
+| `GET` | `/api/journal/shadow-compare` | jwt | — | read_finance | accountant, auditor, board, chairman, super_admin |
+| `POST` | `/api/journal/shadow-runs` | jwt | — | finance_admin, platform_admin | accountant, chairman, super_admin |
+| `POST` | `/api/journal/sot` | jwt | — | finance_admin, platform_admin | accountant, chairman, super_admin |
+| `GET` | `/api/journal/sot-readiness` | jwt | — | read_finance | accountant, auditor, board, chairman, super_admin |
+| `GET` | `/api/journal/trial-balance` | jwt | — | read_finance | accountant, auditor, board, chairman, super_admin |
 | `POST` | `/api/kep/meetings/:meetingId/sign` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `GET` | `/api/kep/mock/authorize` | public | — | — | *public* |
 | `GET` | `/api/kep/sessions/:id` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
@@ -274,18 +274,18 @@ Endpoints: **268**; лише JWT: **65**; розбіжностей Roles↔Permi
 | `POST` | `/api/kep/sessions/:id/complete-auth` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `GET` | `/api/kep/status` | public | — | — | *public* |
 | `POST` | `/api/kep/webhook` | public | — | — | *public* |
-| `GET` | `/api/mail/logs` | jwt | board, chairman, super_admin | — | board, chairman, super_admin |
-| `GET` | `/api/mail/status` | jwt | board, chairman, super_admin | — | board, chairman, super_admin |
-| `POST` | `/api/mail/test` | jwt | board, chairman, super_admin | — | board, chairman, super_admin |
+| `GET` | `/api/mail/logs` | jwt | — | manage_communications, platform_admin | board, chairman, super_admin |
+| `GET` | `/api/mail/status` | jwt | — | manage_communications, platform_admin | board, chairman, super_admin |
+| `POST` | `/api/mail/test` | jwt | — | manage_communications, platform_admin | board, chairman, super_admin |
 | `GET` | `/api/meetings` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
-| `POST` | `/api/meetings` | jwt | board, chairman, super_admin | — | board, chairman, super_admin |
+| `POST` | `/api/meetings` | jwt | — | manage_communications, platform_admin | board, chairman, super_admin |
 | `GET` | `/api/meetings/:id` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `POST` | `/api/meetings/:id/agenda/:agendaItemId/vote` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
-| `POST` | `/api/meetings/:id/protocol` | jwt | board, chairman, super_admin | — | board, chairman, super_admin |
-| `GET` | `/api/meetings/:id/protocol.pdf` | jwt | auditor, board, chairman, super_admin | — | auditor, board, chairman, super_admin |
+| `POST` | `/api/meetings/:id/protocol` | jwt | — | manage_communications, platform_admin | board, chairman, super_admin |
+| `GET` | `/api/meetings/:id/protocol.pdf` | jwt | — | manage_communications, platform_admin, read_audit | auditor, board, chairman, super_admin |
 | `POST` | `/api/meetings/:id/register` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `POST` | `/api/meetings/:id/sign` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
-| `PATCH` | `/api/meetings/:id/status` | jwt | board, chairman, super_admin | — | board, chairman, super_admin |
+| `PATCH` | `/api/meetings/:id/status` | jwt | — | manage_communications, platform_admin | board, chairman, super_admin |
 | `GET` | `/api/messenger/peers` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `GET` | `/api/messenger/threads` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `GET` | `/api/messenger/threads/:id/messages` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
@@ -294,9 +294,9 @@ Endpoints: **268**; лише JWT: **65**; розбіжностей Roles↔Permi
 | `POST` | `/api/messenger/threads/building` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `POST` | `/api/messenger/threads/direct` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `GET` | `/api/meters` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
-| `POST` | `/api/meters` | jwt | accountant, board, chairman, super_admin | — | accountant, board, chairman, super_admin |
-| `PATCH` | `/api/meters/:id/deactivate` | jwt | accountant, board, chairman, super_admin | — | accountant, board, chairman, super_admin |
-| `POST` | `/api/meters/:id/readings` | jwt | accountant, board, chairman, super_admin | — | accountant, board, chairman, super_admin |
+| `POST` | `/api/meters` | jwt | — | manage_finance, platform_admin | accountant, board, chairman, super_admin |
+| `PATCH` | `/api/meters/:id/deactivate` | jwt | — | manage_finance, platform_admin | accountant, board, chairman, super_admin |
+| `POST` | `/api/meters/:id/readings` | jwt | — | manage_finance, platform_admin | accountant, board, chairman, super_admin |
 | `POST` | `/api/meters/:id/readings/self` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `GET` | `/api/meters/apartment/:apartmentId` | jwt | — | — | accountant, auditor, board, chairman, crew, dispatcher, resident, super_admin |
 | `GET` | `/api/metrics` | public | — | — | *public* |
@@ -326,7 +326,7 @@ Endpoints: **268**; лише JWT: **65**; розбіжностей Roles↔Permi
 | `POST` | `/api/reminders` | jwt | — | manage_finance | accountant, board, chairman |
 | `DELETE` | `/api/reminders/:id` | jwt | — | manage_finance | accountant, board, chairman |
 | `POST` | `/api/reminders/notify-debtors` | jwt | — | manage_finance | accountant, board, chairman |
-| `POST` | `/api/reminders/process` | jwt | accountant, board, chairman, super_admin | — | accountant, board, chairman, super_admin |
+| `POST` | `/api/reminders/process` | jwt | — | manage_finance, platform_admin | accountant, board, chairman, super_admin |
 | `GET` | `/api/roles` | jwt | — | manage_users | chairman, super_admin |
 | `POST` | `/api/roles` | jwt | — | manage_setup | super_admin |
 | `DELETE` | `/api/roles/:code` | jwt | — | manage_setup | super_admin |

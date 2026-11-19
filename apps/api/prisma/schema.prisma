@@ -1,5 +1,10 @@
 generator client {
-  provider = "prisma-client-js"
+  // Prisma 7 TS generator (prisma-client-js is deprecated). Generated into src/ (gitignored),
+  // compiled with the API; import via src/prisma/client.ts re-export.
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+  runtime      = "nodejs"
 }
 
 datasource db {

@@ -4,11 +4,9 @@ import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Body, Controller, Get, Patch, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { AccountingPeriodStatus, UserRole } from '@prisma/client';
+import { AccountingPeriodStatus } from '../../prisma/client';
 import { IsEnum, IsOptional, IsString, Matches } from 'class-validator';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../common/guards/roles.guard';
 import { TenantAccessService } from '../../common/tenant-access/tenant-access.service';
 import { AccountingPeriodsService } from './accounting-periods.service';
 
@@ -28,7 +26,6 @@ class SetPeriodStatusDto {
   notes?: string;
 }
 
-const WRITE_ROLES = [UserRole.chairman, UserRole.accountant, UserRole.board, UserRole.super_admin];
 
 @ApiTags('finance-periods')
 @ApiBearerAuth()
@@ -60,8 +57,8 @@ export class AccountingPeriodsController {
     return this.periods.closeChecklist(buildingId, period, user);
   }
 
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_FINANCE, Permission.PLATFORM_ADMIN)
   @Patch()
   async setStatus(@Body() dto: SetPeriodStatusDto, @CurrentUser() user: AuthUser) {
     await this.access.assertBuilding(user, dto.buildingId);

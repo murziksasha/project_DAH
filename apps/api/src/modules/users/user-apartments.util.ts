@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '../../prisma/client';
 
 type PrismaClient = Prisma.TransactionClient | {
   apartment: Prisma.TransactionClient['apartment'];
