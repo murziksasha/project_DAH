@@ -110,6 +110,41 @@ describe('KepService', () => {
     const done = await service.completeSession({ sessionId: r.sessionId, code: 'mock_ok' });
     expect(done.signed).toBe(true);
     expect(done.status).toBe('signed');
+    expect(done.verified).toBe(false);
+  });
+
+  it('cades signature does not get verified=true without verified adapter', async () => {
+    const r = await service.startSession({
+      purpose: 'meeting_protocol',
+      refType: 'Meeting',
+      refId: 'm1',
+      userId: 'u1',
+      documentTitle: 'Test',
+      documentText: 'Protocol body',
+      provider: 'cades',
+    });
+    const fakeCms = 'A'.repeat(40);
+    const done = await service.completeSession({ sessionId: r.sessionId, signatureCms: fakeCms });
+    expect(done.signed).toBe(true);
+    expect(done.verified).toBe(false);
+  });
+
+  it('cades is rejected in production without adapter flag', async () => {
+    configMap.NODE_ENV = 'production';
+    const r = await service.startSession({
+      purpose: 'meeting_protocol',
+      refType: 'Meeting',
+      refId: 'm1',
+      userId: 'u1',
+      documentTitle: 'Test',
+      documentText: 'Protocol body',
+      provider: 'cades',
+    });
+    const fakeCms = 'A'.repeat(40);
+    await expect(
+      service.completeSession({ sessionId: r.sessionId, signatureCms: fakeCms }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    delete configMap.NODE_ENV;
   });
 
   it('webhook requires secret in production-like config', async () => {

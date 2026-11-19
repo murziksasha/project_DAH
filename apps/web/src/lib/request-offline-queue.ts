@@ -19,6 +19,7 @@ export interface QueuedRequestDraft {
   tenantId?: string | null;
   createdAt: string;
   status?: 'pending' | 'syncing' | 'failed';
+  syncingSince?: number | null;
   error?: string | null;
 }
 
@@ -161,15 +162,25 @@ export async function flushRequestOfflineQueue(
     category: string;
     photoKeys: string[];
     apartmentId?: string | null;
+    clientRequestId?: string;
   }) => Promise<void>,
   opts?: FlushRequestOptions,
 ): Promise<FlushRequestResult> {
+  const now = Date.now();
+  const SYNC_LEASE_MS = 60000; // 60s lease timeout for interrupted syncs
+
   // Snapshot pending items matching options
   const pending = readAll().filter((item) => {
-    if (opts?.userId && item.userId && item.userId !== opts.userId) return false;
-    if (opts?.tenantId && item.tenantId && item.tenantId !== opts.tenantId) return false;
-    if (opts?.apartmentId && item.apartmentId && item.apartmentId !== opts.apartmentId) return false;
-    if (item.status === 'syncing') return false;
+    if (opts?.userId !== undefined && item.userId !== opts.userId) return false;
+    if (opts?.tenantId !== undefined && item.tenantId !== opts.tenantId) return false;
+    if (opts?.apartmentId !== undefined && item.apartmentId !== opts.apartmentId) return false;
+
+    if (item.status === 'syncing') {
+      const since = item.syncingSince ?? 0;
+      if (now - since < SYNC_LEASE_MS) {
+        return false;
+      }
+    }
     return true;
   });
 
@@ -180,7 +191,7 @@ export async function flushRequestOfflineQueue(
   const errors: string[] = [];
 
   for (const item of pending) {
-    updateQueuedRequest(item.id, { status: 'syncing' });
+    updateQueuedRequest(item.id, { status: 'syncing', syncingSince: Date.now() });
 
     try {
       await post({
@@ -189,6 +200,7 @@ export async function flushRequestOfflineQueue(
         category: item.category,
         photoKeys: item.photoKeys,
         apartmentId: item.apartmentId,
+        clientRequestId: item.id,
       });
       // Atomically remove only this item from current storage
       removeQueuedRequest(item.id);
@@ -200,6 +212,7 @@ export async function flushRequestOfflineQueue(
       errors.push(message);
       updateQueuedRequest(item.id, {
         status: 'failed',
+        syncingSince: null,
         error: err instanceof Error ? err.message : 'Upload failed',
       });
     }

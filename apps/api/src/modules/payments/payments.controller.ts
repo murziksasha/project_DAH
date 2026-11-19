@@ -124,8 +124,9 @@ export class PaymentsController {
   preview(
     @Query('apartmentId') apartmentId: string,
     @Query('amount') amount: string,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.payments.previewAllocation(apartmentId, Number(amount));
+    return this.payments.previewAllocation(apartmentId, Number(amount), user);
   }
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -199,6 +200,6 @@ export class PaymentsController {
   @Roles(UserRole.chairman, UserRole.accountant)
   @Patch(':id/void')
   void(@Param('id') id: string, @Body() dto: VoidPaymentDto, @CurrentUser() user: AuthUser) {
-    return this.payments.voidPayment(id, dto.reason, user.id);
+    return this.payments.voidPayment(id, dto.reason, user);
   }
 }

@@ -2,6 +2,7 @@ import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
+import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { AuditService } from './audit.service';
@@ -16,6 +17,7 @@ export class AuditController {
 
   @Get('logs')
   list(
+    @CurrentUser() user: AuthUser,
     @Query('limit') limit?: string,
     @Query('cursor') cursor?: string,
     @Query('entityType') entityType?: string,
@@ -23,13 +25,16 @@ export class AuditController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    return this.audit.list({
-      limit: limit ? Number(limit) : undefined,
-      cursor,
-      entityType,
-      action,
-      from,
-      to,
-    });
+    return this.audit.list(
+      {
+        limit: limit ? Number(limit) : undefined,
+        cursor,
+        entityType,
+        action,
+        from,
+        to,
+      },
+      user,
+    );
   }
 }

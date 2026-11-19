@@ -1281,6 +1281,7 @@ export class AuthService {
     tenantId: string,
     meta: SessionMeta = {},
     role?: UserRole,
+    currentSid?: string | null,
   ) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user || user.status === UserStatus.blocked) {
@@ -1340,17 +1341,68 @@ export class AuthService {
       throw new UnauthorizedException(TENANT_INACTIVE_MESSAGE);
     }
 
-    const updated = await this.prisma.user.update({
-      where: { id: userId },
+    let familyId: string = randomUUID();
+    if (currentSid) {
+      const prevSession = await this.prisma.authSession.findUnique({
+        where: { id: currentSid },
+      });
+      if (prevSession && prevSession.userId === userId) {
+        familyId = prevSession.familyId;
+        await this.prisma.authSession.update({
+          where: { id: currentSid },
+          data: { revokedAt: new Date() },
+        });
+      }
+    }
+
+    const tokens = await this.issueSessionTokens(
+      user.id,
+      user.email,
+      membership.role,
+      familyId,
+      meta,
+      membership.tenantId,
+    );
+
+    const refreshHash = await bcrypt.hash(tokens.refreshToken, 10);
+    await this.prisma.user.update({
+      where: { id: user.id },
       data: {
+        refreshToken: refreshHash,
         tenantId: membership.tenantId,
         role: membership.role,
-        status: membership.status,
       },
     });
 
-    await this.revokeAllSessions(userId);
-    return this.completeLogin(updated, meta);
+    await this.audit.log({
+      userId: user.id,
+      action: 'auth.select_tenant',
+      entityType: 'User',
+      entityId: user.id,
+      payload: { role: membership.role, tenantId: membership.tenantId },
+    });
+
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: membership.tenantId },
+      select: { id: true, name: true, slug: true, orgType: true },
+    });
+
+    const memberships = await this.listMemberships(user.id);
+
+    return {
+      requires2fa: false as const,
+      user: this.publicUser(
+        {
+          ...user,
+          tenantId: membership.tenantId,
+          role: membership.role,
+        },
+        tenant,
+        memberships,
+      ),
+      memberships,
+      ...tokens,
+    };
   }
 
   async listMemberships(userId: string) {
@@ -1537,6 +1589,8 @@ export class AuthService {
         refreshTokenHash,
         userAgent: meta.userAgent?.slice(0, 512),
         ip: meta.ip?.slice(0, 64),
+        tenantId: tid ?? null,
+        role,
       },
     });
 

@@ -30,7 +30,7 @@ interface MeetingDetail {
   title: string;
   status: string;
   agendaItems: AgendaView[];
-  stats: { participants: number; signedCount: number };
+  stats: { participants: number; signedCount: number; verifiedCount?: number };
 }
 
 function statusTone(status: string): 'muted' | 'success' | 'danger' | 'primary' | 'warning' {
@@ -248,6 +248,9 @@ export default function ResidentMeetingsPage() {
               participants: selected.stats.participants,
               signed: selected.stats.signedCount,
             })}
+            {selected.stats.verifiedCount != null && (
+              <span> (верифіковано: {selected.stats.verifiedCount})</span>
+            )}
           </p>
           <div className="resident-meeting-actions">
             <button type="button" className="btn" disabled={busy} onClick={() => void register()}>

@@ -314,11 +314,14 @@ model AuthSession {
   revokedAt        DateTime?
   userAgent        String?
   ip               String?
+  tenantId         String?
+  role             UserRole?
   createdAt        DateTime  @default(now())
   lastUsedAt       DateTime  @default(now())
 
   @@index([userId])
   @@index([familyId])
+  @@index([tenantId])
 }
 
 model UserApartment {
@@ -387,6 +390,7 @@ model Apartment {
   pollVotes      PollVote[]
   meters         Meter[]
   debtWriteOffs  DebtWriteOff[]
+  requests       Request[]
 
   @@unique([buildingId, number])
 }
@@ -667,15 +671,20 @@ model PaymentAllocation {
 }
 
 model Announcement {
-  id        String   @id @default(cuid())
-  title     String
-  body      String
-  isPinned  Boolean  @default(false)
-  authorId  String
-  author    User     @relation(fields: [authorId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  reads     AnnouncementRead[]
+  id         String   @id @default(cuid())
+  tenantId   String?
+  buildingId String?
+  title      String
+  body       String
+  isPinned   Boolean  @default(false)
+  authorId   String
+  author     User     @relation(fields: [authorId], references: [id])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  reads      AnnouncementRead[]
+
+  @@index([tenantId])
+  @@index([buildingId])
 }
 
 /** Per-user read state for resident news / badges. */
@@ -692,35 +701,43 @@ model AnnouncementRead {
 }
 
 model Request {
-  id          String          @id @default(cuid())
-  title       String
-  description String
-  category    String
-  status      RequestStatus   @default(new)
-  priority    RequestPriority @default(normal)
-  authorId    String
-  author      User            @relation("RequestAuthor", fields: [authorId], references: [id])
-  assigneeId  String?
-  assignee    User?           @relation("RequestAssignee", fields: [assigneeId], references: [id])
+  id              String          @id @default(cuid())
+  tenantId        String?
+  clientRequestId String?         @unique
+  title           String
+  description     String
+  category        String
+  status          RequestStatus   @default(new)
+  priority        RequestPriority @default(normal)
+  authorId        String
+  author          User            @relation("RequestAuthor", fields: [authorId], references: [id])
+  assigneeId      String?
+  assignee        User?           @relation("RequestAssignee", fields: [assigneeId], references: [id])
+  apartmentId     String?
+  apartment       Apartment?      @relation(fields: [apartmentId], references: [id], onDelete: SetNull)
   /// Building scope (multi-building / tenant isolation)
-  buildingId  String?
+  buildingId      String?
   /// SLA target datetime (auto-filled from category/priority if omitted)
-  dueAt       DateTime?
+  dueAt           DateTime?
   /// MinIO object keys for attached photos
-  photoKeys   Json            @default("[]")
+  photoKeys       Json            @default("[]")
   /// When staff were notified about SLA warning/breach
-  slaWarnedAt   DateTime?
-  slaBreachedAt DateTime?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  slaWarnedAt     DateTime?
+  slaBreachedAt   DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
   @@index([status, dueAt])
   @@index([assigneeId, status])
   @@index([buildingId, status])
+  @@index([tenantId, status])
+  @@index([apartmentId])
 }
 
 model Poll {
   id            String         @id @default(cuid())
+  tenantId      String?
+  buildingId    String?
   question      String
   isActive      Boolean        @default(true)
   endsAt        DateTime?
@@ -731,6 +748,9 @@ model Poll {
 
   options PollOption[]
   votes   PollVote[]
+
+  @@index([tenantId])
+  @@index([buildingId])
 }
 
 model PollOption {
@@ -1068,6 +1088,8 @@ model IbanApartmentAlias {
 
 model AuditLog {
   id         String   @id @default(cuid())
+  tenantId   String?
+  isPlatform Boolean  @default(false)
   userId     String?
   user       User?    @relation(fields: [userId], references: [id])
   action     String
@@ -1075,15 +1097,23 @@ model AuditLog {
   entityId   String
   payload    Json?
   createdAt  DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([entityType, entityId])
 }
 
 model Document {
   id          String   @id @default(cuid())
+  tenantId    String?
+  buildingId  String?
   title       String
   description String?
   fileKey     String
   isPublic    Boolean  @default(false)
   createdAt   DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([buildingId])
 }
 
 model PushSubscription {
@@ -1148,6 +1178,7 @@ enum MeetingType {
 
 model Meeting {
   id             String         @id @default(cuid())
+  tenantId       String?
   buildingId     String?
   title          String
   description    String?
@@ -1169,6 +1200,7 @@ model Meeting {
 
   @@index([status, scheduledAt])
   @@index([buildingId])
+  @@index([tenantId])
 }
 
 model MeetingAgendaItem {

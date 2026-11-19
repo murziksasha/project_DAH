@@ -1,5 +1,7 @@
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { PaymentSource, UserRole } from '@prisma/client';
+import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { AccountingPeriodsService } from '../accounting-periods/accounting-periods.service';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -60,6 +62,72 @@ describe('PaymentsService', () => {
     }).compile();
 
     service = module.get(PaymentsService);
+  });
+
+  describe('Tenant isolation on payments', () => {
+    const accountantOrgA: AuthUser = {
+      id: 'usr-acc-a',
+      email: 'accountant@orga.local',
+      role: UserRole.accountant,
+      tenantId: 'tenant-A',
+      apartmentId: null,
+      apartmentIds: [],
+    };
+
+    it('getPayment throws ForbiddenException when payment belongs to tenant B', async () => {
+      prisma.payment.findUnique.mockResolvedValue({
+        id: 'pmt-b',
+        apartmentId: 'apt-b',
+        amount: 200,
+        apartment: {
+          id: 'apt-b',
+          building: { id: 'bld-b', tenantId: 'tenant-B' },
+        },
+        allocations: [],
+      });
+
+      await expect(service.getPayment('pmt-b', accountantOrgA)).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('createPayment throws ForbiddenException when apartment belongs to tenant B', async () => {
+      prisma.apartment.findUnique.mockResolvedValue({
+        id: 'apt-b',
+        buildingId: 'bld-b',
+        building: { id: 'bld-b', tenantId: 'tenant-B' },
+      });
+
+      await expect(
+        service.createPayment(
+          {
+            apartmentId: 'apt-b',
+            amount: 150,
+            date: '2026-01-10',
+            source: PaymentSource.bank,
+          },
+          accountantOrgA,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('voidPayment throws ForbiddenException when payment belongs to tenant B', async () => {
+      prisma.payment.findUnique.mockResolvedValue({
+        id: 'pmt-b',
+        apartmentId: 'apt-b',
+        amount: 200,
+        isVoided: false,
+        apartment: {
+          id: 'apt-b',
+          building: { id: 'bld-b', tenantId: 'tenant-B' },
+        },
+        allocations: [],
+      });
+
+      await expect(
+        service.voidPayment('pmt-b', 'Duplicate test', accountantOrgA),
+      ).rejects.toThrow(ForbiddenException);
+    });
   });
 
   describe('previewAllocation', () => {

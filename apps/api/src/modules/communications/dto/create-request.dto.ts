@@ -35,4 +35,14 @@ export class CreateRequestDto {
   @IsOptional()
   @IsString()
   buildingId?: string;
+
+  @ApiPropertyOptional({ description: 'Apartment id for resident request' })
+  @IsOptional()
+  @IsString()
+  apartmentId?: string;
+
+  @ApiPropertyOptional({ description: 'Client idempotency key for offline queue replay' })
+  @IsOptional()
+  @IsString()
+  clientRequestId?: string;
 }

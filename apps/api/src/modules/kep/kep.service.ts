@@ -251,6 +251,7 @@ export class KepService {
     completedAt: Date | null;
     createdAt: Date;
     signatureCms?: string | null;
+    resultPayload?: unknown;
   }) {
     return {
       sessionId: session.id,
@@ -272,8 +273,7 @@ export class KepService {
       signed: session.status === 'signed',
       verified:
         session.status === 'signed' &&
-        Boolean(session.signatureCms) &&
-        session.provider !== 'mock',
+        Boolean((session.resultPayload as Record<string, unknown> | null)?.verified === true),
     };
   }
 
@@ -296,6 +296,14 @@ export class KepService {
     }
 
     if (session.provider === 'cades' || input.signatureCms) {
+      if (
+        this.config.get('NODE_ENV') === 'production' &&
+        this.config.get('KEP_ALLOW_UNVERIFIED_ADAPTER') !== 'true'
+      ) {
+        throw new BadRequestException(
+          'Провайдер CAdES вимкнено до підключення перевіряючого адаптера (production)',
+        );
+      }
       if (!input.signatureCms?.trim()) {
         throw new BadRequestException('Для cades потрібен signatureCms (base64)');
       }
@@ -307,8 +315,10 @@ export class KepService {
         signatureCms: input.signatureCms,
         certificateSubject: input.certificateSubject,
         certificateSerial: input.certificateSerial,
+        verified: false,
         resultPayload: {
           method: 'cades-upload',
+          verified: false,
           ...(input.providerPayload ?? {}),
         },
       });
@@ -324,32 +334,60 @@ export class KepService {
           ts: Date.now(),
         }),
       ).toString('base64');
+      const mockVerified = this.config.get('KEP_MOCK_VERIFIED', 'false') === 'true';
       return this.markSigned(session.id, {
         signatureCms: cms,
         certificateSubject: 'Mock QES / Демо-сертифікат',
         certificateSerial: `MOCK-${session.challenge.slice(0, 8)}`,
-        resultPayload: { method: 'mock-complete', code: input.code ?? 'mock_ok' },
+        verified: mockVerified,
+        resultPayload: {
+          method: 'mock-complete',
+          code: input.code ?? 'mock_ok',
+          verified: mockVerified,
+        },
       });
     }
 
     if (session.provider === 'cloud_kep' && input.code) {
+      if (
+        this.config.get('NODE_ENV') === 'production' &&
+        this.config.get('KEP_ALLOW_UNVERIFIED_ADAPTER') !== 'true'
+      ) {
+        throw new BadRequestException(
+          'Cloud KEP flow вимкнено до підключення перевіряючого адаптера (production)',
+        );
+      }
       const tokenResult = await this.exchangeCloudCode(input.code, session.id);
       return this.markSigned(session.id, {
         signatureCms: tokenResult.signatureCms,
         certificateSubject: tokenResult.certificateSubject,
         certificateSerial: tokenResult.certificateSerial,
-        resultPayload: tokenResult.raw,
+        verified: false,
+        resultPayload: {
+          ...tokenResult.raw,
+          verified: false,
+        },
       });
     }
 
     if (session.provider === 'diia' && input.code) {
+      if (
+        this.config.get('NODE_ENV') === 'production' &&
+        this.config.get('KEP_ALLOW_UNVERIFIED_ADAPTER') !== 'true'
+      ) {
+        throw new BadRequestException(
+          'Diia-code redirect flow вимкнено до підключення перевіряючого адаптера (production)',
+        );
+      }
       // Some Diia flows return via redirect with requestId
       return this.markSigned(session.id, {
         signatureCms: input.signatureCms ?? Buffer.from(input.code).toString('base64'),
         certificateSubject: input.certificateSubject ?? 'Дія.Підпис',
+        verified: false,
         resultPayload: {
           method: 'diia-code',
           code: input.code,
+          verified: false,
           ...(input.providerPayload ?? {}),
         },
       });
@@ -436,8 +474,14 @@ export class KepService {
       certificateSubject?: string | null;
       certificateSerial?: string | null;
       resultPayload?: Record<string, unknown>;
+      verified?: boolean;
     },
   ) {
+    const isVerified = Boolean(data.verified);
+    const resultPayload = {
+      ...(data.resultPayload ?? {}),
+      verified: isVerified,
+    };
     const updated = await this.prisma.signSession.update({
       where: { id: sessionId },
       data: {
@@ -445,7 +489,7 @@ export class KepService {
         signatureCms: data.signatureCms ?? undefined,
         certificateSubject: data.certificateSubject ?? undefined,
         certificateSerial: data.certificateSerial ?? undefined,
-        resultPayload: (data.resultPayload ?? {}) as Prisma.InputJsonValue,
+        resultPayload: resultPayload as Prisma.InputJsonValue,
         completedAt: new Date(),
         errorMessage: null,
       },
@@ -458,6 +502,7 @@ export class KepService {
       entityId: sessionId,
       payload: {
         provider: updated.provider,
+        verified: isVerified,
         refType: updated.refType,
         refId: updated.refId,
       },
@@ -475,6 +520,7 @@ export class KepService {
     const session = await this.prisma.signSession.findUnique({ where: { id: sessionId } });
     if (!session || session.refType !== 'Meeting' || session.status !== 'signed') return null;
 
+    const isVerified = Boolean((session.resultPayload as Record<string, unknown> | null)?.verified === true);
     return this.prisma.meetingSignature.upsert({
       where: {
         meetingId_userId: { meetingId: session.refId, userId: session.userId },
@@ -491,6 +537,7 @@ export class KepService {
           certificateSubject: session.certificateSubject,
           certificateSerial: session.certificateSerial,
           hasCms: Boolean(session.signatureCms),
+          verified: isVerified,
           result: session.resultPayload,
         },
       },
@@ -504,6 +551,7 @@ export class KepService {
           certificateSubject: session.certificateSubject,
           certificateSerial: session.certificateSerial,
           hasCms: Boolean(session.signatureCms),
+          verified: isVerified,
           result: session.resultPayload,
         },
       },

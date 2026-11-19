@@ -101,6 +101,7 @@ export class AuthController {
       dto.tenantId,
       this.sessionMeta(req),
       dto.role,
+      user.sid,
     );
     if (result.refreshToken) {
       this.attachCookies(res, result);

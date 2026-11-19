@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  OnModuleInit,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -19,12 +20,23 @@ import { PaymentsService } from './payments.service';
  * Orders persisted in OnlinePaymentOrder for idempotent webhooks.
  */
 @Injectable()
-export class OnlinePaymentsService {
+export class OnlinePaymentsService implements OnModuleInit {
   constructor(
     private config: ConfigService,
     private prisma: PrismaService,
     private payments: PaymentsService,
   ) {}
+
+  onModuleInit() {
+    if (this.isEnabled() && !this.isSandbox()) {
+      const provider = this.config.get('ONLINE_PAYMENTS_PROVIDER', 'generic');
+      if (provider === 'generic') {
+        throw new Error(
+          'ONLINE_PAYMENTS_PROVIDER=generic заборонено у production режимі (ONLINE_PAYMENTS_SANDBOX=false). Використовуйте liqpay або wayforpay.',
+        );
+      }
+    }
+  }
 
   isEnabled(): boolean {
     return this.config.get('ONLINE_PAYMENTS_ENABLED', 'false') === 'true';
@@ -62,7 +74,8 @@ export class OnlinePaymentsService {
         enabled &&
         !sandbox &&
         secretConfigured &&
-        (provider === 'generic' || publicKeyConfigured),
+        provider !== 'generic' &&
+        publicKeyConfigured,
       webhookPath: '/api/payments/online/webhook',
     };
   }
@@ -81,6 +94,13 @@ export class OnlinePaymentsService {
       throw new ServiceUnavailableException('Онлайн-оплата вимкнена (ONLINE_PAYMENTS_ENABLED)');
     }
 
+    const provider = this.config.get('ONLINE_PAYMENTS_PROVIDER', 'generic');
+    if (provider === 'generic' && !this.isSandbox()) {
+      throw new BadRequestException(
+        'Generic-провайдер заборонено у production режимі (ONLINE_PAYMENTS_SANDBOX=false)',
+      );
+    }
+
     const apartment = await this.prisma.apartment.findUnique({ where: { id: dto.apartmentId } });
     if (!apartment) throw new NotFoundException('Квартиру не знайдено');
 
@@ -97,7 +117,6 @@ export class OnlinePaymentsService {
 
     const orderId = `dah_${randomUUID().replace(/-/g, '').slice(0, 24)}`;
     const description = dto.description ?? `Оплата внесків, кв. ${apartment.number}`;
-    const provider = this.config.get('ONLINE_PAYMENTS_PROVIDER', 'generic');
     const appUrl = this.config.get('APP_URL', 'http://localhost:3000');
     const publicKey = this.config.get<string>('ONLINE_PAYMENTS_PUBLIC_KEY') ?? '';
     const apiBase =
@@ -307,6 +326,7 @@ export class OnlinePaymentsService {
       amount?: number | string;
       currency?: string;
       info?: string;
+      public_key?: string;
     };
     try {
       parsed = JSON.parse(Buffer.from(data, 'base64').toString('utf8'));
@@ -314,18 +334,37 @@ export class OnlinePaymentsService {
       throw new BadRequestException('LiqPay: некоректний data');
     }
 
+    const publicKey = this.config.get<string>('ONLINE_PAYMENTS_PUBLIC_KEY');
+    if (publicKey && parsed.public_key && parsed.public_key !== publicKey) {
+      throw new BadRequestException('LiqPay: невідповідний public_key');
+    }
+
+    if (parsed.order_id && String(parsed.order_id) !== order.orderId) {
+      throw new BadRequestException(`LiqPay: невідповідний order_id ${parsed.order_id}`);
+    }
+
     if (parsed.currency && parsed.currency.toUpperCase() !== 'UAH') {
       throw new BadRequestException(`LiqPay: непідтримувана валюта ${parsed.currency}`);
     }
 
-    const st = (parsed.status ?? '').toLowerCase();
-    if (!['success', 'sandbox', 'wait_accept', 'paid'].includes(st)) {
-      await this.markOrderFailed(order.orderId, st);
-      return { ok: false, message: `LiqPay status ${st}` };
+    const orderMinor = toMinor(Number(order.amount));
+    const payMinor = toMinor(Number(parsed.amount));
+    if (orderMinor !== payMinor) {
+      throw new BadRequestException(
+        `LiqPay: сума (${parsed.amount} грн) не збігається з замовленням (${order.amount} грн)`,
+      );
     }
-    // wait_accept may still be pending — only success/sandbox/paid finalize
-    if (st === 'wait_accept' && !this.isSandbox()) {
+
+    const st = (parsed.status ?? '').toLowerCase();
+    if (['wait_accept', 'wait_secure', 'processing', 'hold_wait'].includes(st)) {
       return { ok: true, pending: true, orderId: order.orderId };
+    }
+
+    if (!['success', 'sandbox', 'paid'].includes(st)) {
+      if (['failure', 'error', 'reversed'].includes(st)) {
+        await this.markOrderFailed(order.orderId, st);
+      }
+      return { ok: false, message: `LiqPay status ${st}` };
     }
 
     const amount = Number(parsed.amount);
@@ -336,19 +375,16 @@ export class OnlinePaymentsService {
     body: Record<string, unknown>,
     order: { orderId: string; amount: Prisma.Decimal; apartmentId: string; userId: string | null },
   ) {
-    const status = String(body.transactionStatus ?? body.status ?? '').toLowerCase();
-    if (!['approved', 'success', 'paid', 'sandbox'].includes(status)) {
-      await this.markOrderFailed(order.orderId, status);
-      return { ok: false, message: `WayForPay status ${status}` };
-    }
-
-    // Require signature check outside sandbox
+    // 1. Check signature FIRST before inspecting or reacting to transactionStatus
     const sig = body.merchantSignature;
     if (!this.isSandbox()) {
       if (typeof sig !== 'string' || !sig) {
         throw new BadRequestException('WayForPay: немає merchantSignature');
       }
       const publicKey = this.config.get<string>('ONLINE_PAYMENTS_PUBLIC_KEY') ?? '';
+      if (body.merchantAccount && String(body.merchantAccount) !== publicKey) {
+        throw new BadRequestException('WayForPay: невідповідний merchantAccount');
+      }
       const amount = String(body.amount ?? '');
       const currency = String(body.currency ?? 'UAH');
       const authCode = String(body.authCode ?? '');
@@ -373,10 +409,42 @@ export class OnlinePaymentsService {
       throw new BadRequestException(`WayForPay: непідтримувана валюта ${body.currency}`);
     }
 
-    return this.finalizePaid(order.orderId, Number(body.amount), {
+    const orderMinor = toMinor(Number(order.amount));
+    const payMinor = toMinor(Number(body.amount));
+    if (orderMinor !== payMinor) {
+      throw new BadRequestException(
+        `WayForPay: сума (${body.amount} грн) не збігається з замовленням (${order.amount} грн)`,
+      );
+    }
+
+    const time = Math.floor(Date.now() / 1000);
+    const signString = `${order.orderId};accept;${time}`;
+    const responseSignature = createHmac('md5', this.secret()).update(signString, 'utf8').digest('hex');
+    const wayforpayResponse = {
+      ok: true,
+      orderReference: order.orderId,
+      status: 'accept',
+      time,
+      signature: responseSignature,
+    };
+
+    const status = String(body.transactionStatus ?? body.status ?? '').toLowerCase();
+    if (!['approved', 'success', 'paid', 'sandbox'].includes(status)) {
+      if (['declined', 'failed', 'expired', 'refunded'].includes(status)) {
+        await this.markOrderFailed(order.orderId, status);
+      }
+      return wayforpayResponse;
+    }
+
+    const finalizeResult = await this.finalizePaid(order.orderId, Number(body.amount), {
       provider: 'wayforpay',
       rawStatus: status,
     });
+
+    return {
+      ...wayforpayResponse,
+      ...finalizeResult,
+    };
   }
 
   private async handleGenericWebhook(
@@ -389,29 +457,68 @@ export class OnlinePaymentsService {
     },
     order: { orderId: string; amount: Prisma.Decimal; apartmentId: string; userId: string | null },
   ) {
+    if (!this.isSandbox()) {
+      throw new BadRequestException(
+        'Generic-провайдер недоступний у production режимі (тільки sandbox)',
+      );
+    }
+
+    let payloadString = '';
+    let parsedPayload: Record<string, unknown> | null = null;
+    if (typeof body.payload === 'string') {
+      payloadString = body.payload;
+      try {
+        parsedPayload = JSON.parse(Buffer.from(body.payload, 'base64url').toString('utf8'));
+      } catch {
+        try {
+          parsedPayload = JSON.parse(body.payload);
+        } catch {
+          /* ignore */
+        }
+      }
+    } else if (body.payload && typeof body.payload === 'object') {
+      payloadString = JSON.stringify(body.payload);
+      parsedPayload = body.payload as Record<string, unknown>;
+    }
+
+    if (body.signature) {
+      const stringToSign = payloadString || order.orderId;
+      const expected = createHmac('sha256', this.secret()).update(stringToSign).digest('hex');
+      this.assertSig(expected, body.signature);
+    }
+
+    if (parsedPayload) {
+      if (parsedPayload.orderId && parsedPayload.orderId !== order.orderId) {
+        throw new BadRequestException(
+          `Generic: payload.orderId (${parsedPayload.orderId}) не відповідає замовленню (${order.orderId})`,
+        );
+      }
+      if (parsedPayload.amount !== undefined) {
+        const payloadMinor = toMinor(Number(parsedPayload.amount));
+        const orderMinor = toMinor(Number(order.amount));
+        if (payloadMinor !== orderMinor) {
+          throw new BadRequestException(
+            `Generic: payload.amount (${parsedPayload.amount}) не збігається з замовленням (${order.amount})`,
+          );
+        }
+      }
+    }
+
+    const payAmount = body.amount !== undefined ? Number(body.amount) : Number(order.amount);
+    const orderMinor = toMinor(Number(order.amount));
+    const payMinor = toMinor(payAmount);
+    if (orderMinor !== payMinor) {
+      throw new BadRequestException(
+        `Generic: сума webhook (${payAmount}) не збігається з замовленням (${order.amount})`,
+      );
+    }
+
     const status = (body.status ?? 'success').toLowerCase();
     if (status !== 'success' && status !== 'sandbox' && status !== 'paid') {
       await this.markOrderFailed(order.orderId, status);
       return { ok: false, message: `Ігноровано статус ${status}` };
     }
 
-    let payloadString = '';
-    if (typeof body.payload === 'string') {
-      payloadString = body.payload;
-    } else if (body.payload) {
-      payloadString = JSON.stringify(body.payload);
-    }
-
-    if (!this.isSandbox()) {
-      if (!body.signature) {
-        throw new BadRequestException('Production generic webhook потребує signature');
-      }
-      const stringToSign = payloadString || order.orderId;
-      const expected = createHmac('sha256', this.secret()).update(stringToSign).digest('hex');
-      this.assertSig(expected, body.signature);
-    }
-
-    const payAmount = body.amount ?? Number(order.amount);
     return this.finalizePaid(order.orderId, payAmount, {
       provider: 'generic',
       apartmentId: order.apartmentId,
@@ -429,127 +536,139 @@ export class OnlinePaymentsService {
       userId?: string;
     },
   ) {
-    const order = await this.prisma.onlinePaymentOrder.findUnique({
-      where: { orderId },
-      include: { payment: true },
-    });
-    if (!order) {
-      throw new NotFoundException(`Замовлення ${orderId} не знайдено`);
-    }
-
-    if (order.status === 'paid' && order.paymentId) {
-      return { ok: true, paymentId: order.paymentId, duplicate: true, orderId };
-    }
-
-    // Amount match check in integer kopiiky
-    const orderMinor = toMinor(Number(order.amount));
     const payMinor = toMinor(amount);
-    if (orderMinor !== payMinor) {
-      throw new BadRequestException(
-        `Сума webhook (${amount} грн) не збігається з замовленням (${order.amount} грн)`,
-      );
-    }
 
-    // Atomic claim of order to prevent race conditions across concurrent webhooks
-    const claim = await this.prisma.onlinePaymentOrder.updateMany({
-      where: {
-        orderId,
-        status: { in: ['pending', 'wait_accept'] },
-      },
-      data: {
-        status: 'processing',
-      },
-    });
-
-    if (claim.count === 0) {
-      const fresh = await this.prisma.onlinePaymentOrder.findUnique({
+    const executeInTx = async (tx: Prisma.TransactionClient) => {
+      const order = await tx.onlinePaymentOrder.findUnique({
         where: { orderId },
+        include: { payment: true },
       });
-      if (fresh?.status === 'paid' && fresh.paymentId) {
-        return { ok: true, paymentId: fresh.paymentId, duplicate: true, orderId };
+      if (!order) {
+        throw new NotFoundException(`Замовлення ${orderId} не знайдено`);
       }
-      return { ok: true, pending: true, orderId };
-    }
 
-    // Also check if already recorded via payment.reference
-    const existingPay = await this.prisma.payment.findFirst({
-      where: { reference: orderId, isVoided: false },
-    });
-    if (existingPay) {
-      await this.prisma.onlinePaymentOrder.update({
-        where: { orderId },
+      if (order.status === 'paid' && order.paymentId) {
+        return { ok: true, paymentId: order.paymentId, duplicate: true, orderId };
+      }
+
+      // Amount match check in integer kopiiky
+      const orderMinor = toMinor(Number(order.amount));
+      if (orderMinor !== payMinor) {
+        throw new BadRequestException(
+          `Сума webhook (${amount} грн) не збігається з замовленням (${order.amount} грн)`,
+        );
+      }
+
+      // Also check if already recorded via payment.reference
+      const existingPay = await tx.payment.findFirst({
+        where: { reference: orderId, isVoided: false },
+      });
+      if (existingPay) {
+        await tx.onlinePaymentOrder.update({
+          where: { orderId },
+          data: {
+            status: 'paid',
+            paymentId: existingPay.id,
+            paidAt: new Date(),
+          },
+        });
+        return { ok: true, paymentId: existingPay.id, duplicate: true, orderId };
+      }
+
+      // Atomic claim within transaction to prevent race conditions across concurrent webhooks
+      // Also allows recovering stale processing orders interrupted by a server restart or crash (>30s)
+      const staleThreshold = new Date(Date.now() - 30 * 1000);
+      const claim = await tx.onlinePaymentOrder.updateMany({
+        where: {
+          orderId,
+          OR: [
+            { status: { in: ['pending', 'wait_accept'] } },
+            { status: 'processing', updatedAt: { lt: staleThreshold } },
+          ],
+        },
         data: {
-          status: 'paid',
-          paymentId: existingPay.id,
-          paidAt: new Date(),
+          status: 'processing',
         },
       });
-      return { ok: true, paymentId: existingPay.id, duplicate: true, orderId };
+
+      if (claim.count === 0) {
+        const fresh = await tx.onlinePaymentOrder.findUnique({
+          where: { orderId },
+        });
+        if (fresh?.status === 'paid' && fresh.paymentId) {
+          return { ok: true, paymentId: fresh.paymentId, duplicate: true, orderId };
+        }
+        return { ok: true, pending: true, orderId };
+      }
+
+      try {
+        const actorId =
+          meta.userId ??
+          order.userId ??
+          (
+            await tx.user.findFirst({
+              where: { role: 'accountant', status: 'active' },
+              select: { id: true },
+            })
+          )?.id ??
+          (
+            await tx.user.findFirst({
+              where: { role: 'chairman', status: 'active' },
+              select: { id: true },
+            })
+          )?.id;
+
+        if (!actorId) {
+          throw new BadRequestException('Немає користувача для запису платежу');
+        }
+
+        const payment = await this.payments.createPayment(
+          {
+            apartmentId: order.apartmentId,
+            amount: Number(order.amount),
+            date: new Date().toISOString().slice(0, 10),
+            source: PaymentSource.bank,
+            reference: orderId,
+          },
+          {
+            id: actorId,
+            email: 'online@system',
+            role: UserRole.accountant,
+            apartmentId: null,
+            apartmentIds: [],
+          },
+          tx,
+        );
+
+        await tx.onlinePaymentOrder.update({
+          where: { orderId },
+          data: {
+            status: 'paid',
+            paymentId: payment.id,
+            paidAt: new Date(),
+            providerMeta: {
+              ...((order.providerMeta as object) ?? {}),
+              webhook: meta,
+            } as Prisma.InputJsonValue,
+          },
+        });
+
+        return { ok: true, paymentId: payment.id, duplicate: false, orderId };
+      } catch (err) {
+        await tx.onlinePaymentOrder
+          .updateMany({
+            where: { orderId, status: 'processing', paymentId: null },
+            data: { status: 'pending' },
+          })
+          .catch(() => undefined);
+        throw err;
+      }
+    };
+
+    if (typeof this.prisma.$transaction === 'function') {
+      return this.prisma.$transaction(executeInTx);
     }
-
-    const actorId =
-      meta.userId ??
-      order.userId ??
-      (
-        await this.prisma.user.findFirst({
-          where: { role: 'accountant', status: 'active' },
-          select: { id: true },
-        })
-      )?.id ??
-      (
-        await this.prisma.user.findFirst({
-          where: { role: 'chairman', status: 'active' },
-          select: { id: true },
-        })
-      )?.id;
-
-    if (!actorId) {
-      await this.prisma.onlinePaymentOrder.update({
-        where: { orderId },
-        data: { status: 'pending' },
-      });
-      throw new BadRequestException('Немає користувача для запису платежу');
-    }
-
-    try {
-      const payment = await this.payments.createPayment(
-        {
-          apartmentId: order.apartmentId,
-          amount: Number(order.amount),
-          date: new Date().toISOString().slice(0, 10),
-          source: PaymentSource.bank,
-          reference: orderId,
-        },
-        {
-          id: actorId,
-          email: 'online@system',
-          role: UserRole.accountant,
-          apartmentId: null,
-          apartmentIds: [],
-        },
-      );
-
-      await this.prisma.onlinePaymentOrder.update({
-        where: { orderId },
-        data: {
-          status: 'paid',
-          paymentId: payment.id,
-          paidAt: new Date(),
-          providerMeta: {
-            ...((order.providerMeta as object) ?? {}),
-            webhook: meta,
-          } as Prisma.InputJsonValue,
-        },
-      });
-
-      return { ok: true, paymentId: payment.id, duplicate: false, orderId };
-    } catch (err) {
-      await this.prisma.onlinePaymentOrder.update({
-        where: { orderId },
-        data: { status: 'pending' },
-      });
-      throw err;
-    }
+    return executeInTx(this.prisma as unknown as Prisma.TransactionClient);
   }
 
   private async markOrderFailed(orderId: string, status: string) {

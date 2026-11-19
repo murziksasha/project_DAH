@@ -4,7 +4,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { JournalEntryType, Prisma } from '@prisma/client';
+import { JournalEntryType, Prisma, UserRole } from '@prisma/client';
+import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { resolveBuildingId } from '../../common/utils/building-scope';
 import { rowsToXlsxBuffer } from '../../common/utils/xlsx-export';
 import {
@@ -504,13 +505,22 @@ export class FinanceService {
     }
   }
 
-  async createExpense(dto: CreateExpenseDto, userId: string) {
+  async createExpense(dto: CreateExpenseDto, userOrUserId: AuthUser | string) {
+    const user: AuthUser | null = typeof userOrUserId === 'object' ? userOrUserId : null;
+    const userId: string = typeof userOrUserId === 'string' ? userOrUserId : userOrUserId.id;
+
     await this.assertFinance2fa(userId);
     const fund = await this.prisma.fund.findUnique({
       where: { id: dto.fundId },
-      include: { building: { select: { settings: true } } },
+      include: { building: { select: { settings: true, tenantId: true } } },
     });
     if (!fund) throw new NotFoundException('Фонд не знайдено');
+
+    if (user && user.role !== UserRole.super_admin) {
+      if (!user.tenantId || (fund.building && fund.building.tenantId !== user.tenantId)) {
+        throw new ForbiddenException('Немає доступу до фонду іншої організації');
+      }
+    }
 
     await this.periods.assertAllowsMutation(fund.buildingId, dto.date, 'expense');
 
@@ -582,11 +592,14 @@ export class FinanceService {
   }
 
   /** Second signature for dual-control expenses. */
-  async approveExpense(id: string, userId: string) {
+  async approveExpense(id: string, userOrUserId: AuthUser | string) {
+    const user: AuthUser | null = typeof userOrUserId === 'object' ? userOrUserId : null;
+    const userId: string = typeof userOrUserId === 'string' ? userOrUserId : userOrUserId.id;
+
     await this.assertFinance2fa(userId);
     const expense = await this.prisma.expense.findUnique({
       where: { id },
-      include: { fund: true },
+      include: { fund: { include: { building: { select: { tenantId: true } } } } },
     });
     if (!expense) throw new NotFoundException('Витрату не знайдено');
     if (expense.isVoided) throw new BadRequestException('Витрату анульовано');
@@ -595,6 +608,12 @@ export class FinanceService {
     }
     if (expense.createdById === userId) {
       throw new BadRequestException('Другий підпис має бути іншої особи');
+    }
+
+    if (user && user.role !== UserRole.super_admin) {
+      if (!user.tenantId || (expense.fund?.building && expense.fund.building.tenantId !== user.tenantId)) {
+        throw new ForbiddenException('Немає доступу до витрати іншої організації');
+      }
     }
 
     await this.periods.assertAllowsMutation(
@@ -643,15 +662,24 @@ export class FinanceService {
     return updated;
   }
 
-  async voidExpense(id: string, reason: string, userId: string) {
+  async voidExpense(id: string, reason: string, userOrUserId: AuthUser | string) {
+    const user: AuthUser | null = typeof userOrUserId === 'object' ? userOrUserId : null;
+    const userId: string = typeof userOrUserId === 'string' ? userOrUserId : userOrUserId.id;
+
     // period check after load
     await this.assertFinance2fa(userId);
     const expense = await this.prisma.expense.findUnique({
       where: { id },
-      include: { fund: true },
+      include: { fund: { include: { building: { select: { tenantId: true } } } } },
     });
     if (!expense) throw new NotFoundException('Витрату не знайдено');
     if (expense.isVoided) throw new BadRequestException('Витрату вже анульовано');
+
+    if (user && user.role !== UserRole.super_admin) {
+      if (!user.tenantId || (expense.fund?.building && expense.fund.building.tenantId !== user.tenantId)) {
+        throw new ForbiddenException('Немає доступу до витрати іншої організації');
+      }
+    }
     await this.periods.assertAllowsMutation(
       expense.fund.buildingId,
       expense.date,

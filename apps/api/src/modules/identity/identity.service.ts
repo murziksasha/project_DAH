@@ -137,26 +137,70 @@ export class IdentityService {
       throw new UnauthorizedException('Identity token exchange failed');
     }
     const tokens = (await tokenRes.json()) as { access_token?: string; id_token?: string };
-    const claims = this.decodeJwtPayload(tokens.id_token ?? tokens.access_token ?? '');
+    const rawJwt = tokens.id_token ?? tokens.access_token ?? '';
+    const claims = this.decodeJwtPayload(rawJwt);
+
+    // OIDC Core 1.0 mandatory claims validation
+    if (!claims.iss || !claims.sub || !claims.aud || !claims.exp || !claims.iat) {
+      throw new UnauthorizedException(
+        'Identity: відсутні обовʼязкові OIDC claims (iss, sub, aud, exp, iat)',
+      );
+    }
 
     const expectedIssuer = this.config.get<string>('IDENTITY_ISSUER');
-    if (expectedIssuer && claims.iss && claims.iss !== expectedIssuer) {
+    if (expectedIssuer && claims.iss !== expectedIssuer) {
       throw new UnauthorizedException('Identity: невідповідний issuer токена');
     }
-    const expectedAudience = this.config.get<string>('IDENTITY_CLIENT_ID');
-    if (expectedAudience && claims.aud && claims.aud !== expectedAudience) {
+
+    const expectedAudience = this.config.get<string>('IDENTITY_CLIENT_ID') ?? clientId;
+    if (Array.isArray(claims.aud)) {
+      if (!claims.aud.includes(expectedAudience)) {
+        throw new UnauthorizedException('Identity: невідповідний audience токена');
+      }
+      if (claims.aud.length > 1 && claims.azp !== expectedAudience) {
+        throw new UnauthorizedException('Identity: невідповідний azp токена');
+      }
+    } else if (claims.aud !== expectedAudience) {
       throw new UnauthorizedException('Identity: невідповідний audience токена');
     }
 
-    const email = String(claims.email ?? claims.preferred_username ?? '');
+    // Expiration check with 60s clock skew
+    const nowSec = Math.floor(Date.now() / 1000);
+    const expSec = Number(claims.exp);
+    if (Number.isNaN(expSec) || expSec < nowSec - 60) {
+      throw new UnauthorizedException('Identity: id_token прострочено');
+    }
+    const iatSec = Number(claims.iat);
+    if (!Number.isNaN(iatSec) && iatSec > nowSec + 300) {
+      throw new UnauthorizedException('Identity: iat токена у майбутньому');
+    }
+
+    // Nonce check
+    if (!claims.nonce || claims.nonce !== pending.nonce) {
+      throw new UnauthorizedException('Identity: невідповідний або відсутній nonce');
+    }
+
+    const email = claims.email
+      ? String(claims.email).trim().toLowerCase()
+      : claims.preferred_username
+        ? String(claims.preferred_username).trim().toLowerCase()
+        : undefined;
     // Only trust verified phone from IdP claims, never untrusted client body
     const phone = claims.phone_number
-      ? String(claims.phone_number)
+      ? String(claims.phone_number).trim()
       : claims.phone
-        ? String(claims.phone)
+        ? String(claims.phone).trim()
         : undefined;
 
-    return this.loginByClaims({ email: email || undefined, phone }, meta);
+    return this.loginByClaims(
+      {
+        issuer: String(claims.iss),
+        subject: String(claims.sub),
+        email,
+        phone,
+      },
+      meta,
+    );
   }
 
   async completeMock(
@@ -166,13 +210,13 @@ export class IdentityService {
     if (this.config.get('NODE_ENV') === 'production') {
       throw new BadRequestException('Mock identity заборонено в production');
     }
-    let email = body.email;
-    let phone = body.phone;
+    let email = body.email ? body.email.trim().toLowerCase() : undefined;
+    let phone = body.phone ? body.phone.trim() : undefined;
     if (body.code?.startsWith('mock_')) {
       try {
         const decoded = Buffer.from(body.code.slice(5), 'base64url').toString('utf8');
-        if (decoded.includes('@')) email = decoded;
-        else phone = decoded;
+        if (decoded.includes('@')) email = decoded.trim().toLowerCase();
+        else phone = decoded.trim();
       } catch {
         /* ignore */
       }
@@ -181,7 +225,7 @@ export class IdentityService {
   }
 
   private async loginByClaims(
-    claims: { email?: string; phone?: string },
+    claims: { issuer?: string; subject?: string; email?: string; phone?: string },
     meta: SessionMeta,
   ) {
     let user =
@@ -190,7 +234,7 @@ export class IdentityService {
         : null) ??
       (claims.phone
         ? await this.prisma.user.findFirst({
-            where: { phone: { contains: claims.phone.replace(/\D/g, '').slice(-9) } },
+            where: { phone: claims.phone.replace(/[^\d+]/g, '') },
           })
         : null);
 

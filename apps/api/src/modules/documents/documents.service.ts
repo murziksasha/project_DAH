@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { StorageService } from '../files/storage.service';
@@ -12,32 +13,41 @@ export class DocumentsService {
     private audit: AuditService,
   ) {}
 
-  listAll() {
+  listAll(tenantId?: string | null) {
+    const where: Prisma.DocumentWhereInput = tenantId
+      ? { OR: [{ tenantId }, { tenantId: null }] }
+      : {};
     return this.enrichDocuments(
-      this.prisma.document.findMany({ orderBy: { createdAt: 'desc' } }),
+      this.prisma.document.findMany({ where, orderBy: { createdAt: 'desc' } }),
     );
   }
 
-  listPublic() {
+  listPublic(tenantId?: string | null) {
+    const where: Prisma.DocumentWhereInput = {
+      isPublic: true,
+      ...(tenantId ? { OR: [{ tenantId }, { tenantId: null }] } : {}),
+    };
     return this.enrichDocuments(
       this.prisma.document.findMany({
-        where: { isPublic: true },
+        where,
         orderBy: { createdAt: 'desc' },
       }),
     );
   }
 
-  async create(dto: CreateDocumentDto, userId: string) {
+  async create(dto: CreateDocumentDto, userId: string, tenantId?: string | null) {
     const doc = await this.prisma.document.create({
       data: {
         title: dto.title,
         description: dto.description,
         fileKey: dto.fileKey,
         isPublic: dto.isPublic ?? true,
+        tenantId: tenantId ?? null,
       },
     });
     await this.audit.log({
       userId,
+      tenantId,
       action: 'document.created',
       entityType: 'Document',
       entityId: doc.id,
@@ -49,15 +59,24 @@ export class DocumentsService {
     };
   }
 
-  async setPublic(id: string, isPublic: boolean, userId: string) {
+  async setPublic(
+    id: string,
+    isPublic: boolean,
+    userId: string,
+    tenantId?: string | null,
+  ) {
     const doc = await this.prisma.document.findUnique({ where: { id } });
     if (!doc) throw new NotFoundException('Документ не знайдено');
+    if (tenantId && doc.tenantId && doc.tenantId !== tenantId) {
+      throw new ForbiddenException('Немає доступу до документу іншої організації');
+    }
     const updated = await this.prisma.document.update({
       where: { id },
       data: { isPublic },
     });
     await this.audit.log({
       userId,
+      tenantId,
       action: 'document.updated',
       entityType: 'Document',
       entityId: id,
@@ -69,13 +88,17 @@ export class DocumentsService {
     };
   }
 
-  async remove(id: string, userId: string) {
+  async remove(id: string, userId: string, tenantId?: string | null) {
     const doc = await this.prisma.document.findUnique({ where: { id } });
     if (!doc) throw new NotFoundException('Документ не знайдено');
+    if (tenantId && doc.tenantId && doc.tenantId !== tenantId) {
+      throw new ForbiddenException('Немає доступу до документу іншої організації');
+    }
     await this.storage.delete(doc.fileKey).catch(() => undefined);
     await this.prisma.document.delete({ where: { id } });
     await this.audit.log({
       userId,
+      tenantId,
       action: 'document.deleted',
       entityType: 'Document',
       entityId: id,

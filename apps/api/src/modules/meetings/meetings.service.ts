@@ -41,10 +41,19 @@ export class MeetingsService {
 
   list(user: AuthUser) {
     const isStaff = MANAGE_ROLES.includes(user.role as UserRole);
+    const tenantFilter: Prisma.MeetingWhereInput =
+      user.role === UserRole.super_admin || !user.tenantId
+        ? {}
+        : { tenantId: user.tenantId };
+    const statusFilter: Prisma.MeetingWhereInput = isStaff
+      ? {}
+      : { status: { in: [MeetingStatus.scheduled, MeetingStatus.open, MeetingStatus.closed] } };
+
     return this.prisma.meeting.findMany({
-      where: isStaff
-        ? undefined
-        : { status: { in: [MeetingStatus.scheduled, MeetingStatus.open, MeetingStatus.closed] } },
+      where: {
+        ...tenantFilter,
+        ...statusFilter,
+      },
       orderBy: { scheduledAt: 'desc' },
       include: {
         agendaItems: { orderBy: { sortOrder: 'asc' } },
@@ -83,6 +92,12 @@ export class MeetingsService {
       },
     });
     if (!meeting) throw new NotFoundException('Збори не знайдено');
+    if (user.role !== UserRole.super_admin && user.tenantId) {
+      const meetingTenantId = meeting.tenantId;
+      if (meetingTenantId && meetingTenantId !== user.tenantId) {
+        throw new NotFoundException('Збори не знайдено');
+      }
+    }
 
     const agenda = meeting.agendaItems.map((item) => {
       const byOption: Record<string, number> = {};
@@ -110,6 +125,13 @@ export class MeetingsService {
       0,
     );
     const signedCount = meeting.signatures.filter((s) => s.status === 'signed').length;
+    const verifiedCount = meeting.signatures.filter(
+      (s) =>
+        s.status === 'signed' &&
+        Boolean(
+          (s.signaturePayload as Record<string, unknown> | null)?.verified === true,
+        ),
+    ).length;
 
     // Eligible weight for by_area / one_per_apartment (building apartments)
     let eligibleWeight = participantWeight;
@@ -143,6 +165,7 @@ export class MeetingsService {
         eligibleWeight,
         participationPercent,
         signedCount,
+        verifiedCount,
         quorumPercent,
         quorumMet,
       },
@@ -154,11 +177,22 @@ export class MeetingsService {
       throw new ForbiddenException();
     }
 
+    if (dto.buildingId && user.role !== UserRole.super_admin && user.tenantId) {
+      const b = await this.prisma.building.findUnique({
+        where: { id: dto.buildingId },
+        select: { tenantId: true },
+      });
+      if (!b || b.tenantId !== user.tenantId) {
+        throw new BadRequestException('Будинок не належить вашій організації');
+      }
+    }
+
     const meeting = await this.prisma.meeting.create({
       data: {
         title: dto.title,
         description: dto.description,
         type: dto.type ?? MeetingType.general,
+        tenantId: user.tenantId ?? null,
         buildingId: dto.buildingId,
         scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
         endsAt: dto.endsAt ? new Date(dto.endsAt) : null,

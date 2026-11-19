@@ -50,7 +50,7 @@ export class BuildingController {
   @Roles(UserRole.super_admin, UserRole.chairman, UserRole.board)
   @Patch()
   updateBuilding(@Body() dto: UpdateBuildingDto, @CurrentUser() user: AuthUser) {
-    return this.building.updateBuildingProfile(dto, user.id);
+    return this.building.updateBuildingProfile(dto, user);
   }
 
   @Get('apartments')
@@ -71,8 +71,8 @@ export class BuildingController {
   }
 
   @Get('settings')
-  getSettings() {
-    return this.building.getSettings();
+  getSettings(@CurrentUser() user?: AuthUser, @Query('buildingId') buildingId?: string) {
+    return this.building.getSettings(buildingId, user);
   }
 
   @UseGuards(RolesGuard)
@@ -101,8 +101,8 @@ export class BuildingController {
     UserRole.auditor,
   )
   @Get('ops-summary')
-  opsSummary(@Query('buildingId') buildingId?: string) {
-    return this.building.getOpsSummary(buildingId);
+  opsSummary(@CurrentUser() user: AuthUser, @Query('buildingId') buildingId?: string) {
+    return this.building.getOpsSummary(buildingId, user);
   }
 
   /** УК portfolio: per-building debt / SLA / collection snapshot. */
@@ -126,13 +126,16 @@ export class BuildingController {
   @Roles(UserRole.super_admin, UserRole.chairman, UserRole.board)
   @Patch('settings')
   updateSettings(@Body() dto: UpdateBuildingSettingsDto, @CurrentUser() user: AuthUser) {
-    return this.building.updateSettings(dto, user.id);
+    return this.building.updateSettings(dto, user);
   }
 
   /** Document constructor: receipt / board report layouts + Excel export columns. */
   @Get('document-templates')
-  getDocumentTemplates(@Query('buildingId') buildingId?: string) {
-    return this.building.getDocumentTemplates(buildingId);
+  getDocumentTemplates(
+    @CurrentUser() user: AuthUser,
+    @Query('buildingId') buildingId?: string,
+  ) {
+    return this.building.getDocumentTemplates(buildingId, user);
   }
 
   @UseGuards(RolesGuard)
@@ -142,7 +145,7 @@ export class BuildingController {
     @Body() dto: UpdateDocumentTemplatesDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.building.updateDocumentTemplates(dto, user.id);
+    return this.building.updateDocumentTemplates(dto, user);
   }
 
   @UseGuards(RolesGuard)

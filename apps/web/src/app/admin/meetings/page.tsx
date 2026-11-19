@@ -32,6 +32,7 @@ interface MeetingDetail {
   stats: {
     participants: number;
     signedCount: number;
+    verifiedCount?: number;
     participationPercent?: number;
     quorumPercent?: number | null;
     quorumMet?: boolean;
@@ -275,6 +276,9 @@ export default function MeetingsPage() {
             <div style={{ color: 'var(--muted)' }}>
               Статус: <strong>{selected.status}</strong> · учасників{' '}
               {selected.stats.participants} · підписів {selected.stats.signedCount}
+              {selected.stats.verifiedCount != null && (
+                <> (верифіковано КЕП: {selected.stats.verifiedCount})</>
+              )}
               {selected.stats.participationPercent != null && (
                 <>
                   {' '}

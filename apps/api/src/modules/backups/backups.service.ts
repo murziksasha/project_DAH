@@ -12,6 +12,7 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { createGzip } from 'zlib';
 import { pipeline } from 'stream/promises';
+import type { Readable } from 'stream';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 
@@ -151,14 +152,30 @@ export class BackupsService {
     await fsp.writeFile(path.join(dir, MANIFEST_NAME), JSON.stringify(manifest, null, 2), 'utf8');
   }
 
-  private async writeHealthMarker(relativePath: string, finishedAt: string, sizeBytes: number) {
+  private async writeHealthMarker(
+    relativePath: string,
+    finishedAt: string,
+    sizeBytes: number,
+    status: 'ok' | 'partial',
+  ) {
+    const statusPath = this.getStatusPath();
+    let prevData: { lastFullBackupAt?: string | null; lastFullRelativePath?: string | null } = {};
+    try {
+      const raw = await fsp.readFile(statusPath, 'utf8');
+      prevData = JSON.parse(raw);
+    } catch {
+      /* ignore */
+    }
+
     const marker = {
       finishedAt,
       relativePath,
       sizeBytes,
+      status,
       timestamp: finishedAt,
+      lastFullBackupAt: status === 'ok' ? finishedAt : (prevData.lastFullBackupAt ?? null),
+      lastFullRelativePath: status === 'ok' ? relativePath : (prevData.lastFullRelativePath ?? null),
     };
-    const statusPath = this.getStatusPath();
     await this.ensureDir(path.dirname(statusPath));
     await fsp.writeFile(statusPath, JSON.stringify(marker, null, 2), 'utf8');
   }
@@ -252,33 +269,78 @@ export class BackupsService {
         filesDir,
       ]);
       await run(['alias', 'remove', alias]).catch(() => undefined);
-      if (mirror.code !== 0) {
-        this.logger.warn(`MinIO mirror failed: ${mirror.stderr}`);
-        return { ok: false, filesBytes: null, error: mirror.stderr };
-      }
-      // Sum file sizes
-      let total = 0;
-      const walk = async (dir: string) => {
-        const entries = await fsp.readdir(dir, { withFileTypes: true });
-        for (const e of entries) {
-          const p = path.join(dir, e.name);
-          if (e.isDirectory()) await walk(p);
-          else {
-            const st = await fsp.stat(p);
-            total += st.size;
+      if (mirror.code === 0) {
+        // Sum file sizes
+        let total = 0;
+        const walk = async (dir: string) => {
+          const entries = await fsp.readdir(dir, { withFileTypes: true });
+          for (const e of entries) {
+            const p = path.join(dir, e.name);
+            if (e.isDirectory()) await walk(p);
+            else {
+              const st = await fsp.stat(p);
+              total += st.size;
+            }
           }
+        };
+        try {
+          await walk(filesDir);
+        } catch {
+          /* empty */
         }
-      };
-      try {
-        await walk(filesDir);
-      } catch {
-        /* empty */
+        return { ok: true, filesBytes: total };
       }
-      return { ok: true, filesBytes: total };
+      this.logger.warn(`MinIO mc mirror failed: ${mirror.stderr}. Trying S3 SDK fallback.`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`MinIO pack skipped: ${message}`);
-      return { ok: false, filesBytes: null, error: message };
+      this.logger.warn(`MinIO mc failed: ${message}. Trying S3 SDK fallback.`);
+    }
+
+    // S3 SDK fallback when mc is not available or fails
+    try {
+      const { ListObjectsV2Command, GetObjectCommand, S3Client } = await import(
+        '@aws-sdk/client-s3'
+      );
+      const s3 = new S3Client({
+        endpoint,
+        region: this.config.get<string>('S3_REGION', 'us-east-1'),
+        credentials: {
+          accessKeyId: access,
+          secretAccessKey: secret,
+        },
+        forcePathStyle: true,
+      });
+
+      let continuationToken: string | undefined;
+      let totalBytes = 0;
+      do {
+        const listed = await s3.send(
+          new ListObjectsV2Command({
+            Bucket: bucket,
+            ContinuationToken: continuationToken,
+          }),
+        );
+        for (const item of listed.Contents ?? []) {
+          if (!item.Key) continue;
+          const targetPath = path.join(filesDir, item.Key);
+          await fsp.mkdir(path.dirname(targetPath), { recursive: true });
+          const obj = await s3.send(
+            new GetObjectCommand({ Bucket: bucket, Key: item.Key }),
+          );
+          if (obj.Body) {
+            const writeStream = fs.createWriteStream(targetPath);
+            await pipeline(obj.Body as Readable, writeStream);
+            totalBytes += item.Size ?? 0;
+          }
+        }
+        continuationToken = listed.NextContinuationToken;
+      } while (continuationToken);
+
+      return { ok: true, filesBytes: totalBytes };
+    } catch (sdkErr) {
+      const msg = sdkErr instanceof Error ? sdkErr.message : String(sdkErr);
+      this.logger.warn(`MinIO S3 SDK mirror failed: ${msg}`);
+      return { ok: false, filesBytes: null, error: msg };
     }
   }
 
@@ -429,11 +491,20 @@ export class BackupsService {
     const weeklyExists = await this.weeklyExists(weekKey);
 
     let lastBackupAt: string | null = null;
+    let lastBackupStatus: 'ok' | 'partial' | null = null;
+    let lastFullBackupAt: string | null = null;
     const statusPath = this.getStatusPath();
     try {
       const raw = await fsp.readFile(statusPath, 'utf8');
-      const data = JSON.parse(raw) as { finishedAt?: string; createdAt?: string };
+      const data = JSON.parse(raw) as {
+        finishedAt?: string;
+        createdAt?: string;
+        status?: 'ok' | 'partial';
+        lastFullBackupAt?: string | null;
+      };
       lastBackupAt = data.finishedAt ?? data.createdAt ?? null;
+      lastBackupStatus = data.status ?? null;
+      lastFullBackupAt = data.lastFullBackupAt ?? null;
     } catch {
       lastBackupAt = null;
     }
@@ -443,6 +514,8 @@ export class BackupsService {
       weekKey,
       weeklyExists,
       lastBackupAt,
+      lastBackupStatus,
+      lastFullBackupAt,
       autoSchedule: '0 3 * * * UTC (daily ensure weekly)',
     };
   }
@@ -531,7 +604,7 @@ export class BackupsService {
       relativePath: created.relativePath,
       finishedAt: created.finishedAt,
       sizeBytes: created.sizeBytes,
-      status: 'ok',
+      status: created.status,
     };
   }
 
@@ -590,7 +663,7 @@ export class BackupsService {
         ...(params.weekKey ? { weekKey: params.weekKey } : {}),
       };
       await this.writeManifest(dir, manifest);
-      await this.writeHealthMarker(relativePath, finishedAt, totalSize);
+      await this.writeHealthMarker(relativePath, finishedAt, totalSize, status);
 
       await this.audit.log({
         userId: params.userId,

@@ -5,6 +5,7 @@ import { useI18n } from '@/components/LocaleProvider';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StatCard } from '@/components/ui/StatCard';
 import { apiFetch, getApiBaseUrl, getToken, refreshAccessToken } from '@/lib/api';
+import { getStoredUser, StoredUser } from '@/lib/auth';
 import { downloadAuthFile } from '@/lib/download';
 import type { I18nKey } from '@/lib/i18n';
 
@@ -48,6 +49,8 @@ interface BackupStatus {
   weekKey: string;
   weeklyExists: boolean;
   lastBackupAt: string | null;
+  lastBackupStatus?: 'ok' | 'partial' | null;
+  lastFullBackupAt?: string | null;
   autoSchedule: string;
 }
 
@@ -113,6 +116,7 @@ export default function OpsPage() {
   const [busy, setBusy] = useState(false);
   const [busyBackup, setBusyBackup] = useState(false);
   const [busyDownloadId, setBusyDownloadId] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<StoredUser | null>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
@@ -146,8 +150,11 @@ export default function OpsPage() {
   }, [t]);
 
   useEffect(() => {
+    setCurrentUser(getStoredUser());
     refresh().catch(() => undefined);
   }, [refresh]);
+
+  const isSuperAdmin = currentUser?.role === 'super_admin';
 
   const backupAgeHours =
     health?.backup?.ageHours ??
@@ -517,7 +524,18 @@ export default function OpsPage() {
               {backupStatus.lastBackupAt
                 ? new Date(backupStatus.lastBackupAt).toLocaleString(dateLocale)
                 : t('opsNoMarker')}
+              {backupStatus.lastBackupStatus === 'partial' ? (
+                <span className="badge badge-warning" style={{ marginLeft: '0.5rem' }}>
+                  часткова (лише БД)
+                </span>
+              ) : null}
             </div>
+            {backupStatus.lastFullBackupAt && (
+              <div style={{ color: 'var(--muted)' }}>
+                Повна копія (БД + файли):{' '}
+                {new Date(backupStatus.lastFullBackupAt).toLocaleString(dateLocale)}
+              </div>
+            )}
           </div>
         )}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem' }}>
@@ -537,15 +555,17 @@ export default function OpsPage() {
           >
             {t('opsWeeklyBackup')}
           </button>
-          <button
-            type="button"
-            className="btn btn-sm btn-ghost btn-warning"
-            onClick={() => uploadInputRef.current?.click()}
-            disabled={busyBackup}
-            title={t('opsFromPc')}
-          >
-            {t('opsFromPc')}
-          </button>
+          {isSuperAdmin && (
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost btn-warning"
+              onClick={() => uploadInputRef.current?.click()}
+              disabled={busyBackup}
+              title={t('opsFromPc')}
+            >
+              {t('opsFromPc')}
+            </button>
+          )}
           <input
             ref={uploadInputRef}
             type="file"
@@ -600,15 +620,21 @@ export default function OpsPage() {
                         )}
                       </td>
                       <td>
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-ghost btn-success"
-                          disabled={busyDownloadId === rowKey || b.status !== 'ok'}
-                          onClick={() => void downloadBackup(b)}
-                          title={t('opsToPc')}
-                        >
-                          {busyDownloadId === rowKey ? '…' : t('opsToPc')}
-                        </button>
+                        {isSuperAdmin ? (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-ghost btn-success"
+                            disabled={busyDownloadId === rowKey || b.status !== 'ok'}
+                            onClick={() => void downloadBackup(b)}
+                            title={t('opsToPc')}
+                          >
+                            {busyDownloadId === rowKey ? '…' : t('opsToPc')}
+                          </button>
+                        ) : (
+                          <span style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>
+                            —
+                          </span>
+                        )}
                       </td>
                     </tr>
                   );

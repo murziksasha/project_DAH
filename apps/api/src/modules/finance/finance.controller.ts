@@ -217,14 +217,14 @@ export class FinanceController {
   @RequirePermissions(Permission.MANAGE_FINANCE)
   @Post('expenses')
   createExpense(@Body() dto: CreateExpenseDto, @CurrentUser() user: AuthUser) {
-    return this.finance.createExpense(dto, user.id);
+    return this.finance.createExpense(dto, user);
   }
 
   @UseGuards(RolesGuard)
   @Roles(UserRole.chairman, UserRole.board, UserRole.accountant)
   @Post('expenses/:id/approve')
   approveExpense(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.finance.approveExpense(id, user.id);
+    return this.finance.approveExpense(id, user);
   }
 
   @UseGuards(RolesGuard)
@@ -235,7 +235,7 @@ export class FinanceController {
     @Body() dto: VoidExpenseDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.finance.voidExpense(id, dto.reason, user.id);
+    return this.finance.voidExpense(id, dto.reason, user);
   }
 
   @UseGuards(RolesGuard)

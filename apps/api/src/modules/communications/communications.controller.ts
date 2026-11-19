@@ -74,14 +74,22 @@ export class CommunicationsController {
     @Body() dto: CreateAnnouncementDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.communications.createAnnouncement(dto, user.id);
+    return this.communications.createAnnouncement(
+      dto,
+      user.id,
+      user.role === UserRole.super_admin ? null : user.tenantId,
+    );
   }
 
   @UseGuards(RolesGuard)
   @Roles(UserRole.chairman, UserRole.board)
   @Delete('announcements/:id')
   deleteAnnouncement(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.communications.deleteAnnouncement(id, user.id);
+    return this.communications.deleteAnnouncement(
+      id,
+      user.id,
+      user.role === UserRole.super_admin ? null : user.tenantId,
+    );
   }
 
   @Get('requests')
@@ -112,7 +120,7 @@ export class CommunicationsController {
 
   @Post('requests')
   createRequest(@Body() dto: CreateRequestDto, @CurrentUser() user: AuthUser) {
-    return this.communications.createRequest(dto, user.id);
+    return this.communications.createRequest(dto, user.id, user);
   }
 
   @UseGuards(RolesGuard)
@@ -128,19 +136,30 @@ export class CommunicationsController {
 
   @Get('polls')
   listPolls(@CurrentUser() user: AuthUser) {
-    return this.communications.listPolls(user.id);
+    return this.communications.listPolls(
+      user.id,
+      user.role === UserRole.super_admin ? null : user.tenantId,
+    );
   }
 
   @Get('polls/:id')
   getPoll(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.communications.getPoll(id, user.id);
+    return this.communications.getPoll(
+      id,
+      user.id,
+      user.role === UserRole.super_admin ? null : user.tenantId,
+    );
   }
 
   @UseGuards(RolesGuard)
   @Roles(UserRole.chairman, UserRole.board)
   @Post('polls')
   createPoll(@Body() dto: CreatePollDto, @CurrentUser() user: AuthUser) {
-    return this.communications.createPoll(dto, user.id);
+    return this.communications.createPoll(
+      dto,
+      user.id,
+      user.role === UserRole.super_admin ? null : user.tenantId,
+    );
   }
 
   @UseGuards(RolesGuard)
@@ -151,13 +170,22 @@ export class CommunicationsController {
     @Body() dto: VotePollDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.communications.votePoll(id, dto.optionId, user.id);
+    return this.communications.votePoll(
+      id,
+      dto.optionId,
+      user.id,
+      user.role === UserRole.super_admin ? null : user.tenantId,
+    );
   }
 
   @UseGuards(RolesGuard)
   @Roles(UserRole.chairman, UserRole.board)
   @Patch('polls/:id/close')
   closePoll(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.communications.closePoll(id, user.id);
+    return this.communications.closePoll(
+      id,
+      user.id,
+      user.role === UserRole.super_admin ? null : user.tenantId,
+    );
   }
 }

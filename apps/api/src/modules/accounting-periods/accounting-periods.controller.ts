@@ -53,8 +53,9 @@ export class AccountingPeriodsController {
   checklist(
     @Query('buildingId') buildingId: string,
     @Query('period') period: string,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.periods.closeChecklist(buildingId, period);
+    return this.periods.closeChecklist(buildingId, period, user);
   }
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -68,6 +69,7 @@ export class AccountingPeriodsController {
       user.id,
       user.role,
       dto.notes,
+      user,
     );
   }
 }

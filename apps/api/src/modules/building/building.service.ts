@@ -98,20 +98,45 @@ export class BuildingService {
   }
 
   /** Lightweight counters for admin dashboard. */
-  async getOpsSummary(buildingId?: string) {
-    const aptScope = buildingId ? { apartment: { buildingId } } : {};
+  async getOpsSummary(buildingId?: string, user?: AuthUser) {
+    const tenantId = user && user.role !== UserRole.super_admin ? user.tenantId : undefined;
+    const aptScope = buildingId
+      ? { apartment: { buildingId } }
+      : tenantId
+        ? { apartment: { building: { tenantId } } }
+        : {};
+
     const [pendingResidents, openRequests, activePolls, debtorsLines, documents] =
       await Promise.all([
-        this.prisma.user.count({ where: { status: 'pending', role: 'resident' } }),
-        this.prisma.request.count({ where: { status: { in: ['new', 'in_progress'] } } }),
-        this.prisma.poll.count({ where: { isActive: true } }),
+        this.prisma.tenantMembership.count({
+          where: {
+            ...(tenantId ? { tenantId } : {}),
+            status: 'pending',
+            role: UserRole.resident,
+          },
+        }),
+        this.prisma.request.count({
+          where: {
+            ...(tenantId ? { tenantId } : {}),
+            ...(buildingId ? { buildingId } : {}),
+            status: { in: ['new', 'in_progress'] },
+          },
+        }),
+        this.prisma.poll.count({
+          where: {
+            ...(tenantId ? { tenantId } : {}),
+            isActive: true,
+          },
+        }),
         this.prisma.accrualLine.count({
           where: {
             status: { in: ['open', 'partially_paid', 'overdue'] },
             ...aptScope,
           },
         }),
-        this.prisma.document.count(),
+        this.prisma.document.count({
+          where: tenantId ? { tenantId } : undefined,
+        }),
       ]);
 
     return {
@@ -148,56 +173,49 @@ export class BuildingService {
           })
         ).map((a) => a.id);
 
-        const openLines =
-          aptIds.length === 0
-            ? []
-            : await this.prisma.accrualLine.findMany({
-                where: {
-                  apartmentId: { in: aptIds },
-                  status: { in: ['open', 'partially_paid', 'overdue'] },
-                },
-                select: { amount: true, paidAmount: true },
-              });
-
         let debt = 0;
         let billed = 0;
         let paid = 0;
-        for (const l of openLines) {
-          const amt = Number(l.amount);
-          const p = Number(l.paidAmount);
-          billed += amt;
-          paid += p;
-          debt += Math.max(0, amt - p);
-        }
 
-        // Closed/paid lines for collection rate (period-agnostic snapshot)
-        const paidLines =
-          aptIds.length === 0
-            ? []
-            : await this.prisma.accrualLine.findMany({
-                where: {
-                  apartmentId: { in: aptIds },
-                  status: 'paid',
-                },
-                select: { amount: true, paidAmount: true },
-                take: 5000,
-              });
-        for (const l of paidLines) {
-          billed += Number(l.amount);
-          paid += Number(l.paidAmount);
+        if (aptIds.length > 0) {
+          const [openAgg, paidAgg] = await Promise.all([
+            this.prisma.accrualLine.aggregate({
+              where: {
+                apartmentId: { in: aptIds },
+                status: { in: ['open', 'partially_paid', 'overdue'] },
+              },
+              _sum: { amount: true, paidAmount: true },
+            }),
+            this.prisma.accrualLine.aggregate({
+              where: {
+                apartmentId: { in: aptIds },
+                status: 'paid',
+              },
+              _sum: { amount: true, paidAmount: true },
+            }),
+          ]);
+
+          const openAmount = Number(openAgg._sum.amount ?? 0);
+          const openPaid = Number(openAgg._sum.paidAmount ?? 0);
+          const closedAmount = Number(paidAgg._sum.amount ?? 0);
+          const closedPaid = Number(paidAgg._sum.paidAmount ?? 0);
+
+          debt = Math.max(0, openAmount - openPaid);
+          billed = openAmount + closedAmount;
+          paid = openPaid + closedPaid;
         }
 
         const openRequests = await this.prisma.request.count({
           where: {
+            buildingId: b.id,
             status: { in: ['new', 'in_progress'] },
-            OR: [{ buildingId: b.id }, { buildingId: null }],
           },
         });
         const overdueRequests = await this.prisma.request.count({
           where: {
+            buildingId: b.id,
             status: { in: ['new', 'in_progress'] },
             dueAt: { lt: new Date() },
-            OR: [{ buildingId: b.id }, { buildingId: null }],
           },
         });
 
@@ -217,6 +235,24 @@ export class BuildingService {
       }),
     );
 
+    const [unassignedOpen, unassignedOverdue] = await Promise.all([
+      this.prisma.request.count({
+        where: {
+          ...(tenantId ? { tenantId } : {}),
+          buildingId: null,
+          status: { in: ['new', 'in_progress'] },
+        },
+      }),
+      this.prisma.request.count({
+        where: {
+          ...(tenantId ? { tenantId } : {}),
+          buildingId: null,
+          status: { in: ['new', 'in_progress'] },
+          dueAt: { lt: new Date() },
+        },
+      }),
+    ]);
+
     const totals = items.reduce(
       (acc, i) => {
         acc.debt += i.debt;
@@ -225,7 +261,7 @@ export class BuildingService {
         acc.apartments += i.apartments;
         return acc;
       },
-      { debt: 0, openRequests: 0, overdueRequests: 0, apartments: 0 },
+      { debt: 0, openRequests: unassignedOpen, overdueRequests: unassignedOverdue, apartments: 0 },
     );
 
     return {
@@ -239,11 +275,24 @@ export class BuildingService {
   }
 
   async updateBuildingProfile(
-    dto: { name?: string; address?: string; edrpou?: string | null },
-    userId: string,
+    dto: { name?: string; address?: string; edrpou?: string | null; buildingId?: string },
+    userOrUserId: AuthUser | string,
   ) {
-    const building = await this.prisma.building.findFirst();
+    const user: AuthUser | null = typeof userOrUserId === 'object' ? userOrUserId : null;
+    const userId: string = typeof userOrUserId === 'string' ? userOrUserId : userOrUserId.id;
+
+    const building = dto.buildingId
+      ? await this.prisma.building.findUnique({ where: { id: dto.buildingId } })
+      : await this.prisma.building.findFirst({
+          where: user?.tenantId ? { tenantId: user.tenantId } : undefined,
+          orderBy: { createdAt: 'asc' },
+        });
     if (!building) throw new NotFoundException('Будинок не налаштовано');
+    if (user && user.role !== UserRole.super_admin) {
+      if (!user.tenantId || building.tenantId !== user.tenantId) {
+        throw new ForbiddenException('Немає доступу до будинку іншої організації');
+      }
+    }
 
     const updated = await this.prisma.building.update({
       where: { id: building.id },
@@ -273,18 +322,37 @@ export class BuildingService {
     return updated;
   }
 
-  async getSettings() {
-    const building = await this.prisma.building.findFirst({
-      select: {
-        id: true,
-        name: true,
-        address: true,
-        edrpou: true,
-        showDebtorsToResidents: true,
-        isInitialized: true,
-        settings: true,
-      },
-    });
+  async getSettings(buildingId?: string, user?: AuthUser) {
+    const tenantId = user && user.role !== UserRole.super_admin ? user.tenantId : undefined;
+    const building = buildingId
+      ? await this.prisma.building.findFirst({
+          where: {
+            id: buildingId,
+            ...(tenantId ? { tenantId } : {}),
+          },
+          select: {
+            id: true,
+            name: true,
+            address: true,
+            edrpou: true,
+            showDebtorsToResidents: true,
+            isInitialized: true,
+            settings: true,
+          },
+        })
+      : await this.prisma.building.findFirst({
+          where: tenantId ? { tenantId } : undefined,
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            name: true,
+            address: true,
+            edrpou: true,
+            showDebtorsToResidents: true,
+            isInitialized: true,
+            settings: true,
+          },
+        });
     if (!building) return null;
 
     const json = parseBuildingSettings(building.settings);
@@ -314,9 +382,22 @@ export class BuildingService {
     };
   }
 
-  async updateSettings(dto: UpdateBuildingSettingsDto, userId: string) {
-    const building = await this.prisma.building.findFirst();
+  async updateSettings(dto: UpdateBuildingSettingsDto & { buildingId?: string }, userOrUserId: AuthUser | string) {
+    const user: AuthUser | null = typeof userOrUserId === 'object' ? userOrUserId : null;
+    const userId: string = typeof userOrUserId === 'string' ? userOrUserId : userOrUserId.id;
+
+    const building = dto.buildingId
+      ? await this.prisma.building.findUnique({ where: { id: dto.buildingId } })
+      : await this.prisma.building.findFirst({
+          where: user?.tenantId ? { tenantId: user.tenantId } : undefined,
+          orderBy: { createdAt: 'asc' },
+        });
     if (!building) throw new NotFoundException('Будинок не налаштовано');
+    if (user && user.role !== UserRole.super_admin) {
+      if (!user.tenantId || building.tenantId !== user.tenantId) {
+        throw new ForbiddenException('Немає доступу до будинку іншої організації');
+      }
+    }
 
     const settingsPatch = {
       ...(dto.registrationEnabled !== undefined
@@ -494,23 +575,44 @@ export class BuildingService {
    * Document constructor: PDF templates (receipts, board reports) + Excel export field profiles.
    * Defaults from @dah/shared when nothing saved yet.
    */
-  async getDocumentTemplates(buildingId?: string): Promise<DocumentTemplatesConfig> {
+  async getDocumentTemplates(buildingId?: string, user?: AuthUser): Promise<DocumentTemplatesConfig> {
+    const tenantId = user && user.role !== UserRole.super_admin ? user.tenantId : undefined;
     const building = buildingId
       ? await this.prisma.building.findFirst({
-          where: { id: buildingId },
+          where: {
+            id: buildingId,
+            ...(tenantId ? { tenantId } : {}),
+          },
           select: { settings: true },
         })
-      : await this.prisma.building.findFirst({ select: { settings: true } });
+      : await this.prisma.building.findFirst({
+          where: tenantId ? { tenantId } : undefined,
+          orderBy: { createdAt: 'asc' },
+          select: { settings: true },
+        });
     const json = parseBuildingSettings(building?.settings);
     return normalizeDocumentTemplatesConfig(json.documentTemplates);
   }
 
   async updateDocumentTemplates(
-    dto: UpdateDocumentTemplatesDto,
-    userId: string,
+    dto: UpdateDocumentTemplatesDto & { buildingId?: string },
+    userOrUserId: AuthUser | string,
   ): Promise<DocumentTemplatesConfig> {
-    const building = await this.prisma.building.findFirst();
+    const user: AuthUser | null = typeof userOrUserId === 'object' ? userOrUserId : null;
+    const userId: string = typeof userOrUserId === 'string' ? userOrUserId : userOrUserId.id;
+
+    const building = dto.buildingId
+      ? await this.prisma.building.findUnique({ where: { id: dto.buildingId } })
+      : await this.prisma.building.findFirst({
+          where: user?.tenantId ? { tenantId: user.tenantId } : undefined,
+          orderBy: { createdAt: 'asc' },
+        });
     if (!building) throw new NotFoundException('Будинок не налаштовано');
+    if (user && user.role !== UserRole.super_admin) {
+      if (!user.tenantId || building.tenantId !== user.tenantId) {
+        throw new ForbiddenException('Немає доступу до будинку іншої організації');
+      }
+    }
 
     const normalized = normalizeDocumentTemplatesConfig({
       forms: dto.forms,
@@ -638,6 +740,15 @@ export class BuildingService {
       }
     }
 
+    if (user && (user.role === UserRole.dispatcher || user.role === UserRole.crew)) {
+      return {
+        ...apartment,
+        advanceBalance: null,
+        accrualLines: [],
+        payments: [],
+      };
+    }
+
     return apartment;
   }
 
@@ -682,9 +793,22 @@ export class BuildingService {
    * - Removes apartments not present in the file (and their finance links)
    * - Re-links users listed in the residents column by email
    */
-  async importApartmentsCsv(csv: string, userId: string) {
-    const building = await this.prisma.building.findFirst();
+  async importApartmentsCsv(csv: string, userOrUserId: AuthUser | string, buildingId?: string) {
+    const user: AuthUser | null = typeof userOrUserId === 'object' ? userOrUserId : null;
+    const userId: string = typeof userOrUserId === 'string' ? userOrUserId : userOrUserId.id;
+
+    const building = buildingId
+      ? await this.prisma.building.findUnique({ where: { id: buildingId } })
+      : await this.prisma.building.findFirst({
+          where: user?.tenantId ? { tenantId: user.tenantId } : undefined,
+          orderBy: { createdAt: 'asc' },
+        });
     if (!building) throw new NotFoundException('Будинок не налаштовано');
+    if (user && user.role !== UserRole.super_admin) {
+      if (!user.tenantId || building.tenantId !== user.tenantId) {
+        throw new ForbiddenException('Немає доступу до будинку іншої організації');
+      }
+    }
 
     const { rows, errors } = parseApartmentsCsv(csv);
     if (!rows.length) {

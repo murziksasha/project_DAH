@@ -153,4 +153,53 @@ describe('JwtStrategy - Session & Revocation Validation', () => {
       strategy.validate({ sub: 'user-1', sid: 'session-stolen', typ: 'access' }),
     ).rejects.toThrow(UnauthorizedException);
   });
+
+  it('rejects user without active tenantMembership (no permissive fallback to user.role)', async () => {
+    const prisma = {
+      user: { findUnique: jest.fn().mockResolvedValue(baseUser) },
+      authSession: {
+        findUnique: jest.fn().mockResolvedValue({
+          userId: 'user-1',
+          revokedAt: null,
+          tenantId: 'tenant-1',
+          role: UserRole.resident,
+        }),
+      },
+      tenant: { findUnique: jest.fn().mockResolvedValue(activeTenant) },
+      tenantMembership: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+    };
+
+    const strategy = createStrategy(prisma);
+    await expect(
+      strategy.validate({ sub: 'user-1', sid: 'session-123', typ: 'access' }),
+    ).rejects.toThrow(new UnauthorizedException('Членство в організації неактивне або відсутнє'));
+  });
+
+  it('allows platform super_admin without tenant membership', async () => {
+    const superAdminUser = {
+      ...baseUser,
+      id: 'super-admin-1',
+      role: UserRole.super_admin,
+      tenantId: null,
+    };
+    const prisma = {
+      user: { findUnique: jest.fn().mockResolvedValue(superAdminUser) },
+      authSession: {
+        findUnique: jest.fn().mockResolvedValue({
+          userId: 'super-admin-1',
+          revokedAt: null,
+          tenantId: null,
+          role: null,
+        }),
+      },
+    };
+
+    const strategy = createStrategy(prisma);
+    const user = await strategy.validate({ sub: 'super-admin-1', sid: 'session-super', typ: 'access' });
+    expect(user.role).toBe(UserRole.super_admin);
+    expect(user.tenantId).toBeNull();
+  });
 });

@@ -26,22 +26,26 @@ export class DocumentsController {
   constructor(private documents: DocumentsService) {}
 
   @Get('public')
-  listPublic() {
-    return this.documents.listPublic();
+  listPublic(@CurrentUser() user: AuthUser) {
+    return this.documents.listPublic(
+      user.role === UserRole.super_admin ? null : user.tenantId,
+    );
   }
 
   @UseGuards(RolesGuard)
   @Roles(...WRITE_ROLES)
   @Get()
-  listAll() {
-    return this.documents.listAll();
+  listAll(@CurrentUser() user: AuthUser) {
+    return this.documents.listAll(
+      user.role === UserRole.super_admin ? null : user.tenantId,
+    );
   }
 
   @UseGuards(RolesGuard)
   @Roles(...WRITE_ROLES)
   @Post()
   create(@Body() dto: CreateDocumentDto, @CurrentUser() user: AuthUser) {
-    return this.documents.create(dto, user.id);
+    return this.documents.create(dto, user.id, user.tenantId);
   }
 
   @UseGuards(RolesGuard)
@@ -52,13 +56,22 @@ export class DocumentsController {
     @Body() dto: UpdateDocumentVisibilityDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.documents.setPublic(id, dto.isPublic, user.id);
+    return this.documents.setPublic(
+      id,
+      dto.isPublic,
+      user.id,
+      user.role === UserRole.super_admin ? null : user.tenantId,
+    );
   }
 
   @UseGuards(RolesGuard)
   @Roles(UserRole.chairman, UserRole.accountant)
   @Delete(':id')
   remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.documents.remove(id, user.id);
+    return this.documents.remove(
+      id,
+      user.id,
+      user.role === UserRole.super_admin ? null : user.tenantId,
+    );
   }
 }

@@ -163,7 +163,7 @@ describe('OnlinePaymentsService - Security & Signatures', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('accepts and finalizes webhook when merchantSignature is valid', async () => {
+    it('rejects unsigned Declined webhook without marking order failed', async () => {
       const s = createService({
         NODE_ENV: 'production',
         ONLINE_PAYMENTS_ENABLED: 'true',
@@ -173,7 +173,38 @@ describe('OnlinePaymentsService - Security & Signatures', () => {
         ONLINE_PAYMENTS_PUBLIC_KEY: publicKey,
       });
 
-      const orderReference = 'order-123';
+      const orderReference = 'order-declined-unsigned';
+      (s as any).prisma.onlinePaymentOrder.findUnique.mockResolvedValue({
+        id: 'db-order-declined',
+        orderId: orderReference,
+        provider: 'wayforpay',
+        status: 'pending',
+        amount: 500,
+        apartmentId: 'apt-1',
+      });
+
+      await expect(
+        s.handleWebhook({
+          orderReference,
+          transactionStatus: 'Declined',
+          amount: '500.00',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect((s as any).prisma.onlinePaymentOrder.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('returns signed WayForPay response structure upon successful processing', async () => {
+      const s = createService({
+        NODE_ENV: 'production',
+        ONLINE_PAYMENTS_ENABLED: 'true',
+        ONLINE_PAYMENTS_PROVIDER: 'wayforpay',
+        ONLINE_PAYMENTS_SANDBOX: 'false',
+        ONLINE_PAYMENTS_SECRET: secret,
+        ONLINE_PAYMENTS_PUBLIC_KEY: publicKey,
+      });
+
+      const orderReference = 'order-wfp-signed-resp';
       const amount = '500.00';
       const currency = 'UAH';
       const authCode = '123456';
@@ -206,7 +237,7 @@ describe('OnlinePaymentsService - Security & Signatures', () => {
       (s as any).prisma.onlinePaymentOrder.updateMany.mockResolvedValue({ count: 1 });
       (s as any).payments.createPayment.mockResolvedValue({ id: 'pmt-1' });
 
-      const res = await s.handleWebhook({
+      const res = (await s.handleWebhook({
         orderReference,
         amount,
         currency,
@@ -215,12 +246,16 @@ describe('OnlinePaymentsService - Security & Signatures', () => {
         transactionStatus,
         reasonCode,
         merchantSignature: validSig,
-      });
+      })) as any;
 
-      expect(res.ok).toBe(true);
-      if ('orderId' in res) {
-        expect(res.orderId).toBe(orderReference);
-      }
+      expect(res.orderReference).toBe(orderReference);
+      expect(res.status).toBe('accept');
+      expect(typeof res.time).toBe('number');
+      expect(typeof res.signature).toBe('string');
+      const expectedRespSig = createHmac('md5', secret)
+        .update(`${orderReference};accept;${res.time}`)
+        .digest('hex');
+      expect(res.signature).toBe(expectedRespSig);
     });
   });
 
@@ -299,7 +334,7 @@ describe('OnlinePaymentsService - Security & Signatures', () => {
         signature: expectedSig,
       });
 
-      expect(res.ok).toBe(true);
+      expect((res as any).ok).toBe(true);
       if ('paymentId' in res) {
         expect(res.paymentId).toBe('pmt-liq-1');
       }
@@ -346,7 +381,18 @@ describe('OnlinePaymentsService - Security & Signatures', () => {
   });
 
   describe('Generic webhook signature enforcement & Idempotency', () => {
-    it('throws BadRequestException outside sandbox when signature is missing', async () => {
+    it('throws Error on module init when provider is generic outside sandbox', () => {
+      const s = createService({
+        NODE_ENV: 'production',
+        ONLINE_PAYMENTS_ENABLED: 'true',
+        ONLINE_PAYMENTS_PROVIDER: 'generic',
+        ONLINE_PAYMENTS_SANDBOX: 'false',
+        ONLINE_PAYMENTS_SECRET: secret,
+      });
+      expect(() => s.onModuleInit()).toThrow();
+    });
+
+    it('throws BadRequestException outside sandbox when generic webhook is invoked', async () => {
       const s = createService({
         NODE_ENV: 'production',
         ONLINE_PAYMENTS_ENABLED: 'true',
@@ -373,12 +419,50 @@ describe('OnlinePaymentsService - Security & Signatures', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('returns duplicate when order is already paid without creating another payment', async () => {
+    it('rejects generic webhook when payload of order A is sent for order B', async () => {
       const s = createService({
-        NODE_ENV: 'production',
+        NODE_ENV: 'development',
         ONLINE_PAYMENTS_ENABLED: 'true',
         ONLINE_PAYMENTS_PROVIDER: 'generic',
-        ONLINE_PAYMENTS_SANDBOX: 'false',
+        ONLINE_PAYMENTS_SANDBOX: 'true',
+        ONLINE_PAYMENTS_SECRET: secret,
+      });
+
+      const payloadA = {
+        orderId: 'order-A',
+        amount: 100,
+        apartmentId: 'apt-1',
+      };
+      const dataA = Buffer.from(JSON.stringify(payloadA)).toString('base64url');
+      const sigA = createHmac('sha256', secret).update(dataA).digest('hex');
+
+      // Attacker tries to use sigA and dataA to confirm order-B with amount 500
+      (s as any).prisma.onlinePaymentOrder.findUnique.mockResolvedValue({
+        id: 'order-B-id',
+        orderId: 'order-B',
+        provider: 'generic',
+        amount: 500,
+        status: 'pending',
+        apartmentId: 'apt-2',
+      });
+
+      await expect(
+        s.handleWebhook({
+          orderId: 'order-B',
+          amount: 500,
+          payload: dataA,
+          signature: sigA,
+          status: 'success',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('returns duplicate when order is already paid without creating another payment', async () => {
+      const s = createService({
+        NODE_ENV: 'development',
+        ONLINE_PAYMENTS_ENABLED: 'true',
+        ONLINE_PAYMENTS_PROVIDER: 'generic',
+        ONLINE_PAYMENTS_SANDBOX: 'true',
         ONLINE_PAYMENTS_SECRET: secret,
       });
 
@@ -402,7 +486,7 @@ describe('OnlinePaymentsService - Security & Signatures', () => {
         signature: sig,
       });
 
-      expect(res.ok).toBe(true);
+      expect((res as any).ok).toBe(true);
       expect((res as any).duplicate).toBe(true);
       expect((res as any).paymentId).toBe('existing-payment-id');
       expect((s as any).payments.createPayment).not.toHaveBeenCalled();
