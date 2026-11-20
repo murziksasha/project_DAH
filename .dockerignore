@@ -1,7 +1,14 @@
 node_modules
+**/node_modules
 dist
+**/dist
 out
+**/out
 .next
+**/.next
+*.tsbuildinfo
+**/*.tsbuildinfo
+apps/web/.csp
 .git
 .github
 .env
