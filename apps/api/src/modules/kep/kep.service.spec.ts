@@ -110,6 +110,41 @@ describe('KepService', () => {
     const done = await service.completeSession({ sessionId: r.sessionId, code: 'mock_ok' });
     expect(done.signed).toBe(true);
     expect(done.status).toBe('signed');
+    expect(done.verified).toBe(false);
+  });
+
+  it('cades signature does not get verified=true without verified adapter', async () => {
+    const r = await service.startSession({
+      purpose: 'meeting_protocol',
+      refType: 'Meeting',
+      refId: 'm1',
+      userId: 'u1',
+      documentTitle: 'Test',
+      documentText: 'Protocol body',
+      provider: 'cades',
+    });
+    const fakeCms = 'A'.repeat(40);
+    const done = await service.completeSession({ sessionId: r.sessionId, signatureCms: fakeCms });
+    expect(done.signed).toBe(true);
+    expect(done.verified).toBe(false);
+  });
+
+  it('cades is rejected in production without adapter flag', async () => {
+    configMap.NODE_ENV = 'production';
+    const r = await service.startSession({
+      purpose: 'meeting_protocol',
+      refType: 'Meeting',
+      refId: 'm1',
+      userId: 'u1',
+      documentTitle: 'Test',
+      documentText: 'Protocol body',
+      provider: 'cades',
+    });
+    const fakeCms = 'A'.repeat(40);
+    await expect(
+      service.completeSession({ sessionId: r.sessionId, signatureCms: fakeCms }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    delete configMap.NODE_ENV;
   });
 
   it('webhook requires secret in production-like config', async () => {
@@ -134,5 +169,34 @@ describe('KepService', () => {
         provider: 'nope' as 'mock',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  describe('H5/M11 demo signing guard', () => {
+    const withCfg = (over: Record<string, string | undefined>) =>
+      new KepService(
+        { get: (k: string, d?: string) => (k in over ? over[k] : configMap[k]) ?? d } as never,
+        prisma as never,
+        { log: jest.fn() } as never,
+      );
+
+    it('mock is off by default in production, on in dev, explicit flag wins', () => {
+      expect(withCfg({ KEP_ALLOW_MOCK: undefined, NODE_ENV: 'production' }).mockAllowed()).toBe(false);
+      expect(withCfg({ KEP_ALLOW_MOCK: undefined, NODE_ENV: 'development' }).mockAllowed()).toBe(true);
+      expect(withCfg({ KEP_ALLOW_MOCK: 'false', NODE_ENV: 'development' }).mockAllowed()).toBe(false);
+      expect(withCfg({ KEP_ALLOW_MOCK: 'true', NODE_ENV: 'production' }).mockAllowed()).toBe(true);
+    });
+
+    it('startSession with mock is rejected when mock is disallowed', async () => {
+      const svc = withCfg({ KEP_ALLOW_MOCK: 'false' });
+      await expect(
+        svc.startSession({ documentText: 'x', provider: 'mock' } as never),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('mock authorize page escapes the session id (no XSS)', () => {
+      const html = service.mockAuthorizePage('"><script>alert(1)</script>', 'n0nce');
+      expect(html).not.toContain('<script>alert(1)</script>');
+      expect(html).toContain('nonce="n0nce"');
+    });
   });
 });

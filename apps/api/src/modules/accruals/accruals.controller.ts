@@ -1,3 +1,6 @@
+import { Permission } from '@dah/shared';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import {
   Body,
   Controller,
@@ -5,6 +8,7 @@ import {
   ForbiddenException,
   Get,
   Header,
+  NotFoundException,
   Param,
   Post,
   Query,
@@ -13,24 +17,19 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '../../prisma/client';
 import { Response } from 'express';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { AccrualsService } from './accruals.service';
+import { TenantAccessService } from '../../common/tenant-access/tenant-access.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAccrualDto } from './dto/create-accrual.dto';
 import { CreateAccrualTemplateDto } from './dto/create-accrual-template.dto';
+import { CreditNoteDto, ReverseAccrualDto } from './dto/accrual-actions.dto';
 
-const WRITE_ROLES = [UserRole.chairman, UserRole.accountant, UserRole.board];
-const READ_ROLES: UserRole[] = [
-  UserRole.chairman,
-  UserRole.accountant,
-  UserRole.board,
-  UserRole.auditor,
-  UserRole.super_admin,
-];
 const ADMIN_ROLES: UserRole[] = [
   UserRole.chairman,
   UserRole.accountant,
@@ -43,10 +42,34 @@ const ADMIN_ROLES: UserRole[] = [
 @UseGuards(AuthGuard('jwt'))
 @Controller('accruals')
 export class AccrualsController {
-  constructor(private accruals: AccrualsService) {}
+  constructor(
+    private accruals: AccrualsService,
+    private access: TenantAccessService,
+    private prisma: PrismaService,
+  ) {}
 
-  @UseGuards(RolesGuard)
-  @Roles(...READ_ROLES)
+  /** Accrual must belong to a fund of the caller's organization (404 otherwise). */
+  private async assertAccrual(user: AuthUser, tenantId: string | null | undefined, id: string) {
+    const row = await this.prisma.accrual.findUnique({
+      where: { id },
+      select: { fund: { select: { buildingId: true } } },
+    });
+    if (!row) throw new NotFoundException('Нарахування не знайдено');
+    await this.access.assertBuilding(user, row.fund.buildingId, tenantId);
+  }
+
+  private async assertTemplate(user: AuthUser, tenantId: string | null | undefined, id: string) {
+    const row = await this.prisma.accrualTemplate.findUnique({
+      where: { id },
+      select: { fund: { select: { buildingId: true } } },
+    });
+    if (!row) throw new NotFoundException('Шаблон не знайдено');
+    await this.access.assertBuilding(user, row.fund.buildingId, tenantId);
+    return row.fund.buildingId;
+  }
+
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('templates')
   listTemplates(
     @Query('buildingId') buildingId?: string,
@@ -55,22 +78,32 @@ export class AccrualsController {
     return this.accruals.listTemplates(buildingId, tenantId);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post('templates')
-  createTemplate(@Body() dto: CreateAccrualTemplateDto) {
+  async createTemplate(
+    @Body() dto: CreateAccrualTemplateDto,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+  ) {
+    await this.access.assertFund(user, dto.fundId, tenantId);
     return this.accruals.createTemplate(dto);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Delete('templates/:id')
-  deleteTemplate(@Param('id') id: string) {
+  async deleteTemplate(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+  ) {
+    await this.assertTemplate(user, tenantId, id);
     return this.accruals.deleteTemplate(id);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get()
   listAccruals(
     @Query('period') period?: string,
@@ -103,7 +136,12 @@ export class AccrualsController {
   @UseGuards(RolesGuard)
   @Roles(...ADMIN_ROLES)
   @Get('apartments/:apartmentId/account')
-  apartmentAccount(@Param('apartmentId') apartmentId: string) {
+  async apartmentAccount(
+    @Param('apartmentId') apartmentId: string,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+  ) {
+    await this.access.assertApartment(user, apartmentId, tenantId);
     return this.accruals.getApartmentAccount(apartmentId);
   }
 
@@ -114,7 +152,10 @@ export class AccrualsController {
     @Param('apartmentId') apartmentId: string,
     @CurrentUser() user: AuthUser,
     @Res() res: Response,
+    @TenantId() tenantId: string | null,
   ) {
+    // Staff: apartment must be in their organization; resident: own apartment only.
+    await this.access.assertApartment(user, apartmentId, tenantId);
     if (user.role === UserRole.resident) {
       const ids = user.apartmentIds?.length
         ? user.apartmentIds
@@ -135,39 +176,62 @@ export class AccrualsController {
     res.send(buffer);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post('preview')
-  preview(@Body() dto: CreateAccrualDto) {
+  async preview(
+    @Body() dto: CreateAccrualDto,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+  ) {
+    await this.access.assertFund(user, dto.fundId, tenantId);
     return this.accruals.previewAmounts(dto);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post()
-  create(@Body() dto: CreateAccrualDto, @CurrentUser() user: AuthUser) {
+  async create(
+    @Body() dto: CreateAccrualDto,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+  ) {
+    const fund = await this.access.assertFund(user, dto.fundId, tenantId);
+    if (dto.templateId) {
+      const tplBuilding = await this.assertTemplate(user, tenantId, dto.templateId);
+      if (tplBuilding !== fund.buildingId) throw new NotFoundException('Шаблон не знайдено');
+    }
     return this.accruals.createAccrual(dto, user.id);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post(':id/reverse')
-  reverse(
+  async reverse(
     @Param('id') id: string,
-    @Body() body: { reason?: string },
+    @Body() body: ReverseAccrualDto,
     @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
   ) {
+    await this.assertAccrual(user, tenantId, id);
     return this.accruals.reverseAccrual(id, user.id, body?.reason);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post('lines/:lineId/credit-note')
-  creditNote(
+  async creditNote(
     @Param('lineId') lineId: string,
-    @Body() body: { amount: number; reason?: string },
+    @Body() body: CreditNoteDto,
     @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
   ) {
+    const line = await this.prisma.accrualLine.findUnique({
+      where: { id: lineId },
+      select: { apartmentId: true },
+    });
+    if (!line) throw new NotFoundException('Рядок нарахування не знайдено');
+    await this.access.assertApartment(user, line.apartmentId, tenantId);
     return this.accruals.creditNoteLine(
       lineId,
       Number(body.amount),
@@ -182,8 +246,18 @@ export class AccrualsController {
     @Param('lineId') lineId: string,
     @CurrentUser() user: AuthUser,
     @Res() res: Response,
+    @TenantId() tenantId: string | null,
   ) {
     const isAdmin = ADMIN_ROLES.includes(user.role as UserRole);
+    if (isAdmin) {
+      // Staff of org A must not download receipts (names, IBAN, debt) of org B.
+      const line = await this.prisma.accrualLine.findUnique({
+        where: { id: lineId },
+        select: { apartmentId: true },
+      });
+      if (!line) throw new NotFoundException('Рядок нарахування не знайдено');
+      await this.access.assertApartment(user, line.apartmentId, tenantId);
+    }
     const residentApartmentIds = user.apartmentIds?.length
       ? user.apartmentIds
       : user.apartmentId
@@ -197,7 +271,13 @@ export class AccrualsController {
   @UseGuards(RolesGuard)
   @Roles(...ADMIN_ROLES)
   @Get(':id/receipts.zip')
-  async receiptsZip(@Param('id') id: string, @Res() res: Response) {
+  async receiptsZip(
+    @Param('id') id: string,
+    @Res() res: Response,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+  ) {
+    await this.assertAccrual(user, tenantId, id);
     const { buffer, filename } = await this.accruals.generateAccrualReceiptsZip(id);
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -207,15 +287,29 @@ export class AccrualsController {
   @UseGuards(RolesGuard)
   @Roles(...ADMIN_ROLES)
   @Get(':id/receipts.pdf')
-  async receiptsPdf(@Param('id') id: string, @Res() res: Response) {
+  async receiptsPdf(
+    @Param('id') id: string,
+    @Res() res: Response,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+  ) {
+    await this.assertAccrual(user, tenantId, id);
     const { buffer, filename } = await this.accruals.generateAccrualReceiptsPdf(id);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);
   }
 
+  /** Full accrual with every apartment line — staff only, own organization (H1). */
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get(':id')
-  getOne(@Param('id') id: string) {
+  async getOne(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+  ) {
+    await this.assertAccrual(user, tenantId, id);
     return this.accruals.getAccrual(id);
   }
 }

@@ -1,7 +1,21 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Permission } from '@dah/shared';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import {
+  Body,
+  Controller,
+  Delete,
+  ForbiddenException,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '../../prisma/client';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -13,6 +27,8 @@ import { UpdateResidentDto } from './dto/update-resident.dto';
 import { UpdateBuildingDto } from './dto/update-building.dto';
 import { UpdateBuildingSettingsDto } from './dto/update-settings.dto';
 import { UpdateDocumentTemplatesDto } from './dto/update-document-templates.dto';
+import { ImportApartmentsCsvDto } from './dto/import-apartments-csv.dto';
+import { CreateBuildingDto } from './dto/create-building.dto';
 
 @ApiTags('building')
 @ApiBearerAuth()
@@ -31,14 +47,20 @@ export class BuildingController {
     return this.building.listBuildings(user.role === 'super_admin' ? null : user.tenantId);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.super_admin, UserRole.chairman)
+  @RequirePermissions(Permission.MANAGE_BUILDING)
+  @UseGuards(PermissionsGuard)
   @Post('create')
   createBuilding(
-    @Body() body: { name: string; address: string; edrpou?: string | null; tenantId?: string },
+    @Body() body: CreateBuildingDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.building.createBuilding(body, user.id, user.tenantId);
+    // Only platform admin may create a building in another organization.
+    const dto =
+      user.role === UserRole.super_admin ? body : { ...body, tenantId: undefined };
+    if (user.role !== UserRole.super_admin && !user.tenantId) {
+      throw new ForbiddenException('Обліковий запис без організації');
+    }
+    return this.building.createBuilding(dto, user.id, user.tenantId);
   }
 
   @Get('by/:id')
@@ -50,7 +72,7 @@ export class BuildingController {
   @Roles(UserRole.super_admin, UserRole.chairman, UserRole.board)
   @Patch()
   updateBuilding(@Body() dto: UpdateBuildingDto, @CurrentUser() user: AuthUser) {
-    return this.building.updateBuildingProfile(dto, user.id);
+    return this.building.updateBuildingProfile(dto, user);
   }
 
   @Get('apartments')
@@ -61,17 +83,18 @@ export class BuildingController {
     return this.building.listApartments(
       buildingId,
       user.role === 'super_admin' ? null : user.tenantId,
+      user,
     );
   }
 
   @Get('apartments/:id')
-  getApartment(@Param('id') id: string) {
-    return this.building.getApartment(id);
+  getApartment(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.building.getApartment(id, user);
   }
 
   @Get('settings')
-  getSettings() {
-    return this.building.getSettings();
+  getSettings(@CurrentUser() user?: AuthUser, @Query('buildingId') buildingId?: string) {
+    return this.building.getSettings(buildingId, user);
   }
 
   @UseGuards(RolesGuard)
@@ -91,17 +114,11 @@ export class BuildingController {
     );
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(
-    UserRole.super_admin,
-    UserRole.chairman,
-    UserRole.accountant,
-    UserRole.board,
-    UserRole.auditor,
-  )
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('ops-summary')
-  opsSummary(@Query('buildingId') buildingId?: string) {
-    return this.building.getOpsSummary(buildingId);
+  opsSummary(@CurrentUser() user: AuthUser, @Query('buildingId') buildingId?: string) {
+    return this.building.getOpsSummary(buildingId, user);
   }
 
   /** УК portfolio: per-building debt / SLA / collection snapshot. */
@@ -125,27 +142,30 @@ export class BuildingController {
   @Roles(UserRole.super_admin, UserRole.chairman, UserRole.board)
   @Patch('settings')
   updateSettings(@Body() dto: UpdateBuildingSettingsDto, @CurrentUser() user: AuthUser) {
-    return this.building.updateSettings(dto, user.id);
+    return this.building.updateSettings(dto, user);
   }
 
   /** Document constructor: receipt / board report layouts + Excel export columns. */
   @Get('document-templates')
-  getDocumentTemplates(@Query('buildingId') buildingId?: string) {
-    return this.building.getDocumentTemplates(buildingId);
+  getDocumentTemplates(
+    @CurrentUser() user: AuthUser,
+    @Query('buildingId') buildingId?: string,
+  ) {
+    return this.building.getDocumentTemplates(buildingId, user);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.super_admin, UserRole.chairman, UserRole.board, UserRole.accountant)
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_FINANCE, Permission.PLATFORM_ADMIN)
   @Patch('document-templates')
   updateDocumentTemplates(
     @Body() dto: UpdateDocumentTemplatesDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.building.updateDocumentTemplates(dto, user.id);
+    return this.building.updateDocumentTemplates(dto, user);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.super_admin, UserRole.chairman)
+  @RequirePermissions(Permission.MANAGE_BUILDING)
+  @UseGuards(PermissionsGuard)
   @Post('apartments')
   createApartment(@Body() dto: CreateApartmentDto, @CurrentUser() user: AuthUser) {
     return this.building.createApartment(
@@ -155,57 +175,60 @@ export class BuildingController {
     );
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.super_admin, UserRole.chairman)
+  @RequirePermissions(Permission.MANAGE_BUILDING)
+  @UseGuards(PermissionsGuard)
   @Post('apartments/import')
-  importApartments(@Body() body: { csv: string }, @CurrentUser() user: AuthUser) {
-    return this.building.importApartmentsCsv(body.csv ?? '', user.id);
+  importApartments(
+    @Body() body: ImportApartmentsCsvDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.building.importApartmentsCsv(body.csv ?? '', user, body.buildingId);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.super_admin, UserRole.chairman)
+  @RequirePermissions(Permission.MANAGE_BUILDING)
+  @UseGuards(PermissionsGuard)
   @Patch('apartments/:id')
   updateApartment(
     @Param('id') id: string,
     @Body() dto: UpdateApartmentDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.building.updateApartment(id, dto, user.id);
+    return this.building.updateApartment(id, dto, user);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.super_admin, UserRole.chairman)
+  @RequirePermissions(Permission.MANAGE_BUILDING)
+  @UseGuards(PermissionsGuard)
   @Delete('apartments/:id')
   deleteApartment(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.building.deleteApartment(id, user.id);
+    return this.building.deleteApartment(id, user);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.super_admin, UserRole.chairman)
+  @RequirePermissions(Permission.MANAGE_BUILDING)
+  @UseGuards(PermissionsGuard)
   @Post('apartments/:apartmentId/residents')
   createResident(
     @Param('apartmentId') apartmentId: string,
     @Body() dto: CreateResidentDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.building.createResident(apartmentId, dto, user.id);
+    return this.building.createResident(apartmentId, dto, user);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.super_admin, UserRole.chairman)
+  @RequirePermissions(Permission.MANAGE_BUILDING)
+  @UseGuards(PermissionsGuard)
   @Patch('residents/:id')
   updateResident(
     @Param('id') id: string,
     @Body() dto: UpdateResidentDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.building.updateResident(id, dto, user.id);
+    return this.building.updateResident(id, dto, user);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.super_admin, UserRole.chairman)
+  @RequirePermissions(Permission.MANAGE_BUILDING)
+  @UseGuards(PermissionsGuard)
   @Delete('residents/:id')
   deleteResident(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.building.deleteResident(id, user.id);
+    return this.building.deleteResident(id, user);
   }
 }

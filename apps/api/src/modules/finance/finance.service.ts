@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { JournalEntryType, Prisma } from '@prisma/client';
+import { JournalEntryType, Prisma, UserRole } from '../../prisma/client';
+import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { resolveBuildingId } from '../../common/utils/building-scope';
 import { rowsToXlsxBuffer } from '../../common/utils/xlsx-export';
 import {
@@ -278,12 +280,18 @@ export class FinanceService {
     return updated;
   }
 
-  async deleteBankAccount(id: string, userId: string) {
+  async deleteBankAccount(id: string, userId: string, tenantId?: string | null) {
     const existing = await this.prisma.bankAccount.findUnique({
       where: { id },
-      include: { _count: { select: { funds: true } } },
+      include: {
+        building: { select: { id: true, tenantId: true } },
+        _count: { select: { funds: true } },
+      },
     });
     if (!existing) throw new NotFoundException('Рахунок не знайдено');
+    if (tenantId && existing.building.tenantId !== tenantId) {
+      throw new ForbiddenException('Немає доступу до банківського рахунку іншої організації');
+    }
     if (existing._count.funds > 0) {
       throw new BadRequestException('Спочатку відвʼяжіть фонди від цього рахунку');
     }
@@ -298,11 +306,46 @@ export class FinanceService {
     return { id, deleted: true };
   }
 
-  listCategories() {
-    return this.prisma.expenseCategory.findMany({ orderBy: { name: 'asc' } });
+  /**
+   * Categories visible to an organization: shared system catalog + its own.
+   * `tenantId` null → platform admin (all).
+   */
+  listCategories(tenantId: string | null = null) {
+    return this.prisma.expenseCategory.findMany({
+      where: tenantId ? { OR: [{ tenantId: null }, { tenantId }] } : undefined,
+      orderBy: { name: 'asc' },
+    });
   }
 
-  async createCategory(dto: { name: string; code?: string }) {
+  /** Category may be referenced only when it is global or owned by `tenantId`. */
+  async assertCategoryVisible(categoryId: string | null | undefined, tenantId: string | null) {
+    if (!categoryId || !tenantId) return;
+    const cat = await this.prisma.expenseCategory.findUnique({
+      where: { id: categoryId },
+      select: { tenantId: true },
+    });
+    if (!cat || (cat.tenantId && cat.tenantId !== tenantId)) {
+      throw new NotFoundException('Категорію не знайдено');
+    }
+  }
+
+  /** Mutations only on own categories; shared catalog is changed by platform admin. */
+  private async loadOwnCategory(id: string, tenantId: string | null) {
+    const cat = await this.prisma.expenseCategory.findUnique({
+      where: { id },
+      include: { _count: { select: { expenses: true } } },
+    });
+    if (!cat) throw new NotFoundException('Категорію не знайдено');
+    if (tenantId && cat.tenantId !== tenantId) {
+      if (cat.tenantId === null) {
+        throw new ForbiddenException('Системну категорію змінює лише адміністратор платформи');
+      }
+      throw new NotFoundException('Категорію не знайдено');
+    }
+    return cat;
+  }
+
+  async createCategory(dto: { name: string; code?: string }, tenantId: string | null = null) {
     const code =
       dto.code?.trim() ||
       dto.name
@@ -312,20 +355,27 @@ export class FinanceService {
         .slice(0, 48) ||
       `cat_${Date.now().toString(36)}`;
 
-    const existing = await this.prisma.expenseCategory.findUnique({ where: { code } });
+    const existing = await this.prisma.expenseCategory.findFirst({
+      where: { code, OR: [{ tenantId: null }, { tenantId }] },
+    });
     if (existing) throw new BadRequestException(`Категорія з кодом «${code}» вже існує`);
 
     return this.prisma.expenseCategory.create({
-      data: { name: dto.name.trim(), code },
+      data: { name: dto.name.trim(), code, tenantId },
     });
   }
 
-  async updateCategory(id: string, dto: { name: string; code?: string }) {
-    const cat = await this.prisma.expenseCategory.findUnique({ where: { id } });
-    if (!cat) throw new NotFoundException('Категорію не знайдено');
+  async updateCategory(
+    id: string,
+    dto: { name: string; code?: string },
+    tenantId: string | null = null,
+  ) {
+    const cat = await this.loadOwnCategory(id, tenantId);
 
     if (dto.code && dto.code !== cat.code) {
-      const clash = await this.prisma.expenseCategory.findUnique({ where: { code: dto.code } });
+      const clash = await this.prisma.expenseCategory.findFirst({
+        where: { code: dto.code, OR: [{ tenantId: null }, { tenantId: cat.tenantId }] },
+      });
       if (clash) throw new BadRequestException('Код уже зайнятий');
     }
 
@@ -338,12 +388,8 @@ export class FinanceService {
     });
   }
 
-  async deleteCategory(id: string) {
-    const cat = await this.prisma.expenseCategory.findUnique({
-      where: { id },
-      include: { _count: { select: { expenses: true } } },
-    });
-    if (!cat) throw new NotFoundException('Категорію не знайдено');
+  async deleteCategory(id: string, tenantId: string | null = null) {
+    const cat = await this.loadOwnCategory(id, tenantId);
     if (cat._count.expenses > 0) {
       throw new BadRequestException('Неможливо видалити: є витрати з цією категорією');
     }
@@ -375,9 +421,14 @@ export class FinanceService {
     });
   }
 
-  async updateSupplier(id: string, dto: CreateSupplierDto) {
-    const supplier = await this.prisma.supplier.findUnique({ where: { id } });
-    if (!supplier) throw new NotFoundException('Постачальника не знайдено');
+  async updateSupplier(id: string, dto: CreateSupplierDto, tenantId: string | null = null) {
+    const supplier = await this.prisma.supplier.findUnique({
+      where: { id },
+      include: { building: { select: { tenantId: true } } },
+    });
+    if (!supplier || (tenantId && supplier.building.tenantId !== tenantId)) {
+      throw new NotFoundException('Постачальника не знайдено');
+    }
 
     return this.prisma.supplier.update({
       where: { id },
@@ -462,17 +513,20 @@ export class FinanceService {
     };
   }
 
-  async getExpense(id: string) {
+  async getExpense(id: string, tenantId: string | null = null) {
     const expense = await this.prisma.expense.findUnique({
       where: { id },
       include: {
-        fund: true,
+        fund: { include: { building: { select: { tenantId: true } } } },
         category: true,
         supplier: true,
         createdBy: { select: { firstName: true, lastName: true } },
       },
     });
     if (!expense || expense.isVoided) throw new NotFoundException('Витрату не знайдено');
+    if (tenantId && expense.fund.building.tenantId !== tenantId) {
+      throw new NotFoundException('Витрату не знайдено');
+    }
 
     return {
       ...expense,
@@ -497,15 +551,34 @@ export class FinanceService {
     }
   }
 
-  async createExpense(dto: CreateExpenseDto, userId: string) {
+  async createExpense(dto: CreateExpenseDto, userOrUserId: AuthUser | string) {
+    const user: AuthUser | null = typeof userOrUserId === 'object' ? userOrUserId : null;
+    const userId: string = typeof userOrUserId === 'string' ? userOrUserId : userOrUserId.id;
+
     await this.assertFinance2fa(userId);
     const fund = await this.prisma.fund.findUnique({
       where: { id: dto.fundId },
-      include: { building: { select: { settings: true } } },
+      include: { building: { select: { settings: true, tenantId: true } } },
     });
     if (!fund) throw new NotFoundException('Фонд не знайдено');
 
+    if (user && user.role !== UserRole.super_admin) {
+      if (!user.tenantId || (fund.building && fund.building.tenantId !== user.tenantId)) {
+        throw new ForbiddenException('Немає доступу до фонду іншої організації');
+      }
+    }
+
     await this.periods.assertAllowsMutation(fund.buildingId, dto.date, 'expense');
+    await this.assertCategoryVisible(dto.categoryId, fund.building.tenantId);
+    if (dto.supplierId) {
+      const supplier = await this.prisma.supplier.findUnique({
+        where: { id: dto.supplierId },
+        select: { buildingId: true },
+      });
+      if (!supplier || supplier.buildingId !== fund.buildingId) {
+        throw new NotFoundException('Постачальника не знайдено');
+      }
+    }
 
     const settings = parseBuildingSettings(fund.building.settings);
     const threshold = settings.expenseDualApprovalThreshold;
@@ -575,11 +648,14 @@ export class FinanceService {
   }
 
   /** Second signature for dual-control expenses. */
-  async approveExpense(id: string, userId: string) {
+  async approveExpense(id: string, userOrUserId: AuthUser | string) {
+    const user: AuthUser | null = typeof userOrUserId === 'object' ? userOrUserId : null;
+    const userId: string = typeof userOrUserId === 'string' ? userOrUserId : userOrUserId.id;
+
     await this.assertFinance2fa(userId);
     const expense = await this.prisma.expense.findUnique({
       where: { id },
-      include: { fund: true },
+      include: { fund: { include: { building: { select: { tenantId: true } } } } },
     });
     if (!expense) throw new NotFoundException('Витрату не знайдено');
     if (expense.isVoided) throw new BadRequestException('Витрату анульовано');
@@ -589,6 +665,18 @@ export class FinanceService {
     if (expense.createdById === userId) {
       throw new BadRequestException('Другий підпис має бути іншої особи');
     }
+
+    if (user && user.role !== UserRole.super_admin) {
+      if (!user.tenantId || (expense.fund?.building && expense.fund.building.tenantId !== user.tenantId)) {
+        throw new ForbiddenException('Немає доступу до витрати іншої організації');
+      }
+    }
+
+    await this.periods.assertAllowsMutation(
+      expense.fund.buildingId,
+      expense.date,
+      'expense',
+    );
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const row = await tx.expense.update({
@@ -630,15 +718,24 @@ export class FinanceService {
     return updated;
   }
 
-  async voidExpense(id: string, reason: string, userId: string) {
+  async voidExpense(id: string, reason: string, userOrUserId: AuthUser | string) {
+    const user: AuthUser | null = typeof userOrUserId === 'object' ? userOrUserId : null;
+    const userId: string = typeof userOrUserId === 'string' ? userOrUserId : userOrUserId.id;
+
     // period check after load
     await this.assertFinance2fa(userId);
     const expense = await this.prisma.expense.findUnique({
       where: { id },
-      include: { fund: true },
+      include: { fund: { include: { building: { select: { tenantId: true } } } } },
     });
     if (!expense) throw new NotFoundException('Витрату не знайдено');
     if (expense.isVoided) throw new BadRequestException('Витрату вже анульовано');
+
+    if (user && user.role !== UserRole.super_admin) {
+      if (!user.tenantId || (expense.fund?.building && expense.fund.building.tenantId !== user.tenantId)) {
+        throw new ForbiddenException('Немає доступу до витрати іншої організації');
+      }
+    }
     await this.periods.assertAllowsMutation(
       expense.fund.buildingId,
       expense.date,
@@ -905,13 +1002,14 @@ export class FinanceService {
 
   // ── Fund transfers ──────────────────────────────────────────────
 
-  listFundTransfers(buildingId?: string) {
+  listFundTransfers(buildingId?: string, tenantId: string | null = null) {
     return this.prisma.fundTransfer.findMany({
       where: {
         isVoided: false,
         ...(buildingId
           ? { OR: [{ fromFund: { buildingId } }, { toFund: { buildingId } }] }
           : {}),
+        ...(tenantId ? { fromFund: { building: { tenantId } } } : {}),
       },
       include: {
         fromFund: { select: { id: true, name: true, buildingId: true } },

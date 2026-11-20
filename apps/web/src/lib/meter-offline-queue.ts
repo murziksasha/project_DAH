@@ -17,10 +17,21 @@ export interface QueuedMeterReading {
   createdAt: string;
 }
 
+function getStorage(): Storage | null {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    return window.localStorage;
+  }
+  if (typeof localStorage !== 'undefined') {
+    return localStorage;
+  }
+  return null;
+}
+
 function readAll(): QueuedMeterReading[] {
-  if (typeof window === 'undefined') return [];
+  const storage = getStorage();
+  if (!storage) return [];
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = storage.getItem(KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as QueuedMeterReading[];
     return Array.isArray(parsed) ? parsed : [];
@@ -30,13 +41,16 @@ function readAll(): QueuedMeterReading[] {
 }
 
 function writeAll(items: QueuedMeterReading[]) {
-  if (typeof window === 'undefined') return;
+  const storage = getStorage();
+  if (!storage) return;
   try {
-    localStorage.setItem(KEY, JSON.stringify(items));
+    storage.setItem(KEY, JSON.stringify(items));
   } catch {
     /* quota */
   }
-  window.dispatchEvent(new CustomEvent(METER_QUEUE_EVENT, { detail: { count: items.length } }));
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(new CustomEvent(METER_QUEUE_EVENT, { detail: { count: items.length } }));
+  }
 }
 
 export function listQueuedMeterReadings(apartmentId?: string): QueuedMeterReading[] {
@@ -100,17 +114,14 @@ export async function flushMeterOfflineQueue(
   let sent = 0;
   let failed = 0;
   const errors: string[] = [];
-  const remaining = readAll().filter(
-    (q) => !pending.some((p) => p.id === q.id),
-  );
 
   for (const item of pending) {
     try {
       await post(item.meterId, { period: item.period, value: item.value });
+      removeQueuedMeterReading(item.id);
       sent++;
     } catch (err) {
       failed++;
-      remaining.push(item);
       errors.push(
         err instanceof Error
           ? `${item.meterName}: ${err.message}`
@@ -118,7 +129,7 @@ export async function flushMeterOfflineQueue(
       );
     }
   }
-  writeAll(remaining);
+
   return { sent, failed, errors };
 }
 

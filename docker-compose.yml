@@ -30,7 +30,8 @@ services:
       retries: 5
 
   minio:
-    image: minio/minio:latest
+    # M16: pin in production, e.g. MINIO_IMAGE=minio/minio:RELEASE.<date> (see docs/UPGRADE-phase2.md)
+    image: ${MINIO_IMAGE:-minio/minio:latest}
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -42,13 +43,14 @@ services:
       - "9000:9000"
       - "9001:9001"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      # M16: `mc ready` works in current MinIO images (curl was removed from them); curl kept as fallback.
+      test: ["CMD-SHELL", "mc ready local >/dev/null 2>&1 || curl -fsS http://localhost:9000/minio/health/live"]
       interval: 10s
       timeout: 5s
       retries: 3
 
   minio-init:
-    image: minio/mc:latest
+    image: ${MINIO_MC_IMAGE:-minio/mc:latest}
     depends_on:
       minio:
         condition: service_healthy

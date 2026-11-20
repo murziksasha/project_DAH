@@ -191,4 +191,53 @@ describe('BackupsService.weeklyExists', () => {
       ),
     ).rejects.toThrow(BadRequestException);
   });
+
+  it('getStatus and writeHealthMarker correctly preserve lastFullBackupAt on partial backup', async () => {
+    mkdirSync(tmpRoot, { recursive: true });
+    const svc = serviceWithRoot();
+
+    // 1. Initial status has nulls
+    const stInitial = await svc.getStatus();
+    expect(stInitial.lastBackupAt).toBeNull();
+    expect(stInitial.lastFullBackupAt).toBeNull();
+    expect(stInitial.lastBackupStatus).toBeNull();
+
+    // 2. Full backup (ok) updates lastFullBackupAt
+    const fullTime = '2026-08-01T10:00:00.000Z';
+    // @ts-expect-error private method test
+    await svc.writeHealthMarker('manual/20260801_100000', fullTime, 1024, 'ok');
+
+    const stAfterOk = await svc.getStatus();
+    expect(stAfterOk.lastBackupAt).toBe(fullTime);
+    expect(stAfterOk.lastFullBackupAt).toBe(fullTime);
+    expect(stAfterOk.lastBackupStatus).toBe('ok');
+
+    // 3. Partial backup (partial, e.g. minio failed) updates lastBackupAt but preserves previous lastFullBackupAt
+    const partialTime = '2026-08-02T10:00:00.000Z';
+    // @ts-expect-error private method test
+    await svc.writeHealthMarker('manual/20260802_100000', partialTime, 512, 'partial');
+
+    const stAfterPartial = await svc.getStatus();
+    expect(stAfterPartial.lastBackupAt).toBe(partialTime);
+    expect(stAfterPartial.lastFullBackupAt).toBe(fullTime); // Preserved previous full backup timestamp!
+    expect(stAfterPartial.lastBackupStatus).toBe('partial');
+  });
+
+  it('ensureWeeklyBackup propagates created.status instead of hardcoded ok', async () => {
+    const svc = serviceWithRoot();
+    const week = '2026-W99';
+    // Mock createDump to simulate a partial backup (e.g. MinIO files failed to copy)
+    jest.spyOn(svc as any, 'createDump').mockResolvedValue({
+      kind: 'weekly',
+      id: week,
+      relativePath: `weekly/${week}`,
+      finishedAt: new Date().toISOString(),
+      sizeBytes: 2048,
+      status: 'partial',
+    });
+
+    const res = await svc.ensureWeeklyBackup({ source: 'api' });
+    expect(res.skipped).toBe(false);
+    expect(res.status).toBe('partial');
+  });
 });

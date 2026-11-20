@@ -1,3 +1,6 @@
+import { Permission } from '@dah/shared';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import {
   Body,
   Controller,
@@ -11,7 +14,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '../../prisma/client';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -22,7 +25,6 @@ import { CreateRequestDto } from './dto/create-request.dto';
 import { UpdateRequestDto } from './dto/update-request.dto';
 import { VotePollDto } from './dto/vote-poll.dto';
 
-const WRITE_ROLES = [UserRole.chairman, UserRole.accountant, UserRole.board];
 const REQUEST_MANAGE_ROLES = [
   UserRole.chairman,
   UserRole.board,
@@ -43,12 +45,18 @@ export class CommunicationsController {
 
   @Get('announcements')
   listAnnouncements(@CurrentUser() user: AuthUser) {
-    return this.communications.listAnnouncements(user.id);
+    return this.communications.listAnnouncements(
+      user.id,
+      user.role === UserRole.super_admin ? null : user.tenantId,
+    );
   }
 
   @Get('announcements/unread-count')
   unreadAnnouncementCount(@CurrentUser() user: AuthUser) {
-    return this.communications.unreadAnnouncementCount(user.id);
+    return this.communications.unreadAnnouncementCount(
+      user.id,
+      user.role === UserRole.super_admin ? null : user.tenantId,
+    );
   }
 
   @Patch('announcements/read-all')
@@ -61,21 +69,29 @@ export class CommunicationsController {
     return this.communications.markAnnouncementRead(user.id, id);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post('announcements')
   createAnnouncement(
     @Body() dto: CreateAnnouncementDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.communications.createAnnouncement(dto, user.id);
+    return this.communications.createAnnouncement(
+      dto,
+      user.id,
+      user.role === UserRole.super_admin ? null : user.tenantId,
+    );
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.chairman, UserRole.board)
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_COMMUNICATIONS)
   @Delete('announcements/:id')
   deleteAnnouncement(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.communications.deleteAnnouncement(id, user.id);
+    return this.communications.deleteAnnouncement(
+      id,
+      user.id,
+      user.role === UserRole.super_admin ? null : user.tenantId,
+    );
   }
 
   @Get('requests')
@@ -106,7 +122,7 @@ export class CommunicationsController {
 
   @Post('requests')
   createRequest(@Body() dto: CreateRequestDto, @CurrentUser() user: AuthUser) {
-    return this.communications.createRequest(dto, user.id);
+    return this.communications.createRequest(dto, user.id, user);
   }
 
   @UseGuards(RolesGuard)
@@ -117,24 +133,35 @@ export class CommunicationsController {
     @Body() dto: UpdateRequestDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.communications.updateRequest(id, dto, user.id, user.role);
+    return this.communications.updateRequest(id, dto, user.id, user.role, user.tenantId);
   }
 
   @Get('polls')
   listPolls(@CurrentUser() user: AuthUser) {
-    return this.communications.listPolls(user.id);
+    return this.communications.listPolls(
+      user.id,
+      user.role === UserRole.super_admin ? null : user.tenantId,
+    );
   }
 
   @Get('polls/:id')
   getPoll(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.communications.getPoll(id, user.id);
+    return this.communications.getPoll(
+      id,
+      user.id,
+      user.role === UserRole.super_admin ? null : user.tenantId,
+    );
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.chairman, UserRole.board)
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_COMMUNICATIONS)
   @Post('polls')
   createPoll(@Body() dto: CreatePollDto, @CurrentUser() user: AuthUser) {
-    return this.communications.createPoll(dto, user.id);
+    return this.communications.createPoll(
+      dto,
+      user.id,
+      user.role === UserRole.super_admin ? null : user.tenantId,
+    );
   }
 
   @UseGuards(RolesGuard)
@@ -145,13 +172,22 @@ export class CommunicationsController {
     @Body() dto: VotePollDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.communications.votePoll(id, dto.optionId, user.id);
+    return this.communications.votePoll(
+      id,
+      dto.optionId,
+      user.id,
+      user.role === UserRole.super_admin ? null : user.tenantId,
+    );
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.chairman, UserRole.board)
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_COMMUNICATIONS)
   @Patch('polls/:id/close')
   closePoll(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.communications.closePoll(id, user.id);
+    return this.communications.closePoll(
+      id,
+      user.id,
+      user.role === UserRole.super_admin ? null : user.tenantId,
+    );
   }
 }

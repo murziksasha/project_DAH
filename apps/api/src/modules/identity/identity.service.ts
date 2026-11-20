@@ -5,7 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { UserStatus } from '@prisma/client';
+import { UserStatus } from '../../prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthService, SessionMeta } from '../auth/auth.service';
@@ -31,6 +31,67 @@ export class IdentityService {
     return this.config.get('IDENTITY_ENABLED', 'false') === 'true';
   }
 
+  /** Max outstanding authorize states (memory bound for the public POST /identity/authorize). */
+  static readonly MAX_PENDING = 10_000;
+
+  /**
+   * Mock IdP (passwordless login by email/phone) — never in production.
+   * IDENTITY_ALLOW_MOCK=true|false overrides the default (allowed outside NODE_ENV=production).
+   */
+  mockAllowed(): boolean {
+    if ((this.config.get<string>('NODE_ENV') ?? process.env.NODE_ENV) === 'production') return false;
+    const flag = this.config.get<string>('IDENTITY_ALLOW_MOCK');
+    if (flag === 'false') return false;
+    return true;
+  }
+
+  /** The mock authorize page is served only when the mock IdP is the active, enabled provider. */
+  mockPageAllowed(): boolean {
+    return (
+      this.isEnabled() && this.config.get('IDENTITY_PROVIDER', 'mock') === 'mock' && this.mockAllowed()
+    );
+  }
+
+  private redirectUri(): string {
+    return (
+      this.config.get('IDENTITY_REDIRECT_URI') ??
+      `${this.config.get('APP_URL', 'http://localhost:3000')}/login?identity=callback`
+    );
+  }
+
+  /** redirect_uri of the mock page: http(s) only and same origin as the configured callback / APP_URL. */
+  isAllowedRedirect(uri: string): boolean {
+    let target: URL;
+    try {
+      target = new URL(uri);
+    } catch {
+      return false;
+    }
+    if (target.protocol !== 'http:' && target.protocol !== 'https:') return false;
+    const origins = new Set<string>();
+    for (const u of [this.redirectUri(), this.config.get<string>('APP_URL', 'http://localhost:3000')]) {
+      try {
+        origins.add(new URL(u).origin);
+      } catch {
+        /* ignore malformed config */
+      }
+    }
+    return origins.has(target.origin);
+  }
+
+  private prunePending(now = Date.now()) {
+    for (const [k, v] of this.pending) if (v.exp < now) this.pending.delete(k);
+    while (this.pending.size >= IdentityService.MAX_PENDING) {
+      const oldest = this.pending.keys().next().value;
+      if (oldest === undefined) break;
+      this.pending.delete(oldest);
+    }
+  }
+
+  pendingCount(): number {
+    return this.pending.size;
+  }
+
   status() {
     return {
       enabled: this.isEnabled(),
@@ -51,8 +112,12 @@ export class IdentityService {
   startAuthorize(returnTo?: string) {
     this.assertEnabled();
     const provider = this.config.get('IDENTITY_PROVIDER', 'mock');
+    if (provider === 'mock' && !this.mockAllowed()) {
+      throw new ServiceUnavailableException('Mock identity вимкнено (production / IDENTITY_ALLOW_MOCK=false)');
+    }
     const state = randomUUID();
     const nonce = randomUUID();
+    this.prunePending();
     this.pending.set(state, {
       exp: Date.now() + 10 * 60 * 1000,
       nonce,
@@ -137,23 +202,86 @@ export class IdentityService {
       throw new UnauthorizedException('Identity token exchange failed');
     }
     const tokens = (await tokenRes.json()) as { access_token?: string; id_token?: string };
-    const claims = this.decodeJwtPayload(tokens.id_token ?? tokens.access_token ?? '');
-    const email = String(claims.email ?? claims.preferred_username ?? '');
-    const phone = claims.phone_number ? String(claims.phone_number) : body.phone;
-    return this.loginByClaims({ email: email || undefined, phone }, meta);
+    const rawJwt = tokens.id_token ?? tokens.access_token ?? '';
+    const claims = this.decodeJwtPayload(rawJwt);
+
+    // OIDC Core 1.0 mandatory claims validation
+    if (!claims.iss || !claims.sub || !claims.aud || !claims.exp || !claims.iat) {
+      throw new UnauthorizedException(
+        'Identity: відсутні обовʼязкові OIDC claims (iss, sub, aud, exp, iat)',
+      );
+    }
+
+    const expectedIssuer = this.config.get<string>('IDENTITY_ISSUER');
+    if (expectedIssuer && claims.iss !== expectedIssuer) {
+      throw new UnauthorizedException('Identity: невідповідний issuer токена');
+    }
+
+    const expectedAudience = this.config.get<string>('IDENTITY_CLIENT_ID') ?? clientId;
+    if (Array.isArray(claims.aud)) {
+      if (!claims.aud.includes(expectedAudience)) {
+        throw new UnauthorizedException('Identity: невідповідний audience токена');
+      }
+      if (claims.aud.length > 1 && claims.azp !== expectedAudience) {
+        throw new UnauthorizedException('Identity: невідповідний azp токена');
+      }
+    } else if (claims.aud !== expectedAudience) {
+      throw new UnauthorizedException('Identity: невідповідний audience токена');
+    }
+
+    // Expiration check with 60s clock skew
+    const nowSec = Math.floor(Date.now() / 1000);
+    const expSec = Number(claims.exp);
+    if (Number.isNaN(expSec) || expSec < nowSec - 60) {
+      throw new UnauthorizedException('Identity: id_token прострочено');
+    }
+    const iatSec = Number(claims.iat);
+    if (!Number.isNaN(iatSec) && iatSec > nowSec + 300) {
+      throw new UnauthorizedException('Identity: iat токена у майбутньому');
+    }
+
+    // Nonce check
+    if (!claims.nonce || claims.nonce !== pending.nonce) {
+      throw new UnauthorizedException('Identity: невідповідний або відсутній nonce');
+    }
+
+    const email = claims.email
+      ? String(claims.email).trim().toLowerCase()
+      : claims.preferred_username
+        ? String(claims.preferred_username).trim().toLowerCase()
+        : undefined;
+    // Only trust verified phone from IdP claims, never untrusted client body
+    const phone = claims.phone_number
+      ? String(claims.phone_number).trim()
+      : claims.phone
+        ? String(claims.phone).trim()
+        : undefined;
+
+    return this.loginByClaims(
+      {
+        issuer: String(claims.iss),
+        subject: String(claims.sub),
+        email,
+        phone,
+      },
+      meta,
+    );
   }
 
   async completeMock(
     body: { phone?: string; email?: string; code?: string },
     meta: SessionMeta = {},
   ) {
-    let email = body.email;
-    let phone = body.phone;
+    if (!this.mockAllowed()) {
+      throw new BadRequestException('Mock identity заборонено в production');
+    }
+    let email = body.email ? body.email.trim().toLowerCase() : undefined;
+    let phone = body.phone ? body.phone.trim() : undefined;
     if (body.code?.startsWith('mock_')) {
       try {
         const decoded = Buffer.from(body.code.slice(5), 'base64url').toString('utf8');
-        if (decoded.includes('@')) email = decoded;
-        else phone = decoded;
+        if (decoded.includes('@')) email = decoded.trim().toLowerCase();
+        else phone = decoded.trim();
       } catch {
         /* ignore */
       }
@@ -162,16 +290,16 @@ export class IdentityService {
   }
 
   private async loginByClaims(
-    claims: { email?: string; phone?: string },
+    claims: { issuer?: string; subject?: string; email?: string; phone?: string },
     meta: SessionMeta,
   ) {
-    let user =
+    const user =
       (claims.email
         ? await this.prisma.user.findUnique({ where: { email: claims.email } })
         : null) ??
       (claims.phone
         ? await this.prisma.user.findFirst({
-            where: { phone: { contains: claims.phone.replace(/\D/g, '').slice(-9) } },
+            where: { phone: claims.phone.replace(/[^\d+]/g, '') },
           })
         : null);
 

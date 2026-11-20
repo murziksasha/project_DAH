@@ -4,6 +4,7 @@ node_modules/
 # Build outputs
 dist/
 out/
+apps/web/.csp/
 .next/
 *.tsbuildinfo
 
@@ -11,6 +12,11 @@ out/
 .env
 .env.local
 .env.*.local
+.env.product
+.env.*
+!.env.example
+!.env.product.example
+!.env.selfhost.example
 
 # Logs & OS
 *.log
@@ -43,3 +49,4 @@ infra/nginx/dah-windows.conf
 infra/certs/*.pem
 infra/certs/*.key
 !infra/certs/.gitkeep
+apps/api/src/generated/

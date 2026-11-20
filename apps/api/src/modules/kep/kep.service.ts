@@ -7,7 +7,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '../../prisma/client';
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -45,6 +45,17 @@ export class KepService {
     return this.config.get('KEP_ENABLED', 'true') === 'true';
   }
 
+  /**
+   * Demo (mock) signatures: allowed only when explicitly enabled, or by default
+   * outside production (H5). A mock-signed protocol must never appear in prod.
+   */
+  mockAllowed(): boolean {
+    const flag = this.config.get<string>('KEP_ALLOW_MOCK');
+    if (flag === 'true') return true;
+    if (flag === 'false') return false;
+    return (this.config.get<string>('NODE_ENV') ?? process.env.NODE_ENV) !== 'production';
+  }
+
   defaultProvider(): KepProvider {
     const p = (this.config.get('KEP_PROVIDER', 'mock') || 'mock') as KepProvider;
     return KEP_PROVIDERS.includes(p) ? p : 'mock';
@@ -62,7 +73,7 @@ export class KepService {
       enabled: this.isEnabled(),
       provider,
       providers: KEP_PROVIDERS,
-      mockAllowed: this.config.get('KEP_ALLOW_MOCK', 'true') === 'true',
+      mockAllowed: this.mockAllowed(),
       diiaConfigured,
       cloudConfigured,
       productionReady:
@@ -70,7 +81,7 @@ export class KepService {
         ((provider === 'diia' && diiaConfigured) ||
           (provider === 'cloud_kep' && cloudConfigured) ||
           provider === 'cades' ||
-          (provider === 'mock' && this.config.get('NODE_ENV') !== 'production')),
+          (provider === 'mock' && this.mockAllowed() && this.config.get('NODE_ENV') !== 'production')),
       webhookPath: '/api/kep/webhook',
       docs: 'https://integration.diia.gov.ua/signature.html',
     };
@@ -89,8 +100,8 @@ export class KepService {
 
   async startSession(input: StartSignInput): Promise<StartSignResult> {
     this.assertEnabled();
-    let provider = input.provider ?? this.defaultProvider();
-    if (provider === 'mock' && this.config.get('KEP_ALLOW_MOCK', 'true') !== 'true') {
+    const provider = input.provider ?? this.defaultProvider();
+    if (provider === 'mock' && !this.mockAllowed()) {
       throw new BadRequestException('Mock-підпис вимкнено (KEP_ALLOW_MOCK=false)');
     }
     if (!KEP_PROVIDERS.includes(provider)) {
@@ -250,6 +261,8 @@ export class KepService {
     expiresAt: Date;
     completedAt: Date | null;
     createdAt: Date;
+    signatureCms?: string | null;
+    resultPayload?: unknown;
   }) {
     return {
       sessionId: session.id,
@@ -269,6 +282,9 @@ export class KepService {
       completedAt: session.completedAt?.toISOString() ?? null,
       createdAt: session.createdAt.toISOString(),
       signed: session.status === 'signed',
+      verified:
+        session.status === 'signed' &&
+        Boolean((session.resultPayload as Record<string, unknown> | null)?.verified === true),
     };
   }
 
@@ -291,6 +307,14 @@ export class KepService {
     }
 
     if (session.provider === 'cades' || input.signatureCms) {
+      if (
+        this.config.get('NODE_ENV') === 'production' &&
+        this.config.get('KEP_ALLOW_UNVERIFIED_ADAPTER') !== 'true'
+      ) {
+        throw new BadRequestException(
+          'Провайдер CAdES вимкнено до підключення перевіряючого адаптера (production)',
+        );
+      }
       if (!input.signatureCms?.trim()) {
         throw new BadRequestException('Для cades потрібен signatureCms (base64)');
       }
@@ -302,14 +326,19 @@ export class KepService {
         signatureCms: input.signatureCms,
         certificateSubject: input.certificateSubject,
         certificateSerial: input.certificateSerial,
+        verified: false,
         resultPayload: {
           method: 'cades-upload',
+          verified: false,
           ...(input.providerPayload ?? {}),
         },
       });
     }
 
     if (session.provider === 'mock') {
+      if (!this.mockAllowed()) {
+        throw new BadRequestException('Mock-підпис вимкнено (KEP_ALLOW_MOCK=false)');
+      }
       const cms = Buffer.from(
         JSON.stringify({
           mock: true,
@@ -319,32 +348,60 @@ export class KepService {
           ts: Date.now(),
         }),
       ).toString('base64');
+      const mockVerified = this.config.get('KEP_MOCK_VERIFIED', 'false') === 'true';
       return this.markSigned(session.id, {
         signatureCms: cms,
         certificateSubject: 'Mock QES / Демо-сертифікат',
         certificateSerial: `MOCK-${session.challenge.slice(0, 8)}`,
-        resultPayload: { method: 'mock-complete', code: input.code ?? 'mock_ok' },
+        verified: mockVerified,
+        resultPayload: {
+          method: 'mock-complete',
+          code: input.code ?? 'mock_ok',
+          verified: mockVerified,
+        },
       });
     }
 
     if (session.provider === 'cloud_kep' && input.code) {
+      if (
+        this.config.get('NODE_ENV') === 'production' &&
+        this.config.get('KEP_ALLOW_UNVERIFIED_ADAPTER') !== 'true'
+      ) {
+        throw new BadRequestException(
+          'Cloud KEP flow вимкнено до підключення перевіряючого адаптера (production)',
+        );
+      }
       const tokenResult = await this.exchangeCloudCode(input.code, session.id);
       return this.markSigned(session.id, {
         signatureCms: tokenResult.signatureCms,
         certificateSubject: tokenResult.certificateSubject,
         certificateSerial: tokenResult.certificateSerial,
-        resultPayload: tokenResult.raw,
+        verified: false,
+        resultPayload: {
+          ...tokenResult.raw,
+          verified: false,
+        },
       });
     }
 
     if (session.provider === 'diia' && input.code) {
+      if (
+        this.config.get('NODE_ENV') === 'production' &&
+        this.config.get('KEP_ALLOW_UNVERIFIED_ADAPTER') !== 'true'
+      ) {
+        throw new BadRequestException(
+          'Diia-code redirect flow вимкнено до підключення перевіряючого адаптера (production)',
+        );
+      }
       // Some Diia flows return via redirect with requestId
       return this.markSigned(session.id, {
         signatureCms: input.signatureCms ?? Buffer.from(input.code).toString('base64'),
         certificateSubject: input.certificateSubject ?? 'Дія.Підпис',
+        verified: false,
         resultPayload: {
           method: 'diia-code',
           code: input.code,
+          verified: false,
           ...(input.providerPayload ?? {}),
         },
       });
@@ -431,8 +488,14 @@ export class KepService {
       certificateSubject?: string | null;
       certificateSerial?: string | null;
       resultPayload?: Record<string, unknown>;
+      verified?: boolean;
     },
   ) {
+    const isVerified = Boolean(data.verified);
+    const resultPayload = {
+      ...(data.resultPayload ?? {}),
+      verified: isVerified,
+    };
     const updated = await this.prisma.signSession.update({
       where: { id: sessionId },
       data: {
@@ -440,7 +503,7 @@ export class KepService {
         signatureCms: data.signatureCms ?? undefined,
         certificateSubject: data.certificateSubject ?? undefined,
         certificateSerial: data.certificateSerial ?? undefined,
-        resultPayload: (data.resultPayload ?? {}) as Prisma.InputJsonValue,
+        resultPayload: resultPayload as Prisma.InputJsonValue,
         completedAt: new Date(),
         errorMessage: null,
       },
@@ -453,6 +516,7 @@ export class KepService {
       entityId: sessionId,
       payload: {
         provider: updated.provider,
+        verified: isVerified,
         refType: updated.refType,
         refId: updated.refId,
       },
@@ -470,6 +534,7 @@ export class KepService {
     const session = await this.prisma.signSession.findUnique({ where: { id: sessionId } });
     if (!session || session.refType !== 'Meeting' || session.status !== 'signed') return null;
 
+    const isVerified = Boolean((session.resultPayload as Record<string, unknown> | null)?.verified === true);
     return this.prisma.meetingSignature.upsert({
       where: {
         meetingId_userId: { meetingId: session.refId, userId: session.userId },
@@ -486,6 +551,7 @@ export class KepService {
           certificateSubject: session.certificateSubject,
           certificateSerial: session.certificateSerial,
           hasCms: Boolean(session.signatureCms),
+          verified: isVerified,
           result: session.resultPayload,
         },
       },
@@ -499,6 +565,7 @@ export class KepService {
           certificateSubject: session.certificateSubject,
           certificateSerial: session.certificateSerial,
           hasCms: Boolean(session.signatureCms),
+          verified: isVerified,
           result: session.resultPayload,
         },
       },
@@ -519,7 +586,12 @@ export class KepService {
       this.config.get('KEP_DIIA_ACQUIRER_TOKEN') ?? this.config.get('KEP_DIIA_API_KEY') ?? '';
 
     if (!offerUrl || !token) {
-      // Graceful degradation: mock deeplink so UI/flow can be tested without credentials
+      if (this.config.get('NODE_ENV') === 'production' || !this.mockAllowed()) {
+        throw new BadRequestException(
+          'Diia offer: KEP_DIIA_OFFER_URL / token missing (mock fallback disabled)',
+        );
+      }
+      // Graceful degradation in development: mock deeplink so UI/flow can be tested without credentials
       this.logger.warn(
         'Diia offer: KEP_DIIA_OFFER_URL / token missing — using mock deeplink. Register at integration.diia.gov.ua',
       );
@@ -691,7 +763,19 @@ export class KepService {
     throw new ForbiddenException('Невірний секрет / підпис webhook КЕП');
   }
 
-  mockAuthorizePage(sessionId: string): string {
+  /** Mock QES page. `nonce` lets the inline script run under a strict CSP. */
+  mockAuthorizePage(sessionId: string, nonce = ''): string {
+    const esc = (v: string) =>
+      v.replace(/[&<>"']/g, (c) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string,
+      );
+    // JSON inside <script>: also neutralize "</script>" and U+2028/2029 (M11 XSS).
+    const jsString = JSON.stringify(sessionId)
+      .replace(/</g, '\\u003c')
+      .replace(/>/g, '\\u003e')
+      .replace(/\u2028/g, '\\u2028')
+      .replace(/\u2029/g, '\\u2029');
+    const nonceAttr = nonce ? ` nonce="${esc(nonce)}"` : '';
     return `<!DOCTYPE html>
 <html lang="uk"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Mock КЕП / Дія.Підпис — Мій дім</title>
@@ -707,13 +791,13 @@ export class KepService {
 <div class="card">
   <h1>Демо-підпис (Mock QES)</h1>
   <p>Це емулятор <strong>КЕП / Дія.Підпис</strong> для локальної розробки. У production підключіть реальні credentials (див. KEP_* у .env).</p>
-  <p>Session: <code id="sid">${sessionId}</code></p>
+  <p>Session: <code id="sid">${esc(sessionId)}</code></p>
   <button type="button" id="ok">Підписати документ</button>
   <button type="button" class="sec" id="cancel">Скасувати</button>
   <p id="msg"></p>
 </div>
-<script>
-const sessionId = ${JSON.stringify(sessionId)};
+<script${nonceAttr}>
+const sessionId = ${jsString};
 const apiBase = location.origin + '/api';
 document.getElementById('ok').onclick = async () => {
   const msg = document.getElementById('msg');

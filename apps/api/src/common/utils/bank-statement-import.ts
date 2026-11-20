@@ -280,7 +280,7 @@ function mapColumns(headers: string[], format: StatementFormat): ColumnMap | nul
   let date = find(PROFILE_DATE_ALIASES[profile] ?? PROFILE_DATE_ALIASES.generic_csv);
   let amount = find(PROFILE_AMOUNT_ALIASES[profile] ?? PROFILE_AMOUNT_ALIASES.generic_csv);
   let reference = find(PROFILE_REF_ALIASES[profile] ?? PROFILE_REF_ALIASES.generic_csv);
-  let iban = find(PROFILE_IBAN_ALIASES[profile] ?? PROFILE_IBAN_ALIASES.generic_csv);
+  const iban = find(PROFILE_IBAN_ALIASES[profile] ?? PROFILE_IBAN_ALIASES.generic_csv);
 
   // Cross-profile fallback
   if (date < 0) date = find(PROFILE_DATE_ALIASES.generic_csv);

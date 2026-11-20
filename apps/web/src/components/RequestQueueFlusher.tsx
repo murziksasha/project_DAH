@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { apiFetch, getToken } from '@/lib/api';
+import { getStoredUser } from '@/lib/auth';
 import {
   flushRequestOfflineQueue,
   REQUEST_QUEUE_EVENT,
@@ -16,15 +17,22 @@ export function RequestQueueFlusher() {
       if (busy.current || !navigator.onLine) return;
       const token = getToken();
       if (!token) return;
+      const user = getStoredUser();
       busy.current = true;
       try {
-        await flushRequestOfflineQueue(async (body) => {
-          await apiFetch('/communications/requests', {
-            method: 'POST',
-            token,
-            body: JSON.stringify(body),
-          });
-        });
+        await flushRequestOfflineQueue(
+          async (body) => {
+            await apiFetch('/communications/requests', {
+              method: 'POST',
+              token,
+              body: JSON.stringify(body),
+            });
+          },
+          {
+            userId: user?.id,
+            tenantId: user?.tenantId,
+          },
+        );
       } finally {
         busy.current = false;
       }

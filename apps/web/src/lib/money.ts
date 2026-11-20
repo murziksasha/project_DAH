@@ -1,11 +1,18 @@
-/** Format amounts for Ukrainian locale with hryvnia. */
+import { formatMinor, roundMoney as roundMoneyCanonical, toMinor } from '@dah/money';
+
+/**
+ * Format amounts for Ukrainian locale with hryvnia (L6: canonical @dah/money rounding,
+ * always 2 decimals — «1 200,50 ₴», «100,00 ₴»).
+ */
 export function formatMoney(value: number | string, options?: { signed?: boolean }): string {
-  const n = typeof value === 'string' ? Number(value) : value;
-  if (!Number.isFinite(n)) return '—';
-  const abs = Math.abs(n).toLocaleString('uk-UA', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  });
+  let minor: number;
+  try {
+    minor = toMinor(typeof value === 'string' ? value : Number(value));
+  } catch {
+    return '—';
+  }
+  const n = minor;
+  const abs = formatMinor(Math.abs(minor));
   if (options?.signed) {
     if (n > 0) return `+${abs} ₴`;
     if (n < 0) return `−${abs} ₴`;
@@ -16,7 +23,7 @@ export function formatMoney(value: number | string, options?: { signed?: boolean
 
 /** Round major units to 2 dp (display/input hygiene; server is source of truth). */
 export function roundMoney(value: number): number {
-  return Math.round(value * 100) / 100;
+  return roundMoneyCanonical(value);
 }
 
 export function formatDateUk(value: string | Date): string {

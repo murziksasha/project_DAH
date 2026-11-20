@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
 import { useI18n } from '@/components/LocaleProvider';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { apiFetch, getToken, uploadFile } from '@/lib/api';
+import { apiFetch, getToken, uploadFile } from '@/lib/api';
+import type { ApiResponse } from '@/lib/api-types';
 
 interface Fund {
   id: string;
@@ -44,9 +45,9 @@ export default function ExpensesPage() {
       return;
     }
     Promise.all([
-      apiFetch<Fund[]>('/finance/funds', { token }),
-      apiFetch<Category[]>('/finance/categories', { token }),
-      apiFetch<Supplier[]>('/finance/suppliers', { token }),
+      apiFetch<ApiResponse<'/finance/funds'>>('/finance/funds', { token }),
+      apiFetch<ApiResponse<'/finance/categories'>>('/finance/categories', { token }),
+      apiFetch<ApiResponse<'/finance/suppliers'>>('/finance/suppliers', { token }),
     ]).then(([f, c, s]) => {
       setFunds(f);
       setCategories(c);

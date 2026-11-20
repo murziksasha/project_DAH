@@ -116,12 +116,27 @@ export class MailService {
     }
   }
 
-  async notifyAdmins(template: MailTemplateId, ctx: TemplateContext = {}) {
+  /**
+   * Notify board/accountants of ONE organization. Tenant is mandatory: a global
+   * broadcast would leak names/emails/requests between organizations.
+   */
+  async notifyAdmins(
+    tenantId: string | null | undefined,
+    template: MailTemplateId,
+    ctx: TemplateContext = {},
+  ) {
+    if (!tenantId) {
+      this.logger.warn(`notifyAdmins(${template}) skipped: no tenant context`);
+      return;
+    }
+    const adminRoles = ['chairman', 'accountant', 'board'] as const;
     const admins = await this.prisma.user.findMany({
       where: {
         status: 'active',
         emailNotifyEnabled: true,
-        role: { in: ['chairman', 'accountant', 'board'] },
+        memberships: {
+          some: { tenantId, status: 'active', role: { in: [...adminRoles] } },
+        },
       },
       select: { email: true, firstName: true, lastName: true, emailNotifyEnabled: true },
     });

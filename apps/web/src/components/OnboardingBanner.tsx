@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useI18n } from '@/components/LocaleProvider';
 import { apiFetch, getToken } from '@/lib/api';
-import { getStoredUser } from '@/lib/auth';
+import { getStoredUser } from '@/lib/auth';
+import type { ApiResponse } from '@/lib/api-types';
 
 function dismiss2faStorageKey(userId: string) {
   return `dah-dismiss-2fa-banner:${userId}`;
@@ -36,10 +37,12 @@ export function OnboardingBanner() {
   const user = getStoredUser();
   const isResident = user?.role === 'resident';
   const securityHref = isResident ? '/resident/security' : '/admin/security';
+  const userId = user?.id;
+  const userRole = user?.role;
 
   useEffect(() => {
     const token = getToken();
-    if (!token || !user) return;
+    if (!token || !userId) return;
 
     const applyRequired = (required?: boolean) => {
       if (!required) {
@@ -48,27 +51,23 @@ export function OnboardingBanner() {
         return;
       }
       setRequire2fa(true);
-      setSecurityVisible(!is2faBannerSuppressed(user.id));
+      setSecurityVisible(!is2faBannerSuppressed(userId));
     };
 
     // Residents use ResidentTour instead of welcome onboarding card
-    if (user.role === 'resident') {
-      apiFetch<{ required?: boolean }>('/auth/2fa/status', { token })
+    if (userRole === 'resident') {
+      apiFetch<ApiResponse<'/auth/2fa/status'>>('/auth/2fa/status', { token })
         .then((s) => applyRequired(s.required))
         .catch(() => undefined);
       return;
     }
-    apiFetch<{
-      onboardingDone?: boolean;
-      required?: boolean;
-      totpEnabled?: boolean;
-    }>('/auth/2fa/status', { token })
+    apiFetch<ApiResponse<'/auth/2fa/status'>>('/auth/2fa/status', { token })
       .then((s) => {
         applyRequired(s.required);
         if (!s.onboardingDone) setShow(true);
       })
       .catch(() => undefined);
-  }, [user?.id, user?.role]);
+  }, [userId, userRole]);
 
   const showSecurity = require2fa && securityVisible;
   if (isResident && !showSecurity) return null;

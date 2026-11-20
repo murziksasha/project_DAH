@@ -10,7 +10,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '../../../prisma/client';
 
 const SETUP_ROLES = [
   UserRole.chairman,

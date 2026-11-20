@@ -1,3 +1,6 @@
+import { Permission } from '@dah/shared';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import {
   Body,
   Controller,
@@ -11,28 +14,20 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { UserRole } from '@prisma/client';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../common/guards/roles.guard';
+
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import {
   AssignStatementLineDto,
   ImportPaymentsDto,
   ImportPreviewDto,
 } from './dto/import-payments.dto';
-import {
-  CreateOnlinePaymentIntentDto,
-  OnlinePaymentWebhookDto,
-} from './dto/online-payment.dto';
+import { CreateOnlinePaymentIntentDto } from './dto/online-payment.dto';
 import { OnlinePaymentsService } from './online-payments.service';
 import { VoidPaymentDto } from './dto/void-payment.dto';
 import { PaymentsService } from './payments.service';
-
-const WRITE_ROLES = [UserRole.chairman, UserRole.accountant, UserRole.board];
-const REPORT_ROLES = [...WRITE_ROLES, UserRole.auditor, UserRole.super_admin];
-const READ_ROLES = [...REPORT_ROLES];
+import { TenantAccessService } from '../../common/tenant-access/tenant-access.service';
 
 @ApiTags('payments')
 @Controller('payments')
@@ -40,6 +35,7 @@ export class PaymentsController {
   constructor(
     private payments: PaymentsService,
     private online: OnlinePaymentsService,
+    private access: TenantAccessService,
   ) {}
 
   /** Public webhook for acquiring provider (no JWT). Accepts generic / LiqPay / WayForPay bodies. */
@@ -81,9 +77,9 @@ export class PaymentsController {
     return this.online.sandboxComplete(dto, user);
   }
 
+  @RequirePermissions(Permission.READ_FINANCE)
   @ApiBearerAuth()
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(...REPORT_ROLES)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
   @Get('reports/debtors')
   debtors(
     @Query('buildingId') buildingId?: string,
@@ -118,75 +114,102 @@ export class PaymentsController {
     });
   }
 
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
   @Get('preview/allocation')
   preview(
     @Query('apartmentId') apartmentId: string,
     @Query('amount') amount: string,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.payments.previewAllocation(apartmentId, Number(amount));
+    return this.payments.previewAllocation(apartmentId, Number(amount), user);
   }
 
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
   @Post()
   create(@Body() dto: CreatePaymentDto, @CurrentUser() user: AuthUser) {
     return this.payments.createPayment(dto, user);
   }
 
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
   @Post('import/preview')
-  importPreview(
+  async importPreview(
     @Body() dto: ImportPreviewDto,
     @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
   ) {
+    const scopeTenant = this.access.effectiveTenantId(user, tenantId);
+    const buildingIds = await this.access.scopeBuildingIds(user, dto.buildingId, tenantId);
     return this.payments.previewBankImport(
       dto.csv,
       dto.buildingId,
       dto.format,
       user.id,
       dto.sourceFileName,
+      { buildingIds, tenantId: scopeTenant },
     );
   }
 
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
   @Patch('import/lines/:lineId')
   assignLine(
     @Param('lineId') lineId: string,
     @Body() dto: AssignStatementLineDto,
     @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
   ) {
-    return this.payments.assignStatementLine(lineId, dto.apartmentId, user);
-  }
-
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(...WRITE_ROLES)
-  @Patch('import/lines/:lineId/ignore')
-  ignoreLine(@Param('lineId') lineId: string, @CurrentUser() user: AuthUser) {
-    return this.payments.ignoreStatementLine(lineId, user);
-  }
-
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(...REPORT_ROLES)
-  @Get('import/unmatched')
-  unmatchedReport(
-    @Query('buildingId') buildingId?: string,
-    @Query('days') days?: string,
-  ) {
-    return this.payments.unmatchedStatementReport(
-      buildingId,
-      days ? Number(days) : 30,
+    return this.payments.assignStatementLine(
+      lineId,
+      dto.apartmentId,
+      user,
+      this.access.effectiveTenantId(user, tenantId),
     );
   }
 
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @Patch('import/lines/:lineId/ignore')
+  ignoreLine(
+    @Param('lineId') lineId: string,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+  ) {
+    return this.payments.ignoreStatementLine(
+      lineId,
+      user,
+      this.access.effectiveTenantId(user, tenantId),
+    );
+  }
+
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @Get('import/unmatched')
+  async unmatchedReport(
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+    @Query('buildingId') buildingId?: string,
+    @Query('days') days?: string,
+  ) {
+    if (buildingId) await this.access.assertBuilding(user, buildingId, tenantId);
+    return this.payments.unmatchedStatementReport(
+      buildingId,
+      days ? Number(days) : 30,
+      this.access.effectiveTenantId(user, tenantId),
+    );
+  }
+
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
   @Post('import')
-  importCommit(@Body() dto: ImportPaymentsDto, @CurrentUser() user: AuthUser) {
-    return this.payments.importPayments(dto, user);
+  importCommit(
+    @Body() dto: ImportPaymentsDto,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+  ) {
+    return this.payments.importPayments(dto, user, this.access.effectiveTenantId(user, tenantId));
   }
 
   @UseGuards(AuthGuard('jwt'))
@@ -195,10 +218,10 @@ export class PaymentsController {
     return this.payments.getPayment(id, user);
   }
 
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(UserRole.chairman, UserRole.accountant)
+  @RequirePermissions(Permission.FINANCE_ADMIN)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
   @Patch(':id/void')
   void(@Param('id') id: string, @Body() dto: VoidPaymentDto, @CurrentUser() user: AuthUser) {
-    return this.payments.voidPayment(id, dto.reason, user.id);
+    return this.payments.voidPayment(id, dto.reason, user);
   }
 }

@@ -1,20 +1,20 @@
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { Permission } from '@dah/shared';
 import { Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../common/guards/roles.guard';
 import { MailService } from './mail.service';
 
 @ApiTags('mail')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'), RolesGuard)
+@UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('mail')
 export class MailController {
   constructor(private mail: MailService) {}
 
-  @Roles(UserRole.chairman, UserRole.board, UserRole.super_admin)
+  @RequirePermissions(Permission.MANAGE_COMMUNICATIONS, Permission.PLATFORM_ADMIN)
   @Get('status')
   status() {
     return {
@@ -24,13 +24,13 @@ export class MailController {
     };
   }
 
-  @Roles(UserRole.chairman, UserRole.board, UserRole.super_admin)
+  @RequirePermissions(Permission.MANAGE_COMMUNICATIONS, Permission.PLATFORM_ADMIN)
   @Get('logs')
   logs(@Query('limit') limit?: string) {
     return this.mail.listLogs(limit ? Number(limit) : 50);
   }
 
-  @Roles(UserRole.chairman, UserRole.board, UserRole.super_admin)
+  @RequirePermissions(Permission.MANAGE_COMMUNICATIONS, Permission.PLATFORM_ADMIN)
   @Post('test')
   async test(@CurrentUser() user: AuthUser) {
     const result = await this.mail.sendTemplate(user.email, 'test', {

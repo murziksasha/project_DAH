@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { JournalEntryType } from '@prisma/client';
+import { JournalEntryType } from '../../prisma/client';
 import { JournalService } from './journal.service';
 
 describe('JournalService.assertBalanced', () => {

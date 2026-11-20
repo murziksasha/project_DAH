@@ -1,7 +1,12 @@
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { Permission } from '@dah/shared';
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
+  NotFoundException,
   Param,
   Patch,
   Post,
@@ -10,27 +15,34 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../common/guards/roles.guard';
+import { UserRole } from '../../prisma/client';
+import { AuthUser, CurrentUser } from '../../common/decorators/current-user.decorator';
+import { TenantId } from '../../common/decorators/tenant-id.decorator';
+import { TenantAccessService } from '../../common/tenant-access/tenant-access.service';
+import { PrismaService } from '../../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { financeFlags } from '../../common/utils/finance-sot';
+import { SetJournalSotDto } from './dto/set-journal-sot.dto';
+import { UpdateExternalCodeDto } from './dto/update-external-code.dto';
 import { JournalService } from './journal.service';
 
 @ApiTags('journal')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'), RolesGuard)
-@Roles(
-  UserRole.chairman,
-  UserRole.accountant,
-  UserRole.board,
-  UserRole.auditor,
-  UserRole.super_admin,
-)
+@UseGuards(AuthGuard('jwt'), PermissionsGuard)
+@RequirePermissions(Permission.READ_FINANCE)
 @Controller('journal')
 export class JournalController {
-  constructor(private journal: JournalService) {}
+  constructor(
+    private journal: JournalService,
+    private access: TenantAccessService,
+    private prisma: PrismaService,
+    private audit: AuditService,
+  ) {}
 
   @Get()
-  list(
+  async list(
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
     @Query('limit') limit?: string,
     @Query('buildingId') buildingId?: string,
     @Query('period') period?: string,
@@ -38,7 +50,8 @@ export class JournalController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    return this.journal.listRecent(limit ? Number(limit) : 50, buildingId, {
+    const scope = await this.access.scopeBuildingIds(user, buildingId, tenantId);
+    return this.journal.listRecent(limit ? Number(limit) : 50, scope, {
       period,
       account,
       from,
@@ -47,64 +60,169 @@ export class JournalController {
   }
 
   @Get('reconcile')
-  reconcile(@Query('buildingId') buildingId?: string) {
-    return this.journal.reconcile(buildingId);
+  async reconcile(
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+    @Query('buildingId') buildingId?: string,
+  ) {
+    const scope = await this.access.scopeBuildingIds(user, buildingId, tenantId);
+    return this.journal.reconcile(scope && scope.length === 1 && buildingId ? scope[0] : scope);
   }
 
   @Get('shadow-compare')
-  shadowCompare(@Query('buildingId') buildingId: string) {
-    return this.journal.shadowCompare(buildingId);
+  async shadowCompare(
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+    @Query('buildingId') buildingId: string,
+  ) {
+    const id = await this.access.resolveBuilding(user, buildingId, tenantId);
+    return this.journal.shadowCompare(id);
+  }
+
+  /** Roadmap «Journal as SoT»: readiness streak of daily shadow-compare runs. */
+  @Get('sot-readiness')
+  async sotReadiness(
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+    @Query('buildingId') buildingId: string,
+  ) {
+    const id = await this.access.resolveBuilding(user, buildingId, tenantId);
+    const [readiness, building] = await Promise.all([
+      this.journal.sotReadiness(id),
+      this.prisma.building.findUnique({ where: { id }, select: { settings: true } }),
+    ]);
+    return { ...readiness, ...financeFlags(building?.settings) };
+  }
+
+  /**
+   * Phase 3: per-building Journal-SoT switch. Enabling needs the readiness streak
+   * (409 otherwise; super_admin may force with a reason). Disabling = instant rollback.
+   */
+  @Post('sot')
+  @RequirePermissions(Permission.FINANCE_ADMIN, Permission.PLATFORM_ADMIN)
+  async setSot(
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+    @Body() dto: SetJournalSotDto,
+  ) {
+    const id = await this.access.resolveBuilding(user, dto.buildingId, tenantId);
+    const result = await this.journal.setJournalSot(id, dto.enabled, user, {
+      force: dto.force,
+      reason: dto.reason,
+    });
+    await this.audit.log({
+      userId: user.id,
+      action: dto.enabled ? 'journal.sot_enabled' : 'journal.sot_disabled',
+      entityType: 'Building',
+      entityId: id,
+      payload: {
+        previous: result.previous,
+        forced: result.forced,
+        reason: dto.reason ?? null,
+        streakDays: result.readiness.streakDays,
+        requiredDays: result.readiness.requiredDays,
+      },
+    });
+    return result;
+  }
+
+  /** Record today's shadow-compare now (otherwise the worker does it daily). */
+  @Post('shadow-runs')
+  @RequirePermissions(Permission.FINANCE_ADMIN, Permission.PLATFORM_ADMIN)
+  async recordShadowRun(
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+    @Query('buildingId') buildingId: string,
+  ) {
+    const id = await this.access.resolveBuilding(user, buildingId, tenantId);
+    return this.journal.recordShadowRun(id);
   }
 
   @Get('fund-balances')
-  fundBalances(@Query('buildingId') buildingId: string) {
-    return this.journal.fundBalancesFromJournal(buildingId);
+  async fundBalances(
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+    @Query('buildingId') buildingId: string,
+  ) {
+    const id = await this.access.resolveBuilding(user, buildingId, tenantId);
+    return this.journal.fundBalancesFromJournal(id);
   }
 
   @Get('trial-balance')
-  trialBalance(
+  async trialBalance(
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
     @Query('buildingId') buildingId?: string,
     @Query('period') period?: string,
   ) {
-    return this.journal.trialBalance(buildingId, period);
+    const scope = await this.access.scopeBuildingIds(user, buildingId, tenantId);
+    return this.journal.trialBalance(buildingId && scope ? scope[0] : scope, period);
   }
 
   @Get('account-card')
-  accountCard(
+  async accountCard(
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
     @Query('account') account: string,
     @Query('buildingId') buildingId?: string,
     @Query('period') period?: string,
     @Query('limit') limit?: string,
   ) {
+    const scope = await this.access.scopeBuildingIds(user, buildingId, tenantId);
     return this.journal.accountCard(account || 'cash', {
-      buildingId,
+      buildingId: buildingId && scope ? scope[0] : scope,
       period,
       limit: limit ? Number(limit) : 200,
     });
   }
 
   @Get('coa')
-  listCoa(@Query('buildingId') buildingId?: string) {
-    return this.journal.listChartOfAccounts(buildingId);
+  async listCoa(
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+    @Query('buildingId') buildingId?: string,
+  ) {
+    const scope = await this.access.scopeBuildingIds(user, buildingId, tenantId);
+    return this.journal.listChartOfAccounts(scope);
   }
 
+  /** Global default CoA rows are platform data — only super_admin may (re)create them. */
   @Post('coa/ensure-defaults')
-  @Roles(UserRole.chairman, UserRole.accountant, UserRole.super_admin)
+  @RequirePermissions(Permission.PLATFORM_ADMIN)
   ensureDefaults() {
     return this.journal.ensureDefaultChartOfAccounts();
   }
 
   @Patch('coa/:id/external-code')
-  @Roles(UserRole.chairman, UserRole.accountant, UserRole.super_admin)
-  setExternalCode(
+  @RequirePermissions(Permission.FINANCE_ADMIN, Permission.PLATFORM_ADMIN)
+  async setExternalCode(
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
     @Param('id') id: string,
-    @Body() body: { externalCode?: string | null },
+    @Body() body: UpdateExternalCodeDto,
   ) {
+    const acc = await this.prisma.ledgerAccount.findUnique({
+      where: { id },
+      select: { id: true, buildingId: true },
+    });
+    if (!acc) throw new NotFoundException('Рахунок не знайдено');
+    if (!acc.buildingId && user.role !== UserRole.super_admin) {
+      // Global chart of accounts is shared by every organization.
+      throw new ForbiddenException('Глобальний план рахунків змінює лише адміністратор платформи');
+    }
+    await this.access.assertOptionalBuilding(user, acc.buildingId, tenantId);
     return this.journal.updateExternalCode(id, body.externalCode ?? null);
   }
 
   @Get(':id')
-  getOne(@Param('id') id: string) {
-    return this.journal.getEntry(id);
+  async getOne(
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+    @Param('id') id: string,
+  ) {
+    const entry = await this.journal.getEntry(id);
+    if (!entry) throw new NotFoundException('Проводку не знайдено');
+    await this.access.assertOptionalBuilding(user, entry.buildingId, tenantId);
+    return entry;
   }
 }

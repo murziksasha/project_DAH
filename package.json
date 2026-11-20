@@ -7,12 +7,21 @@
     "packages/*"
   ],
   "scripts": {
-    "docker:up": "docker compose build api web && docker compose up -d",
+    "docker:up": "node scripts/docker-up.mjs",
+    "docker:build:prod": "node scripts/docker-build-prod.mjs",
+    "docker:up:prod": "node scripts/docker-up.mjs --prod",
+    "docker:rollback:prod": "node scripts/docker-rollback-prod.mjs",
+    "docker:stop:prod": "node scripts/docker-prod-ops.mjs stop",
+    "docker:logs:prod": "node scripts/docker-prod-ops.mjs logs",
+    "docker:ps:prod": "node scripts/docker-prod-ops.mjs ps",
+    "update:prod": "node scripts/update-prod.mjs",
+    "db:users:init:prod": "node scripts/db-users-init-prod.mjs",
+    "test:deployment": "node --test scripts/product-env.test.mjs scripts/production-docker-state.test.mjs scripts/update-prod.test.mjs scripts/docker-rollback-prod.test.mjs scripts/db-users-init-prod.test.mjs scripts/csp-config.test.mjs",
     "docker:down": "npm run docker:infra:down",
     "docker:infra": "docker compose up -d postgres minio minio-init",
     "docker:infra:redis": "docker compose --profile redis up -d redis",
     "docker:infra:down": "docker compose stop postgres minio redis",
-    "dev:prepare": "docker compose stop api web nginx worker && npm run docker:infra",
+    "dev:prepare": "node scripts/assert-local.mjs && docker compose stop api web nginx worker && npm run docker:infra",
     "setup:local": "npm run docker:up && npm run db:generate -w @dah/api && npm run db:migrate:dev -w @dah/api && npm run db:seed -w @dah/api",
     "dev:api": "npm run dev -w @dah/api",
     "dev:web": "npm run dev -w @dah/web",
@@ -45,7 +54,7 @@
     "typecheck": "npm run build -w @dah/shared && npm run build -w @dah/money && npm run build -w @dah/api-client && npm run db:generate -w @dah/api && npm run typecheck:api && npm run typecheck:web",
     "test": "npm run test -w @dah/api",
     "test:cov": "npm run test:cov -w @dah/api",
-    "test:unit": "npm run test -w @dah/shared && npm run test -w @dah/money && npm run test -w @dah/api && npm run test -w @dah/web",
+    "test:unit": "npm run test -w @dah/shared && npm run test -w @dah/money && npm run test -w @dah/api-client && npm run openapi:check -w @dah/api && npm run test -w @dah/api && npm run test -w @dah/web",
     "test:e2e": "npm run test:e2e -w @dah/api",
     "test:e2e:web": "npm run test:e2e -w @dah/web",
     "test:all": "npm run test:unit && npm run test:e2e -w @dah/api",
@@ -58,8 +67,24 @@
     "node": ">=20"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@next/eslint-plugin-next": "^15.5.29",
     "concurrently": "^9.1.2",
-    "dotenv-cli": "^11.0.0"
+    "dotenv-cli": "^11.0.0",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^17.14.0",
+    "typescript-eslint": "^8.73.0"
   },
-  "allowScripts": {}
+  "allowScripts": {},
+  "overrides": {
+    "postcss": "^8.5.33",
+    "brace-expansion@1": "^1.1.22",
+    "@nestjs/cli": {
+      "glob": "^14.0.6"
+    },
+    "exceljs": {
+      "uuid": "^11.1.1"
+    }
+  }
 }

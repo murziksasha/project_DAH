@@ -1,20 +1,20 @@
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { Permission } from '@dah/shared';
 import { Body, Controller, Get, Param, Patch, Post, Res, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
 import { Response } from 'express';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../common/guards/roles.guard';
 import {
   CreateMeetingDto,
+  RegisterMeetingDto,
   SignMeetingDto,
   UpdateMeetingStatusDto,
   VoteAgendaDto,
 } from './dto/meeting.dto';
 import { MeetingsService } from './meetings.service';
 
-const MANAGE = [UserRole.chairman, UserRole.board, UserRole.super_admin];
 
 @ApiTags('meetings')
 @ApiBearerAuth()
@@ -33,15 +33,15 @@ export class MeetingsController {
     return this.meetings.get(id, user);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...MANAGE)
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_COMMUNICATIONS, Permission.PLATFORM_ADMIN)
   @Post()
   create(@Body() dto: CreateMeetingDto, @CurrentUser() user: AuthUser) {
     return this.meetings.create(dto, user);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...MANAGE)
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_COMMUNICATIONS, Permission.PLATFORM_ADMIN)
   @Patch(':id/status')
   setStatus(
     @Param('id') id: string,
@@ -52,8 +52,12 @@ export class MeetingsController {
   }
 
   @Post(':id/register')
-  register(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.meetings.register(id, user);
+  register(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @Body() dto: RegisterMeetingDto,
+  ) {
+    return this.meetings.register(id, user, dto?.apartmentId);
   }
 
   @Post(':id/agenda/:agendaItemId/vote')
@@ -75,15 +79,15 @@ export class MeetingsController {
     return this.meetings.sign(id, dto, user);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...MANAGE)
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_COMMUNICATIONS, Permission.PLATFORM_ADMIN)
   @Post(':id/protocol')
   protocol(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.meetings.buildProtocol(id, user);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...MANAGE, UserRole.auditor)
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(Permission.READ_AUDIT, Permission.MANAGE_COMMUNICATIONS, Permission.PLATFORM_ADMIN)
   @Get(':id/protocol.pdf')
   async protocolPdf(
     @Param('id') id: string,

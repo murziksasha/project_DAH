@@ -1,10 +1,10 @@
+import { Permission } from '@dah/shared';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
 import { IsNumber, IsOptional, IsString } from 'class-validator';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../common/guards/roles.guard';
 import { CopilotService } from './copilot.service';
 
 class ClassifyRequestDto {
@@ -62,14 +62,8 @@ export class CopilotController {
     };
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(
-    UserRole.dispatcher,
-    UserRole.chairman,
-    UserRole.board,
-    UserRole.crew,
-    UserRole.super_admin,
-  )
+  @RequirePermissions(Permission.WORK_REQUESTS)
+  @UseGuards(PermissionsGuard)
   @Post('classify-request')
   classify(@Body() dto: ClassifyRequestDto) {
     if (!this.copilot.isEnabled()) {
@@ -78,8 +72,8 @@ export class CopilotController {
     return this.copilot.classifyRequest(dto);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.accountant, UserRole.chairman, UserRole.board, UserRole.super_admin)
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_FINANCE, Permission.PLATFORM_ADMIN)
   @Post('match-hint')
   matchHint(@Body() dto: MatchHintDto) {
     if (!this.copilot.isEnabled()) {
@@ -88,8 +82,8 @@ export class CopilotController {
     return this.copilot.suggestPaymentMatch(dto.purpose);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.chairman, UserRole.board, UserRole.super_admin)
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_COMMUNICATIONS, Permission.PLATFORM_ADMIN)
   @Post('draft-note')
   draftNote(@Body() dto: DraftNoteDto) {
     if (!this.copilot.isEnabled()) {

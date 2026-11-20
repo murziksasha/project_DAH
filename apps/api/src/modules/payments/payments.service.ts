@@ -12,7 +12,7 @@ import {
   PaymentSource,
   Prisma,
   UserRole,
-} from '@prisma/client';
+} from '../../prisma/client';
 import { createHash } from 'crypto';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import {
@@ -35,7 +35,8 @@ import { domainEvents } from '../../common/utils/domain-events';
 import { AccountingPeriodsService } from '../accounting-periods/accounting-periods.service';
 import { AuditService } from '../audit/audit.service';
 import { JournalService } from '../journal/journal.service';
-import { PostingService } from '../journal/posting.service';
+import { PostingService, buildPaymentLines } from '../journal/posting.service';
+import type { JournalLineInput } from '../journal/journal.service';
 import { MailService } from '../mail/mail.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { ImportPaymentsDto } from './dto/import-payments.dto';
@@ -103,15 +104,25 @@ export class PaymentsService {
     const where: Prisma.PaymentWhereInput = { isVoided: false };
 
     if (PAYMENT_READ_ROLES.includes(user.role as UserRole)) {
-      if (opts?.apartmentId) where.apartmentId = opts.apartmentId;
-      if (opts?.buildingId) {
+      if (user.role !== UserRole.super_admin) {
+        if (!user.tenantId) throw new ForbiddenException('Немає активної організації');
         where.apartment = {
-          buildingId: opts.buildingId,
-          ...(opts.tenantId ? { building: { tenantId: opts.tenantId } } : {}),
+          ...((where.apartment as object) ?? {}),
+          building: { tenantId: user.tenantId },
         };
       } else if (opts?.tenantId) {
-        where.apartment = { building: { tenantId: opts.tenantId } };
+        where.apartment = {
+          ...((where.apartment as object) ?? {}),
+          building: { tenantId: opts.tenantId },
+        };
       }
+      if (opts?.buildingId) {
+        where.apartment = {
+          ...((where.apartment as object) ?? {}),
+          buildingId: opts.buildingId,
+        };
+      }
+      if (opts?.apartmentId) where.apartmentId = opts.apartmentId;
     } else {
       const ids = user.apartmentIds?.length
         ? user.apartmentIds
@@ -156,7 +167,7 @@ export class PaymentsService {
     const payment = await this.prisma.payment.findUnique({
       where: { id },
       include: {
-        apartment: true,
+        apartment: { include: { building: true } },
         allocations: {
           include: {
             accrualLine: { include: { accrual: true } },
@@ -166,6 +177,12 @@ export class PaymentsService {
     });
 
     if (!payment) throw new NotFoundException('Платіж не знайдено');
+
+    if (user.role !== UserRole.super_admin) {
+      if (!user.tenantId || (payment.apartment?.building && payment.apartment.building.tenantId !== user.tenantId)) {
+        throw new ForbiddenException('Немає доступу до цього платежу (інша організація)');
+      }
+    }
 
     if (!PAYMENT_READ_ROLES.includes(user.role as UserRole)) {
       const ids = user.apartmentIds?.length
@@ -181,11 +198,18 @@ export class PaymentsService {
     return payment;
   }
 
-  async previewAllocation(apartmentId: string, amount: number) {
+  async previewAllocation(apartmentId: string, amount: number, user?: AuthUser) {
     const apartment = await this.prisma.apartment.findUnique({
       where: { id: apartmentId },
+      include: { building: true },
     });
     if (!apartment) throw new NotFoundException('Квартиру не знайдено');
+
+    if (user && user.role !== UserRole.super_admin) {
+      if (!user.tenantId || (apartment.building && apartment.building.tenantId !== user.tenantId)) {
+        throw new ForbiddenException('Немає доступу до цієї квартири (інша організація)');
+      }
+    }
 
     const { allocations, advance } = await this.planAllocation(apartmentId, amount);
 
@@ -198,42 +222,99 @@ export class PaymentsService {
     };
   }
 
-  async createPayment(dto: CreatePaymentDto, user: AuthUser) {
+  async createPayment(
+    dto: CreatePaymentDto,
+    user: AuthUser,
+    txClient?: Prisma.TransactionClient,
+  ) {
     const userId = user.id;
-    const apartment = await this.prisma.apartment.findUnique({
+    const client = txClient ?? this.prisma;
+    const apartment = await client.apartment.findUnique({
       where: { id: dto.apartmentId },
+      include: { building: true },
     });
     if (!apartment) throw new NotFoundException('Квартиру не знайдено');
 
-    await this.periods.assertAllowsMutation(
-      apartment.buildingId,
-      dto.date,
-      'payment',
-    );
+    if (user.role !== UserRole.super_admin) {
+      if (!user.tenantId || (apartment.building && apartment.building.tenantId !== user.tenantId)) {
+        throw new ForbiddenException('Немає доступу до цієї квартири / організації');
+      }
+    }
 
-    const payment = await this.prisma.$transaction(async (tx) => {
-      // Row lock apartment + open accrual lines to prevent double-allocation races
-      await tx.$queryRaw`SELECT id FROM "Apartment" WHERE id = ${dto.apartmentId} FOR UPDATE`;
-      const lockedLines = await tx.$queryRaw<
-        Array<{
-          id: string;
-          amount: Prisma.Decimal;
-          paidAmount: Prisma.Decimal;
-          dueDate: Date | null;
-          period: string;
-          title: string;
-          fundId: string;
-        }>
-      >`
-        SELECT al.id, al.amount, al."paidAmount", al."dueDate",
-               a.period, a.title, a."fundId"
-        FROM "AccrualLine" al
-        JOIN "Accrual" a ON a.id = al."accrualId"
-        WHERE al."apartmentId" = ${dto.apartmentId}
-          AND al.status IN ('open', 'partially_paid', 'overdue')
-        ORDER BY al."dueDate" ASC NULLS LAST, al."createdAt" ASC
-        FOR UPDATE OF al
-      `;
+    const executeInTx = async (tx: Prisma.TransactionClient) => {
+      // 1. Period check under transaction lock
+      await this.periods.assertAllowsMutation(
+        apartment.buildingId,
+        dto.date,
+        'payment',
+        tx,
+      );
+
+      // 2. Order lock if reference matches an online order
+      if (dto.reference) {
+        if (typeof tx.$queryRaw === 'function') {
+          await tx.$queryRaw`SELECT id FROM "OnlinePaymentOrder" WHERE "orderId" = ${dto.reference} FOR UPDATE`;
+        }
+      }
+
+      // 3. Apartment row lock
+      if (typeof tx.$queryRaw === 'function') {
+        await tx.$queryRaw`SELECT id FROM "Apartment" WHERE id = ${dto.apartmentId} FOR UPDATE`;
+      }
+
+      // 4. Open accrual lines row lock
+      let lockedLines: Array<{
+        id: string;
+        amount: Prisma.Decimal;
+        paidAmount: Prisma.Decimal;
+        dueDate: Date | null;
+        period: string;
+        title: string;
+        fundId: string;
+      }> = [];
+
+      if (typeof tx.$queryRaw === 'function') {
+        lockedLines = await tx.$queryRaw<
+          Array<{
+            id: string;
+            amount: Prisma.Decimal;
+            paidAmount: Prisma.Decimal;
+            dueDate: Date | null;
+            period: string;
+            title: string;
+            fundId: string;
+          }>
+        >`
+          SELECT al.id, al.amount, al."paidAmount", al."dueDate",
+                 a.period, a.title, a."fundId"
+          FROM "AccrualLine" al
+          JOIN "Accrual" a ON a.id = al."accrualId"
+          WHERE al."apartmentId" = ${dto.apartmentId}
+            AND al.status IN ('open', 'partially_paid', 'overdue')
+          ORDER BY al."dueDate" ASC NULLS LAST, al."createdAt" ASC
+          FOR UPDATE OF al
+        `;
+      }
+
+      if (!lockedLines.length) {
+        const found = await tx.accrualLine.findMany({
+          where: {
+            apartmentId: dto.apartmentId,
+            status: { in: ['open', 'partially_paid', 'overdue'] },
+          },
+          include: { accrual: true },
+          orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
+        });
+        lockedLines = found.map((f) => ({
+          id: f.id,
+          amount: f.amount,
+          paidAmount: f.paidAmount,
+          dueDate: f.dueDate,
+          period: f.accrual.period,
+          title: f.accrual.title,
+          fundId: f.accrual.fundId,
+        }));
+      }
 
       const fifoLines: FifoLineInput[] = lockedLines.map((line) => ({
         id: line.id,
@@ -315,6 +396,14 @@ export class PaymentsService {
         lockedLines[0]?.fundId ??
         null;
 
+      // M4: receivable/cash split per fund of the allocated accrual lines.
+      const byFund = new Map<string | null, number>();
+      for (const a of allocations) {
+        const f = lockedLines.find((l) => l.id === a.accrualLineId)?.fundId ?? null;
+        byFund.set(f, roundMoney((byFund.get(f) ?? 0) + a.amount));
+      }
+      const fundSplit = [...byFund.entries()].map(([fid, amount]) => ({ fundId: fid, amount }));
+
       await this.posting.postPayment(
         created.id,
         dto.amount,
@@ -331,10 +420,17 @@ export class PaymentsService {
           }`,
         },
         tx,
+        fundSplit,
       );
 
       return created;
-    });
+    };
+
+    const payment = txClient
+      ? await executeInTx(txClient)
+      : typeof this.prisma.$transaction === 'function'
+        ? await this.prisma.$transaction(executeInTx)
+        : await executeInTx(this.prisma as unknown as Prisma.TransactionClient);
 
     await this.audit.log({
       userId,
@@ -363,48 +459,161 @@ export class PaymentsService {
     return this.getPayment(payment.id, user);
   }
 
-  async voidPayment(id: string, reason: string, userId: string) {
+  /**
+   * Journal lines that exactly reverse a payment: the inverted original posting
+   * (keeps per-fund cash split) plus a reversal of advance later applied to accruals
+   * (receivable Dr / advance Cr), so every account nets to zero.
+   */
+  private async buildVoidLines(
+    tx: Prisma.TransactionClient,
+    p: {
+      paymentId: string;
+      apartmentId: string;
+      amount: number;
+      allocated: number;
+      advancePart: number;
+      fundId: string | null;
+      byFund: Map<string | null, number>;
+    },
+  ): Promise<JournalLineInput[]> {
+    const original =
+      typeof tx.journalEntry?.findUnique === 'function'
+        ? await tx.journalEntry.findUnique({
+            where: { idempotencyKey: `Payment:${p.paymentId}:${JournalEntryType.payment}` },
+            include: { lines: true },
+          })
+        : null;
+    if (!original?.lines?.length) {
+      return buildPaymentLines(
+        p.amount,
+        p.allocated,
+        p.advancePart,
+        p.fundId,
+        (f) => ({ apartmentId: p.apartmentId, fundId: f }),
+        [...p.byFund.entries()].map(([f, amount]) => ({ fundId: f, amount })),
+      ).map((l) => ({ ...l, debit: l.credit, credit: l.debit }));
+    }
+    const lines: JournalLineInput[] = original.lines.map((l) => ({
+      account: l.account,
+      debit: Number(l.credit) || undefined,
+      credit: Number(l.debit) || undefined,
+      apartmentId: l.apartmentId ?? p.apartmentId,
+      fundId: l.fundId,
+    }));
+    const originallyAllocated = roundMoney(
+      original.lines
+        .filter((l) => l.account === 'receivable')
+        .reduce((s, l) => s + Number(l.credit), 0),
+    );
+    const appliedLater = roundMoney(p.allocated - originallyAllocated);
+    if (appliedLater > 0.005) {
+      lines.push(
+        { account: 'receivable', debit: appliedLater, apartmentId: p.apartmentId, fundId: p.fundId },
+        { account: 'advance', credit: appliedLater, apartmentId: p.apartmentId, fundId: p.fundId },
+      );
+    }
+    return lines;
+  }
+
+  async voidPayment(id: string, reason: string, userOrUserId: AuthUser | string) {
+    const user: AuthUser | null = typeof userOrUserId === 'object' ? userOrUserId : null;
+    const userId: string = typeof userOrUserId === 'string' ? userOrUserId : userOrUserId.id;
+
     const payment = await this.prisma.payment.findUnique({
       where: { id },
       include: {
         allocations: { include: { accrualLine: { include: { accrual: true } } } },
-        apartment: true,
+        apartment: { include: { building: true } },
       },
     });
     if (!payment) throw new NotFoundException('Платіж не знайдено');
     if (payment.isVoided) throw new BadRequestException('Платіж вже анульовано');
 
-    await this.periods.assertAllowsMutation(
-      payment.apartment.buildingId,
-      payment.date,
-      'void_payment',
-    );
+    if (user && user.role !== UserRole.super_admin) {
+      if (!user.tenantId || (payment.apartment?.building && payment.apartment.building.tenantId !== user.tenantId)) {
+        throw new ForbiddenException('Немає доступу до цього платежу (інша організація)');
+      }
+    }
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM "Apartment" WHERE id = ${payment.apartmentId} FOR UPDATE`;
+      // 1. Check period under tx lock
+      await this.periods.assertAllowsMutation(
+        payment.apartment.buildingId,
+        payment.date,
+        'void_payment',
+        tx,
+      );
 
-      const lineIds = payment.allocations.map((a) => a.accrualLineId);
-      if (lineIds.length) {
-        await tx.$queryRaw`
-          SELECT id FROM "AccrualLine" WHERE id IN (${Prisma.join(lineIds)}) FOR UPDATE
+      // 2. Lock payment row to prevent concurrent void
+      if (typeof tx.$queryRaw === 'function') {
+        await tx.$queryRaw`SELECT id FROM "Payment" WHERE id = ${id} FOR UPDATE`;
+      }
+
+      const freshPayment = await tx.payment.findUnique({
+        where: { id },
+        include: { allocations: true },
+      });
+      if (!freshPayment || freshPayment.isVoided) {
+        throw new BadRequestException('Платіж вже анульовано');
+      }
+
+      // 3. Lock apartment row
+      if (typeof tx.$queryRaw === 'function') {
+        await tx.$queryRaw`SELECT id, "advanceBalance" FROM "Apartment" WHERE id = ${payment.apartmentId} FOR UPDATE`;
+      }
+
+      // 4. Lock and re-read current accrual lines to avoid using stale snapshots
+      const lineIds = freshPayment.allocations.map((a) => a.accrualLineId);
+      let lockedLines: Array<{
+        id: string;
+        amount: Prisma.Decimal;
+        paidAmount: Prisma.Decimal;
+        dueDate: Date | null;
+      }> = [];
+
+      if (lineIds.length && typeof tx.$queryRaw === 'function') {
+        lockedLines = await tx.$queryRaw<
+          Array<{
+            id: string;
+            amount: Prisma.Decimal;
+            paidAmount: Prisma.Decimal;
+            dueDate: Date | null;
+          }>
+        >`
+          SELECT id, amount, "paidAmount", "dueDate"
+          FROM "AccrualLine"
+          WHERE id IN (${Prisma.join(lineIds)})
+          FOR UPDATE
         `;
       }
 
-      for (const alloc of payment.allocations) {
-        const line = alloc.accrualLine;
-        const newPaid = roundMoney(Number(line.paidAmount) - Number(alloc.amount));
-        const lineAmount = Number(line.amount);
-        await tx.accrualLine.update({
-          where: { id: line.id },
-          data: {
-            paidAmount: Math.max(0, newPaid),
-            status: resolveAccrualLineStatus(lineAmount, Math.max(0, newPaid), line.dueDate),
-          },
+      if (lineIds.length && !lockedLines.length) {
+        lockedLines = await tx.accrualLine.findMany({
+          where: { id: { in: lineIds } },
+          select: { id: true, amount: true, paidAmount: true, dueDate: true },
         });
       }
 
-      const allocated = payment.allocations.reduce((s, a) => s + Number(a.amount), 0);
-      const advancePart = roundMoney(Math.max(0, Number(payment.amount) - allocated));
+      for (const alloc of freshPayment.allocations) {
+        const line =
+          lockedLines.find((l) => l.id === alloc.accrualLineId) ??
+          (await tx.accrualLine.findUnique({ where: { id: alloc.accrualLineId } }));
+        if (line) {
+          const currentPaid = Number(line.paidAmount);
+          const newPaid = roundMoney(Math.max(0, currentPaid - Number(alloc.amount)));
+          const lineAmount = Number(line.amount);
+          await tx.accrualLine.update({
+            where: { id: line.id },
+            data: {
+              paidAmount: newPaid,
+              status: resolveAccrualLineStatus(lineAmount, newPaid, line.dueDate),
+            },
+          });
+        }
+      }
+
+      const allocated = freshPayment.allocations.reduce((s, a) => s + Number(a.amount), 0);
+      const advancePart = roundMoney(Math.max(0, Number(freshPayment.amount) - allocated));
       if (advancePart > 0) {
         const apt = await tx.apartment.findUnique({ where: { id: payment.apartmentId } });
         const next = roundMoney(Math.max(0, Number(apt?.advanceBalance ?? 0) - advancePart));
@@ -420,6 +629,21 @@ export class PaymentsService {
       });
 
       const fundId = payment.allocations[0]?.accrualLine?.accrual?.fundId ?? null;
+      // Mirror of the (possibly fund-split) payment posting: reverse each side.
+      const byFund = new Map<string | null, number>();
+      for (const a of payment.allocations) {
+        const f = a.accrualLine?.accrual?.fundId ?? null;
+        byFund.set(f, roundMoney((byFund.get(f) ?? 0) + Number(a.amount)));
+      }
+      const voidLines = await this.buildVoidLines(tx, {
+        paymentId: id,
+        apartmentId: payment.apartmentId,
+        amount: Number(payment.amount),
+        allocated: roundMoney(allocated),
+        advancePart,
+        fundId,
+        byFund,
+      });
       await this.journal.write(
         {
           type: JournalEntryType.void_payment,
@@ -430,30 +654,7 @@ export class PaymentsService {
           apartmentId: payment.apartmentId,
           fundId,
           createdById: userId,
-          lines: [
-            {
-              account: 'cash',
-              credit: Number(payment.amount),
-              apartmentId: payment.apartmentId,
-              fundId,
-            },
-            {
-              account: 'receivable',
-              debit: allocated,
-              apartmentId: payment.apartmentId,
-              fundId,
-            },
-            ...(advancePart > 0
-              ? [
-                  {
-                    account: 'advance',
-                    debit: advancePart,
-                    apartmentId: payment.apartmentId,
-                    fundId,
-                  },
-                ]
-              : []),
-          ],
+          lines: voidLines,
         },
         tx,
       );
@@ -470,12 +671,17 @@ export class PaymentsService {
     return { id, isVoided: true };
   }
 
+  /**
+   * @param scope verified building scope: `buildingIds` = buildings the caller may match
+   *   against (null = unrestricted platform admin), `tenantId` stored on the statement.
+   */
   async previewBankImport(
     csv: string,
     buildingId?: string,
     format?: string,
     userId?: string,
     sourceFileName?: string,
+    scope?: { buildingIds: string[] | null; tenantId: string | null },
   ) {
     if (!csv?.trim()) {
       throw new BadRequestException('Порожній файл виписки');
@@ -488,16 +694,16 @@ export class PaymentsService {
       );
     }
 
+    const buildingIds = buildingId ? [buildingId] : (scope?.buildingIds ?? null);
+    const bWhere = buildingIds ? { buildingId: { in: buildingIds } } : undefined;
     const apartments = await this.prisma.apartment.findMany({
-      where: buildingId ? { buildingId } : undefined,
+      where: bWhere,
       select: { id: true, number: true, entrance: true },
       orderBy: [{ entrance: 'asc' }, { number: 'asc' }],
     });
 
     const residents = await this.prisma.resident.findMany({
-      where: buildingId
-        ? { apartment: { buildingId } }
-        : undefined,
+      where: bWhere ? { apartment: bWhere } : undefined,
       select: {
         firstName: true,
         lastName: true,
@@ -506,9 +712,9 @@ export class PaymentsService {
       },
     });
 
-    const aliases = buildingId
+    const aliases = bWhere
       ? await this.prisma.ibanApartmentAlias.findMany({
-          where: { buildingId },
+          where: bWhere,
           select: { iban: true, apartmentId: true },
         })
       : [];
@@ -560,6 +766,7 @@ export class PaymentsService {
             where: {
               isVoided: false,
               reference: { in: matchedRefs },
+              ...(bWhere ? { apartment: bWhere } : {}),
             },
             select: { reference: true, amount: true, date: true, apartmentId: true },
           })
@@ -586,6 +793,7 @@ export class PaymentsService {
     const statement = await this.prisma.bankStatement.create({
       data: {
         buildingId: buildingId ?? null,
+        tenantId: scope?.tenantId ?? null,
         format: usedFormat,
         sourceFileName: sourceFileName ?? null,
         rawHash,
@@ -641,12 +849,45 @@ export class PaymentsService {
     };
   }
 
-  /** Ignore a bank statement line (won't import). */
-  async ignoreStatementLine(lineId: string, user: AuthUser) {
+  /**
+   * Statement line visible to the caller's organization (404 otherwise).
+   * `tenantId` null = unrestricted platform admin.
+   */
+  private async loadScopedStatementLine(lineId: string, tenantId: string | null) {
     const line = await this.prisma.bankStatementLine.findUnique({
       where: { id: lineId },
+      include: {
+        statement: {
+          select: {
+            id: true,
+            buildingId: true,
+            tenantId: true,
+            building: { select: { tenantId: true } },
+          },
+        },
+      },
     });
     if (!line) throw new NotFoundException('Рядок виписки не знайдено');
+    if (tenantId) {
+      const owner = line.statement.tenantId ?? line.statement.building?.tenantId ?? null;
+      if (owner !== tenantId) throw new NotFoundException('Рядок виписки не знайдено');
+    }
+    return line;
+  }
+
+  private async assertStatementScope(statementId: string, tenantId: string | null) {
+    if (!tenantId) return;
+    const st = await this.prisma.bankStatement.findUnique({
+      where: { id: statementId },
+      select: { tenantId: true, building: { select: { tenantId: true } } },
+    });
+    const owner = st ? (st.tenantId ?? st.building?.tenantId ?? null) : null;
+    if (owner !== tenantId) throw new NotFoundException('Виписку не знайдено');
+  }
+
+  /** Ignore a bank statement line (won't import). */
+  async ignoreStatementLine(lineId: string, user: AuthUser, tenantId: string | null = null) {
+    const line = await this.loadScopedStatementLine(lineId, tenantId);
     if (line.paymentId) {
       throw new BadRequestException('Рядок уже імпортовано');
     }
@@ -671,7 +912,11 @@ export class PaymentsService {
   }
 
   /** Unmatched / not-imported lines for the last N days. */
-  async unmatchedStatementReport(buildingId?: string, days = 30) {
+  async unmatchedStatementReport(
+    buildingId?: string,
+    days = 30,
+    tenantId: string | null = null,
+  ) {
     const since = new Date();
     since.setDate(since.getDate() - Math.min(Math.max(days, 1), 90));
     const lines = await this.prisma.bankStatementLine.findMany({
@@ -685,7 +930,15 @@ export class PaymentsService {
           ],
         },
         createdAt: { gte: since },
-        ...(buildingId ? { statement: { buildingId } } : {}),
+        ...(buildingId
+          ? { statement: { buildingId } }
+          : tenantId
+            ? {
+                statement: {
+                  OR: [{ tenantId }, { tenantId: null, building: { tenantId } }],
+                },
+              }
+            : {}),
       },
       orderBy: { createdAt: 'desc' },
       take: 500,
@@ -709,23 +962,26 @@ export class PaymentsService {
     lineId: string,
     apartmentId: string,
     user: AuthUser,
+    tenantId: string | null = null,
   ) {
-    const line = await this.prisma.bankStatementLine.findUnique({
-      where: { id: lineId },
-      include: { statement: true },
-    });
-    if (!line) throw new NotFoundException('Рядок виписки не знайдено');
+    const line = await this.loadScopedStatementLine(lineId, tenantId);
     if (line.paymentId) {
       throw new BadRequestException('Рядок уже імпортовано як платіж');
     }
 
     const apartment = await this.prisma.apartment.findUnique({
       where: { id: apartmentId },
+      include: { building: { select: { tenantId: true } } },
     });
-    if (!apartment) throw new NotFoundException('Квартиру не знайдено');
+    if (!apartment || (tenantId && apartment.building.tenantId !== tenantId)) {
+      throw new NotFoundException('Квартиру не знайдено');
+    }
+    if (line.statement.buildingId && line.statement.buildingId !== apartment.buildingId) {
+      throw new BadRequestException('Квартира не належить будинку цієї виписки');
+    }
 
     const iban = normalizeIban(line.counterpartyIban);
-    const buildingId = line.statement.buildingId ?? apartment.buildingId;
+    const buildingId = apartment.buildingId;
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const u = await tx.bankStatementLine.update({
@@ -761,10 +1017,11 @@ export class PaymentsService {
     return updated;
   }
 
-  async importPayments(dto: ImportPaymentsDto, user: AuthUser) {
+  async importPayments(dto: ImportPaymentsDto, user: AuthUser, tenantId: string | null = null) {
     if (!dto.rows?.length) {
       throw new BadRequestException('Немає рядків для імпорту');
     }
+    if (dto.statementId) await this.assertStatementScope(dto.statementId, tenantId);
 
     const source = dto.source ?? PaymentSource.bank;
     const created: string[] = [];
@@ -773,6 +1030,8 @@ export class PaymentsService {
     for (let i = 0; i < dto.rows.length; i++) {
       const row = dto.rows[i];
       try {
+        // Validate the line before creating money (other org's line → 404, row skipped).
+        if (row.lineId) await this.loadScopedStatementLine(row.lineId, tenantId);
         const payment = await this.createPayment(
           {
             apartmentId: row.apartmentId,

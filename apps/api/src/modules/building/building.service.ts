@@ -1,9 +1,10 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import {
   normalizeDocumentTemplatesConfig,
   type DocumentTemplatesConfig,
 } from '@dah/shared';
-import { Prisma } from '@prisma/client';
+import { Prisma, UserRole } from '../../prisma/client';
+import { AuthUser } from '../../common/decorators/current-user.decorator';
 import {
   extractEmailsFromResidentsCell,
   parseApartmentsCsv,
@@ -11,6 +12,7 @@ import {
 import { sortByApartmentNumber } from '../../common/utils/apartment-sort';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { JournalService } from '../journal/journal.service';
 import {
   DEFAULT_BUILDING_SETTINGS,
   mergeBuildingSettings,
@@ -28,6 +30,7 @@ export class BuildingService {
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
+    @Optional() private journal?: JournalService,
   ) {}
 
   getBuilding(buildingId?: string, tenantId?: string | null) {
@@ -97,20 +100,45 @@ export class BuildingService {
   }
 
   /** Lightweight counters for admin dashboard. */
-  async getOpsSummary(buildingId?: string) {
-    const aptScope = buildingId ? { apartment: { buildingId } } : {};
+  async getOpsSummary(buildingId?: string, user?: AuthUser) {
+    const tenantId = user && user.role !== UserRole.super_admin ? user.tenantId : undefined;
+    const aptScope = buildingId
+      ? { apartment: { buildingId } }
+      : tenantId
+        ? { apartment: { building: { tenantId } } }
+        : {};
+
     const [pendingResidents, openRequests, activePolls, debtorsLines, documents] =
       await Promise.all([
-        this.prisma.user.count({ where: { status: 'pending', role: 'resident' } }),
-        this.prisma.request.count({ where: { status: { in: ['new', 'in_progress'] } } }),
-        this.prisma.poll.count({ where: { isActive: true } }),
+        this.prisma.tenantMembership.count({
+          where: {
+            ...(tenantId ? { tenantId } : {}),
+            status: 'pending',
+            role: UserRole.resident,
+          },
+        }),
+        this.prisma.request.count({
+          where: {
+            ...(tenantId ? { tenantId } : {}),
+            ...(buildingId ? { buildingId } : {}),
+            status: { in: ['new', 'in_progress'] },
+          },
+        }),
+        this.prisma.poll.count({
+          where: {
+            ...(tenantId ? { tenantId } : {}),
+            isActive: true,
+          },
+        }),
         this.prisma.accrualLine.count({
           where: {
             status: { in: ['open', 'partially_paid', 'overdue'] },
             ...aptScope,
           },
         }),
-        this.prisma.document.count(),
+        this.prisma.document.count({
+          where: tenantId ? { tenantId } : undefined,
+        }),
       ]);
 
     return {
@@ -147,56 +175,49 @@ export class BuildingService {
           })
         ).map((a) => a.id);
 
-        const openLines =
-          aptIds.length === 0
-            ? []
-            : await this.prisma.accrualLine.findMany({
-                where: {
-                  apartmentId: { in: aptIds },
-                  status: { in: ['open', 'partially_paid', 'overdue'] },
-                },
-                select: { amount: true, paidAmount: true },
-              });
-
         let debt = 0;
         let billed = 0;
         let paid = 0;
-        for (const l of openLines) {
-          const amt = Number(l.amount);
-          const p = Number(l.paidAmount);
-          billed += amt;
-          paid += p;
-          debt += Math.max(0, amt - p);
-        }
 
-        // Closed/paid lines for collection rate (period-agnostic snapshot)
-        const paidLines =
-          aptIds.length === 0
-            ? []
-            : await this.prisma.accrualLine.findMany({
-                where: {
-                  apartmentId: { in: aptIds },
-                  status: 'paid',
-                },
-                select: { amount: true, paidAmount: true },
-                take: 5000,
-              });
-        for (const l of paidLines) {
-          billed += Number(l.amount);
-          paid += Number(l.paidAmount);
+        if (aptIds.length > 0) {
+          const [openAgg, paidAgg] = await Promise.all([
+            this.prisma.accrualLine.aggregate({
+              where: {
+                apartmentId: { in: aptIds },
+                status: { in: ['open', 'partially_paid', 'overdue'] },
+              },
+              _sum: { amount: true, paidAmount: true },
+            }),
+            this.prisma.accrualLine.aggregate({
+              where: {
+                apartmentId: { in: aptIds },
+                status: 'paid',
+              },
+              _sum: { amount: true, paidAmount: true },
+            }),
+          ]);
+
+          const openAmount = Number(openAgg._sum.amount ?? 0);
+          const openPaid = Number(openAgg._sum.paidAmount ?? 0);
+          const closedAmount = Number(paidAgg._sum.amount ?? 0);
+          const closedPaid = Number(paidAgg._sum.paidAmount ?? 0);
+
+          debt = Math.max(0, openAmount - openPaid);
+          billed = openAmount + closedAmount;
+          paid = openPaid + closedPaid;
         }
 
         const openRequests = await this.prisma.request.count({
           where: {
+            buildingId: b.id,
             status: { in: ['new', 'in_progress'] },
-            OR: [{ buildingId: b.id }, { buildingId: null }],
           },
         });
         const overdueRequests = await this.prisma.request.count({
           where: {
+            buildingId: b.id,
             status: { in: ['new', 'in_progress'] },
             dueAt: { lt: new Date() },
-            OR: [{ buildingId: b.id }, { buildingId: null }],
           },
         });
 
@@ -216,6 +237,24 @@ export class BuildingService {
       }),
     );
 
+    const [unassignedOpen, unassignedOverdue] = await Promise.all([
+      this.prisma.request.count({
+        where: {
+          ...(tenantId ? { tenantId } : {}),
+          buildingId: null,
+          status: { in: ['new', 'in_progress'] },
+        },
+      }),
+      this.prisma.request.count({
+        where: {
+          ...(tenantId ? { tenantId } : {}),
+          buildingId: null,
+          status: { in: ['new', 'in_progress'] },
+          dueAt: { lt: new Date() },
+        },
+      }),
+    ]);
+
     const totals = items.reduce(
       (acc, i) => {
         acc.debt += i.debt;
@@ -224,7 +263,7 @@ export class BuildingService {
         acc.apartments += i.apartments;
         return acc;
       },
-      { debt: 0, openRequests: 0, overdueRequests: 0, apartments: 0 },
+      { debt: 0, openRequests: unassignedOpen, overdueRequests: unassignedOverdue, apartments: 0 },
     );
 
     return {
@@ -238,11 +277,24 @@ export class BuildingService {
   }
 
   async updateBuildingProfile(
-    dto: { name?: string; address?: string; edrpou?: string | null },
-    userId: string,
+    dto: { name?: string; address?: string; edrpou?: string | null; buildingId?: string },
+    userOrUserId: AuthUser | string,
   ) {
-    const building = await this.prisma.building.findFirst();
+    const user: AuthUser | null = typeof userOrUserId === 'object' ? userOrUserId : null;
+    const userId: string = typeof userOrUserId === 'string' ? userOrUserId : userOrUserId.id;
+
+    const building = dto.buildingId
+      ? await this.prisma.building.findUnique({ where: { id: dto.buildingId } })
+      : await this.prisma.building.findFirst({
+          where: user?.tenantId ? { tenantId: user.tenantId } : undefined,
+          orderBy: { createdAt: 'asc' },
+        });
     if (!building) throw new NotFoundException('Будинок не налаштовано');
+    if (user && user.role !== UserRole.super_admin) {
+      if (!user.tenantId || building.tenantId !== user.tenantId) {
+        throw new ForbiddenException('Немає доступу до будинку іншої організації');
+      }
+    }
 
     const updated = await this.prisma.building.update({
       where: { id: building.id },
@@ -272,18 +324,37 @@ export class BuildingService {
     return updated;
   }
 
-  async getSettings() {
-    const building = await this.prisma.building.findFirst({
-      select: {
-        id: true,
-        name: true,
-        address: true,
-        edrpou: true,
-        showDebtorsToResidents: true,
-        isInitialized: true,
-        settings: true,
-      },
-    });
+  async getSettings(buildingId?: string, user?: AuthUser) {
+    const tenantId = user && user.role !== UserRole.super_admin ? user.tenantId : undefined;
+    const building = buildingId
+      ? await this.prisma.building.findFirst({
+          where: {
+            id: buildingId,
+            ...(tenantId ? { tenantId } : {}),
+          },
+          select: {
+            id: true,
+            name: true,
+            address: true,
+            edrpou: true,
+            showDebtorsToResidents: true,
+            isInitialized: true,
+            settings: true,
+          },
+        })
+      : await this.prisma.building.findFirst({
+          where: tenantId ? { tenantId } : undefined,
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            name: true,
+            address: true,
+            edrpou: true,
+            showDebtorsToResidents: true,
+            isInitialized: true,
+            settings: true,
+          },
+        });
     if (!building) return null;
 
     const json = parseBuildingSettings(building.settings);
@@ -297,6 +368,7 @@ export class BuildingService {
       registrationEnabled: json.registrationEnabled ?? DEFAULT_BUILDING_SETTINGS.registrationEnabled,
       registrationInviteCode: json.registrationInviteCode ?? '',
       expenseDualApprovalThreshold: json.expenseDualApprovalThreshold ?? null,
+      autoApplyAdvance: json.autoApplyAdvance !== false,
       showBankDetailsToResidents:
         json.showBankDetailsToResidents ?? DEFAULT_BUILDING_SETTINGS.showBankDetailsToResidents,
       defaultAccrualDueDays:
@@ -313,9 +385,27 @@ export class BuildingService {
     };
   }
 
-  async updateSettings(dto: UpdateBuildingSettingsDto, userId: string) {
-    const building = await this.prisma.building.findFirst();
+  async updateSettings(dto: UpdateBuildingSettingsDto & { buildingId?: string }, userOrUserId: AuthUser | string) {
+    const user: AuthUser | null = typeof userOrUserId === 'object' ? userOrUserId : null;
+    const userId: string = typeof userOrUserId === 'string' ? userOrUserId : userOrUserId.id;
+
+    const building = dto.buildingId
+      ? await this.prisma.building.findUnique({ where: { id: dto.buildingId } })
+      : await this.prisma.building.findFirst({
+          where: user?.tenantId ? { tenantId: user.tenantId } : undefined,
+          orderBy: { createdAt: 'asc' },
+        });
     if (!building) throw new NotFoundException('Будинок не налаштовано');
+    if (user && user.role !== UserRole.super_admin) {
+      if (!user.tenantId || building.tenantId !== user.tenantId) {
+        throw new ForbiddenException('Немає доступу до будинку іншої організації');
+      }
+    }
+
+    // Phase 3: enabling Journal-SoT via settings obeys the same readiness guard as POST /journal/sot.
+    if (dto.journalSot === true && this.journal) {
+      await this.journal.assertSotSwitchAllowed(building.id, true, { actorRole: user?.role });
+    }
 
     const settingsPatch = {
       ...(dto.registrationEnabled !== undefined
@@ -348,6 +438,7 @@ export class BuildingService {
       ...(dto.expenseDualApprovalThreshold !== undefined
         ? { expenseDualApprovalThreshold: dto.expenseDualApprovalThreshold }
         : {}),
+      ...(dto.autoApplyAdvance !== undefined ? { autoApplyAdvance: dto.autoApplyAdvance } : {}),
       ...((dto.journalSot !== undefined ||
         dto.strictBankRec !== undefined ||
         dto.defaultCashFlowSource !== undefined)
@@ -399,6 +490,7 @@ export class BuildingService {
       registrationEnabled: json.registrationEnabled ?? DEFAULT_BUILDING_SETTINGS.registrationEnabled,
       registrationInviteCode: json.registrationInviteCode ?? '',
       expenseDualApprovalThreshold: json.expenseDualApprovalThreshold ?? null,
+      autoApplyAdvance: json.autoApplyAdvance !== false,
       showBankDetailsToResidents:
         json.showBankDetailsToResidents ?? DEFAULT_BUILDING_SETTINGS.showBankDetailsToResidents,
       defaultAccrualDueDays:
@@ -493,23 +585,44 @@ export class BuildingService {
    * Document constructor: PDF templates (receipts, board reports) + Excel export field profiles.
    * Defaults from @dah/shared when nothing saved yet.
    */
-  async getDocumentTemplates(buildingId?: string): Promise<DocumentTemplatesConfig> {
+  async getDocumentTemplates(buildingId?: string, user?: AuthUser): Promise<DocumentTemplatesConfig> {
+    const tenantId = user && user.role !== UserRole.super_admin ? user.tenantId : undefined;
     const building = buildingId
       ? await this.prisma.building.findFirst({
-          where: { id: buildingId },
+          where: {
+            id: buildingId,
+            ...(tenantId ? { tenantId } : {}),
+          },
           select: { settings: true },
         })
-      : await this.prisma.building.findFirst({ select: { settings: true } });
+      : await this.prisma.building.findFirst({
+          where: tenantId ? { tenantId } : undefined,
+          orderBy: { createdAt: 'asc' },
+          select: { settings: true },
+        });
     const json = parseBuildingSettings(building?.settings);
     return normalizeDocumentTemplatesConfig(json.documentTemplates);
   }
 
   async updateDocumentTemplates(
-    dto: UpdateDocumentTemplatesDto,
-    userId: string,
+    dto: UpdateDocumentTemplatesDto & { buildingId?: string },
+    userOrUserId: AuthUser | string,
   ): Promise<DocumentTemplatesConfig> {
-    const building = await this.prisma.building.findFirst();
+    const user: AuthUser | null = typeof userOrUserId === 'object' ? userOrUserId : null;
+    const userId: string = typeof userOrUserId === 'string' ? userOrUserId : userOrUserId.id;
+
+    const building = dto.buildingId
+      ? await this.prisma.building.findUnique({ where: { id: dto.buildingId } })
+      : await this.prisma.building.findFirst({
+          where: user?.tenantId ? { tenantId: user.tenantId } : undefined,
+          orderBy: { createdAt: 'asc' },
+        });
     if (!building) throw new NotFoundException('Будинок не налаштовано');
+    if (user && user.role !== UserRole.super_admin) {
+      if (!user.tenantId || building.tenantId !== user.tenantId) {
+        throw new ForbiddenException('Немає доступу до будинку іншої організації');
+      }
+    }
 
     const normalized = normalizeDocumentTemplatesConfig({
       forms: dto.forms,
@@ -539,13 +652,48 @@ export class BuildingService {
     return normalized;
   }
 
-  async listApartments(buildingId?: string, tenantId?: string | null) {
+  async listApartments(buildingId?: string, tenantId?: string | null, user?: AuthUser) {
+    if (user && user.role === UserRole.resident) {
+      const allowedIds = user.apartmentIds?.length
+        ? user.apartmentIds
+        : user.apartmentId
+          ? [user.apartmentId]
+          : [];
+      if (!allowedIds.length) return [];
+      const apartments = await this.prisma.apartment.findMany({
+        where: {
+          id: { in: allowedIds },
+          ...(tenantId ? { building: { tenantId } } : {}),
+        },
+        orderBy: [{ entrance: 'asc' }, { number: 'asc' }],
+        include: {
+          residents: true,
+          apartmentLinks: {
+            include: {
+              user: {
+                select: { id: true, email: true, firstName: true, lastName: true, status: true },
+              },
+            },
+            orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+          },
+        },
+      });
+      return sortByApartmentNumber(
+        apartments.map((a) => ({
+          ...a,
+          users: a.apartmentLinks.map((l) => ({
+            ...l.user,
+            isPrimary: l.isPrimary,
+          })),
+        })),
+      );
+    }
+
     const apartments = await this.prisma.apartment.findMany({
-      where: buildingId
-        ? { buildingId }
-        : tenantId
-          ? { building: { tenantId } }
-          : undefined,
+      where: {
+        ...(buildingId ? { buildingId } : {}),
+        ...(tenantId ? { building: { tenantId } } : {}),
+      },
       orderBy: [{ entrance: 'asc' }, { number: 'asc' }],
       include: {
         residents: true,
@@ -571,10 +719,11 @@ export class BuildingService {
     );
   }
 
-  getApartment(id: string) {
-    return this.prisma.apartment.findUnique({
+  async getApartment(id: string, user?: AuthUser) {
+    const apartment = await this.prisma.apartment.findUnique({
       where: { id },
       include: {
+        building: { select: { id: true, tenantId: true } },
         residents: true,
         accrualLines: {
           include: { accrual: true, allocations: true },
@@ -583,6 +732,34 @@ export class BuildingService {
         payments: { orderBy: { date: 'desc' } },
       },
     });
+    if (!apartment) throw new NotFoundException('Квартиру не знайдено');
+
+    if (user && user.role !== UserRole.super_admin) {
+      if (user.tenantId && apartment.building.tenantId !== user.tenantId) {
+        throw new ForbiddenException('Немає доступу до квартири іншої організації');
+      }
+      if (user.role === UserRole.resident) {
+        const allowedIds = user.apartmentIds?.length
+          ? user.apartmentIds
+          : user.apartmentId
+            ? [user.apartmentId]
+            : [];
+        if (!allowedIds.includes(apartment.id)) {
+          throw new ForbiddenException('Немає доступу до чужої квартири');
+        }
+      }
+    }
+
+    if (user && (user.role === UserRole.dispatcher || user.role === UserRole.crew)) {
+      return {
+        ...apartment,
+        advanceBalance: null,
+        accrualLines: [],
+        payments: [],
+      };
+    }
+
+    return apartment;
   }
 
   async createApartment(dto: CreateApartmentDto, userId: string, tenantId?: string | null) {
@@ -626,9 +803,22 @@ export class BuildingService {
    * - Removes apartments not present in the file (and their finance links)
    * - Re-links users listed in the residents column by email
    */
-  async importApartmentsCsv(csv: string, userId: string) {
-    const building = await this.prisma.building.findFirst();
+  async importApartmentsCsv(csv: string, userOrUserId: AuthUser | string, buildingId?: string) {
+    const user: AuthUser | null = typeof userOrUserId === 'object' ? userOrUserId : null;
+    const userId: string = typeof userOrUserId === 'string' ? userOrUserId : userOrUserId.id;
+
+    const building = buildingId
+      ? await this.prisma.building.findUnique({ where: { id: buildingId } })
+      : await this.prisma.building.findFirst({
+          where: user?.tenantId ? { tenantId: user.tenantId } : undefined,
+          orderBy: { createdAt: 'asc' },
+        });
     if (!building) throw new NotFoundException('Будинок не налаштовано');
+    if (user && user.role !== UserRole.super_admin) {
+      if (!user.tenantId || building.tenantId !== user.tenantId) {
+        throw new ForbiddenException('Немає доступу до будинку іншої організації');
+      }
+    }
 
     const { rows, errors } = parseApartmentsCsv(csv);
     if (!rows.length) {
@@ -694,8 +884,12 @@ export class BuildingService {
         const apartmentId = byNumber.get(row.number);
         if (!apartmentId) continue;
 
+        // Only users of THIS organization may be linked (no cross-tenant account takeover).
         const users = await tx.user.findMany({
-          where: { email: { in: emails, mode: 'insensitive' } },
+          where: {
+            email: { in: emails, mode: 'insensitive' },
+            memberships: { some: { tenantId: building.tenantId } },
+          },
           select: { id: true, apartmentId: true },
         });
         for (const u of users) {
@@ -785,9 +979,33 @@ export class BuildingService {
     await tx.apartment.deleteMany({ where: { id: { in: apartmentIds } } });
   }
 
-  async updateApartment(id: string, dto: UpdateApartmentDto, userId: string) {
+  /** Normalize legacy `userId` callers (tests) vs `AuthUser` callers (controller). */
+  private actor(userOrUserId: AuthUser | string): { userId: string; user: AuthUser | null } {
+    return typeof userOrUserId === 'string'
+      ? { userId: userOrUserId, user: null }
+      : { userId: userOrUserId.id, user: userOrUserId };
+  }
+
+  /** 404 when the apartment's building belongs to another organization. */
+  private async assertApartmentInTenant(
+    apartmentId: string,
+    user: AuthUser | null,
+  ): Promise<void> {
+    if (!user || user.role === UserRole.super_admin) return;
+    const apt = await this.prisma.apartment.findUnique({
+      where: { id: apartmentId },
+      select: { building: { select: { tenantId: true } } },
+    });
+    if (!apt || !user.tenantId || apt.building.tenantId !== user.tenantId) {
+      throw new NotFoundException('Квартиру не знайдено');
+    }
+  }
+
+  async updateApartment(id: string, dto: UpdateApartmentDto, userOrUserId: AuthUser | string) {
+    const { userId, user } = this.actor(userOrUserId);
     const existing = await this.prisma.apartment.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Квартиру не знайдено');
+    await this.assertApartmentInTenant(id, user);
 
     const apartment = await this.prisma.apartment.update({
       where: { id },
@@ -810,7 +1028,9 @@ export class BuildingService {
     return apartment;
   }
 
-  async deleteApartment(id: string, userId: string) {
+  async deleteApartment(id: string, userOrUserId: AuthUser | string) {
+    const { userId, user } = this.actor(userOrUserId);
+    await this.assertApartmentInTenant(id, user);
     const existing = await this.prisma.apartment.findUnique({
       where: { id },
       include: { apartmentLinks: true, payments: true, accrualLines: true },
@@ -833,9 +1053,15 @@ export class BuildingService {
     return { deleted: true };
   }
 
-  async createResident(apartmentId: string, dto: CreateResidentDto, userId: string) {
+  async createResident(
+    apartmentId: string,
+    dto: CreateResidentDto,
+    userOrUserId: AuthUser | string,
+  ) {
+    const { userId, user } = this.actor(userOrUserId);
     const apartment = await this.prisma.apartment.findUnique({ where: { id: apartmentId } });
     if (!apartment) throw new NotFoundException('Квартиру не знайдено');
+    await this.assertApartmentInTenant(apartmentId, user);
 
     const resident = await this.prisma.resident.create({
       data: {
@@ -860,9 +1086,11 @@ export class BuildingService {
     return resident;
   }
 
-  async updateResident(id: string, dto: UpdateResidentDto, userId: string) {
+  async updateResident(id: string, dto: UpdateResidentDto, userOrUserId: AuthUser | string) {
+    const { userId, user } = this.actor(userOrUserId);
     const existing = await this.prisma.resident.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Мешканця не знайдено');
+    await this.assertApartmentInTenant(existing.apartmentId, user);
 
     const resident = await this.prisma.resident.update({
       where: { id },
@@ -889,9 +1117,11 @@ export class BuildingService {
     return resident;
   }
 
-  async deleteResident(id: string, userId: string) {
+  async deleteResident(id: string, userOrUserId: AuthUser | string) {
+    const { userId, user } = this.actor(userOrUserId);
     const existing = await this.prisma.resident.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Мешканця не знайдено');
+    await this.assertApartmentInTenant(existing.apartmentId, user);
 
     await this.prisma.resident.delete({ where: { id } });
 

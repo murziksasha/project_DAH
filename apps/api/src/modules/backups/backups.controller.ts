@@ -1,5 +1,9 @@
+import { Permission } from '@dah/shared';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import {
   Controller,
+  ForbiddenException,
   Get,
   Param,
   Post,
@@ -11,64 +15,73 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '../../prisma/client';
 import { createReadStream } from 'fs';
 import { memoryStorage } from 'multer';
 import type { Response } from 'express';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { BackupsService } from './backups.service';
+import { PrismaService } from '../../prisma/prisma.service';
 
 /** Read/list/download: board + auditor */
-const READ_ROLES = [
-  UserRole.super_admin,
-  UserRole.chairman,
-  UserRole.board,
-  UserRole.accountant,
-  UserRole.auditor,
-] as const;
 
 /** Create/upload: no auditor, no resident */
-const WRITE_ROLES = [
-  UserRole.super_admin,
-  UserRole.chairman,
-  UserRole.board,
-  UserRole.accountant,
-] as const;
 
 @ApiTags('backups')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'), RolesGuard)
+@UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
 @Controller('backups')
 export class BackupsController {
-  constructor(private backups: BackupsService) {}
+  constructor(
+    private backups: BackupsService,
+    private prisma: PrismaService,
+  ) {}
 
-  @Roles(...READ_ROLES)
+  /**
+   * Backups are whole-database dumps (all organizations). Organization roles may see /
+   * trigger them only on a single-organization install; on shared installs — platform
+   * admin only (H4).
+   */
+  private async assertInstallLevel(user: AuthUser) {
+    if (user.role === UserRole.super_admin) return;
+    const tenants = await this.prisma.tenant.count();
+    if (tenants > 1) {
+      throw new ForbiddenException(
+        'Резервні копії спільної інсталяції доступні лише адміністратору платформи',
+      );
+    }
+  }
+
+  @RequirePermissions(Permission.READ_FINANCE)
   @Get('status')
-  status() {
+  async status(@CurrentUser() user: AuthUser) {
+    await this.assertInstallLevel(user);
     return this.backups.getStatus();
   }
 
-  @Roles(...READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
   @Get()
-  list() {
+  async list(@CurrentUser() user: AuthUser) {
+    await this.assertInstallLevel(user);
     return this.backups.list();
   }
 
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE, Permission.PLATFORM_ADMIN)
   @Post()
-  createManual(@CurrentUser() user: AuthUser) {
+  async createManual(@CurrentUser() user: AuthUser) {
+    await this.assertInstallLevel(user);
     return this.backups.createManualBackup({ source: 'api', userId: user.id });
   }
 
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE, Permission.PLATFORM_ADMIN)
   @Post('weekly')
-  ensureWeekly(@CurrentUser() user: AuthUser) {
+  async ensureWeekly(@CurrentUser() user: AuthUser) {
+    await this.assertInstallLevel(user);
     return this.backups.ensureWeeklyBackup({ source: 'api', userId: user.id });
   }
 
-  @Roles(...READ_ROLES)
+  @RequirePermissions(Permission.MANAGE_SETUP)
   @Get(':kind/:id/download')
   async download(
     @Param('kind') kind: string,
@@ -83,7 +96,7 @@ export class BackupsController {
     createReadStream(dumpPath).pipe(res);
   }
 
-  @Roles(...WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_SETUP)
   @Post('upload')
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -95,8 +108,8 @@ export class BackupsController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
-      // Default unlimited; optional BACKUP_UPLOAD_MAX_MB enforced in service
-      limits: { fileSize: Number.MAX_SAFE_INTEGER },
+      // 512 MB ceiling aligned with edge nginx client_max_body_size (optional BACKUP_UPLOAD_MAX_MB further limits in service)
+      limits: { fileSize: 512 * 1024 * 1024 },
     }),
   )
   upload(

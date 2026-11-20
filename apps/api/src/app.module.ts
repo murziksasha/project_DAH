@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { TenantScopeInterceptor } from './common/tenant-context/tenant-scope.interceptor';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AccrualsModule } from './modules/accruals/accruals.module';
 import { AuditModule } from './modules/audit/audit.module';
@@ -17,6 +18,7 @@ import { MailModule } from './modules/mail/mail.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { BootstrapModule } from './modules/bootstrap/bootstrap.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { TenantAccessModule } from './common/tenant-access/tenant-access.module';
 import { RemindersModule } from './modules/reminders/reminders.module';
 import { SetupModule } from './modules/setup/setup.module';
 import { UsersModule } from './modules/users/users.module';
@@ -41,6 +43,7 @@ import { DeepAccountingModule } from './modules/deep-accounting/deep-accounting.
       throttlers: [{ name: 'default', ttl: 60000, limit: 120 }],
     }),
     PrismaModule,
+    TenantAccessModule,
     JournalModule,
     MetersModule,
     SmsModule,
@@ -72,6 +75,9 @@ import { DeepAccountingModule } from './modules/deep-accounting/deep-accounting.
     MessengerModule,
     KepModule,
   ],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_INTERCEPTOR, useClass: TenantScopeInterceptor },
+  ],
 })
 export class AppModule {}

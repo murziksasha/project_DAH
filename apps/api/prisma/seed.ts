@@ -7,7 +7,8 @@ import {
   PrismaClient,
   UserRole,
   UserStatus,
-} from '@prisma/client';
+} from '../src/prisma/client';
+import { prismaPgAdapter } from '../src/prisma/prisma-adapter';
 import * as bcrypt from 'bcrypt';
 import { existsSync } from 'fs';
 import { resolve } from 'path';
@@ -19,7 +20,7 @@ if (existsSync(envPath)) {
   require('dotenv').config({ path: envPath });
 }
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({ adapter: prismaPgAdapter() });
 
 async function main() {
   const isProd =

@@ -1,3 +1,6 @@
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { Permission } from '@dah/shared';
 import {
   Body,
   Controller,
@@ -11,15 +14,12 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { MeterType, UserRole } from '@prisma/client';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../common/guards/roles.guard';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MetersService } from './meters.service';
+import { CreateMeterDto, MeterReadingDto } from './dto/meter.dto';
 
-const WRITE = [UserRole.chairman, UserRole.accountant, UserRole.board, UserRole.super_admin];
 
 @ApiTags('meters')
 @ApiBearerAuth()
@@ -48,29 +48,22 @@ export class MetersController {
     return this.meters.listByApartment(apartmentId);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...WRITE)
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_FINANCE, Permission.PLATFORM_ADMIN)
   @Post()
   create(
-    @Body()
-    body: {
-      apartmentId: string;
-      type: MeterType;
-      name: string;
-      unit?: string;
-      serialNumber?: string;
-    },
+    @Body() body: CreateMeterDto,
     @CurrentUser() user: AuthUser,
   ) {
     return this.meters.createMeter(body, user.id);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...WRITE)
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_FINANCE, Permission.PLATFORM_ADMIN)
   @Post(':id/readings')
   addReading(
     @Param('id') id: string,
-    @Body() body: { period: string; value: number },
+    @Body() body: MeterReadingDto,
     @CurrentUser() user: AuthUser,
   ) {
     return this.meters.addReading(id, body, user.id);
@@ -80,7 +73,7 @@ export class MetersController {
   @Post(':id/readings/self')
   async selfReading(
     @Param('id') id: string,
-    @Body() body: { period: string; value: number },
+    @Body() body: MeterReadingDto,
     @CurrentUser() user: AuthUser,
   ) {
     const row = await this.prisma.meter.findUnique({ where: { id } });
@@ -89,8 +82,8 @@ export class MetersController {
     return this.meters.addReading(id, body, user.id);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...WRITE)
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_FINANCE, Permission.PLATFORM_ADMIN)
   @Patch(':id/deactivate')
   deactivate(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.meters.deactivate(id, user.id);

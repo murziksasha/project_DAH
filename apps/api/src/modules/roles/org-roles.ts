@@ -1,4 +1,4 @@
-import { UserRole } from '@prisma/client';
+import { UserRole } from '../../prisma/client';
 
 /** System roles that can appear in a tenant catalog (not platform super_admin). */
 export const ORG_ROLE_CODES: UserRole[] = [

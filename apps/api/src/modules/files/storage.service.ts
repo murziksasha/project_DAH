@@ -1,3 +1,4 @@
+import { resolveFileDownloadSecret } from '../../common/config/secrets.config';
 import {
   DeleteObjectCommand,
   GetObjectCommand,
@@ -26,23 +27,27 @@ export class StorageService implements OnModuleInit {
 
   constructor(private config: ConfigService) {}
 
+  /** No hard-coded secret fallback in production (H6). */
+  private s3SecretKey(): string {
+    const v = this.config.get<string>('S3_SECRET_KEY');
+    if (v) return v;
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('S3_SECRET_KEY is required in production');
+    }
+    return 'dah_minio_secret_change_me';
+  }
+
   onModuleInit() {
     const endpoint = this.config.get<string>('S3_ENDPOINT', 'http://localhost:9000');
     this.bucket = this.config.get<string>('S3_BUCKET', 'dah-files');
-    this.downloadSecret =
-      this.config.get<string>('FILE_DOWNLOAD_SECRET') ||
-      this.config.get<string>('JWT_SECRET') ||
-      'dev-only-insecure-file-secret';
+    this.downloadSecret = resolveFileDownloadSecret((k) => this.config.get<string>(k));
 
     this.client = new S3Client({
       endpoint,
       region: this.config.get<string>('S3_REGION', 'us-east-1'),
       credentials: {
         accessKeyId: this.config.get<string>('S3_ACCESS_KEY', 'dah_minio'),
-        secretAccessKey: this.config.get<string>(
-          'S3_SECRET_KEY',
-          'dah_minio_secret_change_me',
-        ),
+        secretAccessKey: this.s3SecretKey(),
       },
       forcePathStyle: true,
     });

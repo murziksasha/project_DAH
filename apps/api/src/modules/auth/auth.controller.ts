@@ -1,3 +1,6 @@
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { Permission } from '@dah/shared';
 import {
   Body,
   Controller,
@@ -14,11 +17,8 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { UserRole } from '@prisma/client';
 import type { Request, Response } from 'express';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../common/guards/roles.guard';
 import { clearAuthCookies, REFRESH_COOKIE, setAuthCookies } from './auth-cookies';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
@@ -28,6 +28,8 @@ import { SelectTenantDto } from './dto/select-tenant.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { Disable2faDto, Enable2faDto, Verify2faDto } from './dto/two-factor.dto';
+import { ForgotPasswordDto, ResetPasswordDto } from './dto/password-reset.dto';
+import { EmailNotifyDto, RejectUserDto, SmsLoginRequestDto, SmsLoginVerifyDto } from './dto/sms-login.dto';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -35,11 +37,7 @@ export class AuthController {
   constructor(private auth: AuthService) {}
 
   private sessionMeta(req: Request) {
-    const xf = req.headers['x-forwarded-for'];
-    const ip =
-      typeof xf === 'string'
-        ? xf.split(',')[0]?.trim()
-        : req.socket?.remoteAddress ?? undefined;
+    const ip = req.ip ?? req.socket?.remoteAddress ?? undefined;
     return {
       userAgent: req.headers['user-agent'],
       ip,
@@ -66,13 +64,13 @@ export class AuthController {
 
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('password/forgot')
-  forgotPassword(@Body() body: { email: string }) {
+  forgotPassword(@Body() body: ForgotPasswordDto) {
     return this.auth.requestPasswordReset(body.email);
   }
 
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('password/reset')
-  resetPassword(@Body() body: { token: string; newPassword: string }) {
+  resetPassword(@Body() body: ResetPasswordDto) {
     return this.auth.resetPasswordWithToken(body.token, body.newPassword);
   }
 
@@ -105,6 +103,7 @@ export class AuthController {
       dto.tenantId,
       this.sessionMeta(req),
       dto.role,
+      user.sid,
     );
     if (result.refreshToken) {
       this.attachCookies(res, result);
@@ -121,14 +120,14 @@ export class AuthController {
 
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('login/sms/request')
-  requestSmsLogin(@Body() body: { phone: string }) {
+  requestSmsLogin(@Body() body: SmsLoginRequestDto) {
     return this.auth.requestSmsLogin(body.phone);
   }
 
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('login/sms/verify')
   async verifySmsLogin(
-    @Body() body: { phone: string; code: string },
+    @Body() body: SmsLoginVerifyDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -276,7 +275,7 @@ export class AuthController {
   @ApiBearerAuth()
   @UseGuards(AuthGuard('jwt'))
   @Patch('email-notify')
-  emailNotify(@CurrentUser() user: AuthUser, @Body() body: { enabled: boolean }) {
+  emailNotify(@CurrentUser() user: AuthUser, @Body() body: EmailNotifyDto) {
     return this.auth.setEmailNotify(user.id, Boolean(body.enabled));
   }
 
@@ -295,28 +294,28 @@ export class AuthController {
   }
 
   @ApiBearerAuth()
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(UserRole.chairman, UserRole.board)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_COMMUNICATIONS)
   @Get('pending')
   pending() {
     return this.auth.getPendingUsers();
   }
 
   @ApiBearerAuth()
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(UserRole.chairman, UserRole.board)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_COMMUNICATIONS)
   @Patch('approve/:id')
   approve(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.auth.approveUser(id, user.id);
   }
 
   @ApiBearerAuth()
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(UserRole.chairman, UserRole.board)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_COMMUNICATIONS)
   @Patch('reject/:id')
   reject(
     @Param('id') id: string,
-    @Body() body: { reason?: string },
+    @Body() body: RejectUserDto,
     @CurrentUser() user: AuthUser,
   ) {
     return this.auth.rejectUser(id, user.id, body?.reason);

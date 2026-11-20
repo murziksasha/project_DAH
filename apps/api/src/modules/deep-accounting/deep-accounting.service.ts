@@ -14,7 +14,7 @@ import {
   Prisma,
   SupplierInvoiceStatus,
   UserRole,
-} from '@prisma/client';
+} from '../../prisma/client';
 import { roundMoney } from '../../common/utils/money';
 import { resolveAccrualLineStatus } from '../../common/utils/fifo-allocation';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -304,6 +304,7 @@ export class DeepAccountingService {
     if (
       role !== UserRole.chairman &&
       role !== UserRole.accountant &&
+      role !== UserRole.board &&
       role !== UserRole.super_admin
     ) {
       throw new ForbiddenException('Недостатньо прав для approve write-off');

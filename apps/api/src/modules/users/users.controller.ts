@@ -1,11 +1,12 @@
+import { Permission } from '@dah/shared';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../common/guards/roles.guard';
+
 import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersQueryDto } from './dto/list-users.query.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -13,18 +14,18 @@ import { UsersService } from './users.service';
 
 @ApiTags('users')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'), RolesGuard)
+@UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('users')
 export class UsersController {
   constructor(private users: UsersService) {}
 
-  @Roles(UserRole.super_admin, UserRole.chairman)
+  @RequirePermissions(Permission.MANAGE_USERS)
   @Get()
   list(@Query() query: ListUsersQueryDto, @TenantId() tenantId?: string | null) {
     return this.users.listUsers(query, tenantId);
   }
 
-  @Roles(UserRole.super_admin)
+  @RequirePermissions(Permission.MANAGE_SETUP)
   @Post()
   create(
     @Body() dto: CreateUserDto,
@@ -34,7 +35,7 @@ export class UsersController {
     return this.users.createUser(dto, user.id, tenantId);
   }
 
-  @Roles(UserRole.super_admin)
+  @RequirePermissions(Permission.MANAGE_SETUP)
   @Patch(':id')
   update(
     @Param('id') id: string,
@@ -45,7 +46,7 @@ export class UsersController {
     return this.users.updateUser(id, dto, user.id, tenantId);
   }
 
-  @Roles(UserRole.super_admin, UserRole.chairman)
+  @RequirePermissions(Permission.MANAGE_USERS)
   @Patch(':id/block')
   block(
     @Param('id') id: string,
@@ -55,7 +56,7 @@ export class UsersController {
     return this.users.blockUser(id, user.id, tenantId);
   }
 
-  @Roles(UserRole.super_admin)
+  @RequirePermissions(Permission.MANAGE_SETUP)
   @Post(':id/apartments/:apartmentId')
   linkApartment(
     @Param('id') id: string,
@@ -65,7 +66,7 @@ export class UsersController {
     return this.users.linkApartment(id, apartmentId, user.id);
   }
 
-  @Roles(UserRole.super_admin)
+  @RequirePermissions(Permission.MANAGE_SETUP)
   @Delete(':id/apartments/:apartmentId')
   unlinkApartment(
     @Param('id') id: string,

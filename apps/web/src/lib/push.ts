@@ -1,4 +1,5 @@
-import { apiFetch, getToken } from './api';
+import { apiFetch, getToken } from './api';
+import type { ApiResponse } from '@/lib/api-types';
 
 export type PushSubscribeError =
   | 'no_token'
@@ -27,7 +28,7 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
 
 export async function isPushConfigured(): Promise<boolean> {
   try {
-    const { publicKey } = await apiFetch<{ publicKey: string | null }>(
+    const { publicKey } = await apiFetch<ApiResponse<'/notifications/vapid-public-key'>>(
       '/notifications/vapid-public-key',
     );
     return Boolean(publicKey);
@@ -40,7 +41,7 @@ export async function subscribeToPush(): Promise<void> {
   const token = getToken();
   if (!token) throw new Error('Увійдіть у систему, щоб увімкнути сповіщення');
 
-  const { publicKey } = await apiFetch<{ publicKey: string | null }>(
+  const { publicKey } = await apiFetch<ApiResponse<'/notifications/vapid-public-key'>>(
     '/notifications/vapid-public-key',
   );
   if (!publicKey) {

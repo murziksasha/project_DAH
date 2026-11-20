@@ -6,7 +6,8 @@ import { useI18n } from '@/components/LocaleProvider';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { apiFetch, getToken } from '@/lib/api';
-import { withBuildingBody } from '@/lib/building-context';
+import { withBuildingBody } from '@/lib/building-context';
+import type { ApiResponse } from '@/lib/api-types';
 
 interface Supplier {
   id: string;
@@ -51,13 +52,13 @@ export default function SuppliersPage() {
       window.location.href = '/login';
       return;
     }
-    setSuppliers(await apiFetch<Supplier[]>('/finance/suppliers', { token }));
+    setSuppliers(await apiFetch<ApiResponse<'/finance/suppliers'>>('/finance/suppliers', { token }));
   }, []);
 
   const loadCategories = useCallback(async () => {
     const token = getToken();
     if (!token) return;
-    setCategories(await apiFetch<Category[]>('/finance/categories', { token }));
+    setCategories(await apiFetch<ApiResponse<'/finance/categories'>>('/finance/categories', { token }));
   }, []);
 
   useEffect(() => {

@@ -49,6 +49,8 @@ http {
         }
 
         location / {
+            # L7: CSP with inline-script hashes (apps/web postbuild)
+            include @@DAH_ROOT@@/apps/web/.csp/*.conf;
             try_files $uri $uri/ $uri/index.html /index.html;
         }
     }

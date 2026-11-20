@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '@/components/LocaleProvider';
 import { apiFetch, getToken } from '@/lib/api';
 import { logout } from '@/lib/auth';
-import { formatDateUk } from '@/lib/money';
+import { formatDateUk } from '@/lib/money';
+import type { ApiResponse } from '@/lib/api-types';
 
 interface SessionItem {
   id: string;
@@ -35,7 +36,7 @@ export function SessionsPanel() {
     if (!token) return;
     setLoading(true);
     try {
-      const res = await apiFetch<{ items: SessionItem[] }>('/auth/sessions', { token });
+      const res = await apiFetch<ApiResponse<'/auth/sessions'>>('/auth/sessions', { token });
       setItems(res.items ?? []);
       setError('');
     } catch (err) {

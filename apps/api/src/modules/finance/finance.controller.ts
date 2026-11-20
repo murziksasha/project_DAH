@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  NotFoundException,
   Param,
   Patch,
   Post,
@@ -12,14 +13,11 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
 import { Response } from 'express';
 import { Permission } from '@dah/shared';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
-import { RolesGuard } from '../../common/guards/roles.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { CreateBankAccountDto, UpdateBankAccountDto } from './dto/bank-account.dto';
 import { CreateBudgetLineDto, UpdateBudgetLineDto } from './dto/budget.dto';
@@ -34,24 +32,26 @@ import { CreateSupplierDto } from './dto/create-supplier.dto';
 import { UpdateFundDto } from './dto/update-fund.dto';
 import { VoidExpenseDto } from './dto/void-expense.dto';
 import { FinanceService } from './finance.service';
-
-const FINANCE_WRITE_ROLES = [UserRole.chairman, UserRole.accountant, UserRole.board];
-const FINANCE_READ_ROLES = [
-  ...FINANCE_WRITE_ROLES,
-  UserRole.auditor,
-  UserRole.super_admin,
-];
+import { TenantAccessService } from '../../common/tenant-access/tenant-access.service';
+import { PrismaService } from '../../prisma/prisma.service';
 
 @ApiTags('finance')
 @ApiBearerAuth()
 @UseGuards(AuthGuard('jwt'))
 @Controller('finance')
 export class FinanceController {
-  constructor(private finance: FinanceService) {}
+  constructor(
+    private finance: FinanceService,
+    private access: TenantAccessService,
+    private prisma: PrismaService,
+  ) {}
 
-  @UseGuards(RolesGuard, PermissionsGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  private scope(user: AuthUser, tenantId?: string | null) {
+    return this.access.effectiveTenantId(user, tenantId ?? null);
+  }
+
   @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('funds')
   listFunds(
     @Query('buildingId') buildingId?: string,
@@ -60,8 +60,8 @@ export class FinanceController {
     return this.finance.listFunds(buildingId, tenantId);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post('funds')
   createFund(
     @Body() dto: CreateFundDto,
@@ -71,8 +71,8 @@ export class FinanceController {
     return this.finance.createFund(dto, user.id, tenantId);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('bank-accounts')
   listBankAccounts(
     @Query('buildingId') buildingId?: string,
@@ -81,8 +81,8 @@ export class FinanceController {
     return this.finance.listBankAccounts(buildingId, tenantId);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.chairman, UserRole.accountant)
+  @RequirePermissions(Permission.FINANCE_ADMIN)
+  @UseGuards(PermissionsGuard)
   @Post('bank-accounts')
   createBankAccount(
     @Body() dto: CreateBankAccountDto,
@@ -92,65 +92,94 @@ export class FinanceController {
     return this.finance.createBankAccount(dto, user.id, tenantId);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.chairman, UserRole.accountant)
+  @RequirePermissions(Permission.FINANCE_ADMIN)
+  @UseGuards(PermissionsGuard)
   @Patch('bank-accounts/:id')
-  updateBankAccount(
+  async updateBankAccount(
     @Param('id') id: string,
     @Body() dto: UpdateBankAccountDto,
     @CurrentUser() user: AuthUser,
+    @TenantId() tenantId?: string | null,
   ) {
+    const ba = await this.prisma.bankAccount.findUnique({
+      where: { id },
+      select: { buildingId: true },
+    });
+    if (!ba) throw new NotFoundException('Рахунок не знайдено');
+    await this.access.assertBuilding(user, ba.buildingId, tenantId);
     return this.finance.updateBankAccount(id, dto, user.id);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.chairman, UserRole.accountant)
+  @RequirePermissions(Permission.FINANCE_ADMIN)
+  @UseGuards(PermissionsGuard)
   @Delete('bank-accounts/:id')
   deleteBankAccount(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.finance.deleteBankAccount(id, user.id);
+    return this.finance.deleteBankAccount(
+      id,
+      user.id,
+      user.role === 'super_admin' ? null : user.tenantId,
+    );
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.chairman, UserRole.accountant)
+  @RequirePermissions(Permission.FINANCE_ADMIN)
+  @UseGuards(PermissionsGuard)
   @Patch('funds/:id')
-  updateFund(
+  async updateFund(
     @Param('id') id: string,
     @Body() dto: UpdateFundDto,
     @CurrentUser() user: AuthUser,
+    @TenantId() tenantId?: string | null,
   ) {
+    const fund = await this.access.assertFund(user, id, tenantId);
+    if (dto.bankAccountId) {
+      await this.access.assertRefsInBuilding(fund.buildingId, { bankAccountIds: [dto.bankAccountId] });
+    }
     return this.finance.updateFund(id, dto, user.id);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('categories')
-  listCategories() {
-    return this.finance.listCategories();
+  listCategories(@CurrentUser() user: AuthUser, @TenantId() tenantId?: string | null) {
+    return this.finance.listCategories(this.scope(user, tenantId));
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post('categories')
-  createCategory(@Body() dto: CreateCategoryDto) {
-    return this.finance.createCategory(dto);
+  createCategory(
+    @Body() dto: CreateCategoryDto,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId?: string | null,
+  ) {
+    return this.finance.createCategory(dto, this.scope(user, tenantId));
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Patch('categories/:id')
-  updateCategory(@Param('id') id: string, @Body() dto: CreateCategoryDto) {
-    return this.finance.updateCategory(id, dto);
+  updateCategory(
+    @Param('id') id: string,
+    @Body() dto: CreateCategoryDto,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId?: string | null,
+  ) {
+    return this.finance.updateCategory(id, dto, this.scope(user, tenantId));
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.chairman, UserRole.accountant)
+  @RequirePermissions(Permission.FINANCE_ADMIN)
+  @UseGuards(PermissionsGuard)
   @Delete('categories/:id')
-  deleteCategory(@Param('id') id: string) {
-    return this.finance.deleteCategory(id);
+  deleteCategory(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId?: string | null,
+  ) {
+    return this.finance.deleteCategory(id, this.scope(user, tenantId));
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('suppliers')
   listSuppliers(
     @Query('buildingId') buildingId?: string,
@@ -159,8 +188,8 @@ export class FinanceController {
     return this.finance.listSuppliers(buildingId, tenantId);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post('suppliers')
   createSupplier(
     @Body() dto: CreateSupplierDto,
@@ -169,15 +198,20 @@ export class FinanceController {
     return this.finance.createSupplier(dto, tenantId);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_WRITE_ROLES)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Patch('suppliers/:id')
-  updateSupplier(@Param('id') id: string, @Body() dto: CreateSupplierDto) {
-    return this.finance.updateSupplier(id, dto);
+  updateSupplier(
+    @Param('id') id: string,
+    @Body() dto: CreateSupplierDto,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId?: string | null,
+  ) {
+    return this.finance.updateSupplier(id, dto, this.scope(user, tenantId));
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('expenses')
   listExpenses(
     @Query('fundId') fundId?: string,
@@ -201,41 +235,44 @@ export class FinanceController {
     });
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('expenses/:id')
-  getExpense(@Param('id') id: string) {
-    return this.finance.getExpense(id);
+  getExpense(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId?: string | null,
+  ) {
+    return this.finance.getExpense(id, this.scope(user, tenantId));
   }
 
-  @UseGuards(RolesGuard, PermissionsGuard)
-  @Roles(...FINANCE_WRITE_ROLES)
   @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post('expenses')
   createExpense(@Body() dto: CreateExpenseDto, @CurrentUser() user: AuthUser) {
-    return this.finance.createExpense(dto, user.id);
+    return this.finance.createExpense(dto, user);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.chairman, UserRole.board, UserRole.accountant)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post('expenses/:id/approve')
   approveExpense(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.finance.approveExpense(id, user.id);
+    return this.finance.approveExpense(id, user);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.chairman, UserRole.accountant)
+  @RequirePermissions(Permission.FINANCE_ADMIN)
+  @UseGuards(PermissionsGuard)
   @Patch('expenses/:id/void')
   voidExpense(
     @Param('id') id: string,
     @Body() dto: VoidExpenseDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.finance.voidExpense(id, dto.reason, user.id);
+    return this.finance.voidExpense(id, dto.reason, user);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('reports/cash-flow')
   cashFlow(
     @Query('from') from?: string,
@@ -251,15 +288,21 @@ export class FinanceController {
     return this.finance.getCashFlowReport(from, to, buildingId, tenantId, src);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('sot-status')
-  sotStatus(@Query('buildingId') buildingId?: string) {
-    return this.finance.getSotStatus(buildingId);
+  async sotStatus(
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId?: string | null,
+    @Query('buildingId') buildingId?: string,
+  ) {
+    return this.finance.getSotStatus(
+      await this.access.resolveBuilding(user, buildingId, tenantId).catch(() => undefined),
+    );
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('reports/expenses-summary')
   expensesSummary(
     @Query('from') from?: string,
@@ -270,8 +313,8 @@ export class FinanceController {
     return this.finance.getExpensesSummary(from, to, buildingId, tenantId);
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('reports/board.pdf')
   async boardReportPdf(
     @Query('from') from: string | undefined,
@@ -292,8 +335,8 @@ export class FinanceController {
   }
 
   /** ZIP of Excel (.xlsx) reports (cash-flow, debtors, expenses, 1C-style). */
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('reports/export-pack.zip')
   async exportPack(
     @Query('from') from: string | undefined,
@@ -315,83 +358,127 @@ export class FinanceController {
 
   // ── Budget ──────────────────────────────────────────────────────
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('budget')
-  listBudget(
+  async listBudget(
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
     @Query('buildingId') buildingId: string,
     @Query('year') year: string,
   ) {
+    await this.access.assertBuilding(user, buildingId, tenantId);
     return this.finance.listBudgetLines(buildingId, Number(year) || new Date().getFullYear());
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('budget/plan-fact')
-  budgetPlanFact(
+  async budgetPlanFact(
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
     @Query('buildingId') buildingId: string,
     @Query('year') year: string,
   ) {
+    await this.access.assertBuilding(user, buildingId, tenantId);
     return this.finance.budgetPlanFact(
       buildingId,
       Number(year) || new Date().getFullYear(),
     );
   }
 
-  @UseGuards(RolesGuard, PermissionsGuard)
-  @Roles(...FINANCE_WRITE_ROLES)
   @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post('budget')
-  createBudget(@Body() dto: CreateBudgetLineDto, @CurrentUser() user: AuthUser) {
+  async createBudget(
+    @Body() dto: CreateBudgetLineDto,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+  ) {
+    const b = await this.access.assertBuilding(user, dto.buildingId, tenantId);
+    await this.access.assertRefsInBuilding(b.id, { fundIds: [dto.fundId] });
+    await this.finance.assertCategoryVisible(dto.categoryId, b.tenantId);
     return this.finance.createBudgetLine(dto, user.id);
   }
 
-  @UseGuards(RolesGuard, PermissionsGuard)
-  @Roles(...FINANCE_WRITE_ROLES)
   @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Patch('budget/:id')
-  updateBudget(
+  async updateBudget(
     @Param('id') id: string,
     @Body() dto: UpdateBudgetLineDto,
     @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
   ) {
+    const b = await this.budgetBuilding(user, tenantId, id);
+    await this.access.assertRefsInBuilding(b.id, { fundIds: [dto.fundId] });
+    await this.finance.assertCategoryVisible(dto.categoryId, b.tenantId);
     return this.finance.updateBudgetLine(id, dto, user.id);
   }
 
-  @UseGuards(RolesGuard, PermissionsGuard)
-  @Roles(...FINANCE_WRITE_ROLES)
   @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Delete('budget/:id')
-  deleteBudget(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+  async deleteBudget(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+  ) {
+    await this.budgetBuilding(user, tenantId, id);
     return this.finance.deleteBudgetLine(id, user.id);
   }
 
   // ── Fund transfers ──────────────────────────────────────────────
 
-  @UseGuards(RolesGuard)
-  @Roles(...FINANCE_READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Get('transfers')
-  listTransfers(@Query('buildingId') buildingId?: string) {
-    return this.finance.listFundTransfers(buildingId);
+  async listTransfers(
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId?: string | null,
+    @Query('buildingId') buildingId?: string,
+  ) {
+    if (buildingId) await this.access.assertBuilding(user, buildingId, tenantId);
+    return this.finance.listFundTransfers(buildingId, this.scope(user, tenantId));
   }
 
-  @UseGuards(RolesGuard, PermissionsGuard)
-  @Roles(...FINANCE_WRITE_ROLES)
   @RequirePermissions(Permission.MANAGE_FINANCE)
+  @UseGuards(PermissionsGuard)
   @Post('transfers')
-  createTransfer(@Body() dto: CreateFundTransferDto, @CurrentUser() user: AuthUser) {
+  async createTransfer(
+    @Body() dto: CreateFundTransferDto,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId?: string | null,
+  ) {
+    const from = await this.access.assertFund(user, dto.fromFundId, tenantId);
+    await this.access.assertRefsInBuilding(from.buildingId, { fundIds: [dto.toFundId] });
     return this.finance.createFundTransfer(dto, user.id);
   }
 
-  @UseGuards(RolesGuard, PermissionsGuard)
-  @Roles(UserRole.chairman, UserRole.accountant)
-  @RequirePermissions(Permission.MANAGE_FINANCE)
+  @RequirePermissions(Permission.FINANCE_ADMIN)
+  @UseGuards(PermissionsGuard)
   @Patch('transfers/:id/void')
-  voidTransfer(
+  async voidTransfer(
     @Param('id') id: string,
     @Body() dto: VoidFundTransferDto,
     @CurrentUser() user: AuthUser,
+    @TenantId() tenantId?: string | null,
   ) {
+    const t = await this.prisma.fundTransfer.findUnique({
+      where: { id },
+      select: { fromFundId: true },
+    });
+    if (!t) throw new NotFoundException('Переказ не знайдено');
+    await this.access.assertFund(user, t.fromFundId, tenantId);
     return this.finance.voidFundTransfer(id, dto.reason, user.id);
+  }
+
+  private async budgetBuilding(user: AuthUser, tenantId: string | null, id: string) {
+    const line = await this.prisma.budgetLine.findUnique({
+      where: { id },
+      select: { buildingId: true },
+    });
+    if (!line) throw new NotFoundException('Рядок бюджету не знайдено');
+    return this.access.assertBuilding(user, line.buildingId, tenantId);
   }
 }

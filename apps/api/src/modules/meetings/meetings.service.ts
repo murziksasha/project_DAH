@@ -12,7 +12,7 @@ import {
   Prisma,
   UserRole,
   VoteWeightMode,
-} from '@prisma/client';
+} from '../../prisma/client';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -30,6 +30,31 @@ const MANAGE_ROLES: UserRole[] = [
   UserRole.super_admin,
 ];
 
+/**
+ * Who may vote at general meetings: apartment owners only (ЗУ «Про ОСББ», ст. 10).
+ * Staff roles (accountant, dispatcher, brigade, auditor, platform admin) never vote
+ * by role; chairman/board vote only for apartments linked to their account.
+ */
+export const MEETING_VOTER_ROLES: ReadonlySet<UserRole> = new Set([
+  UserRole.resident,
+  UserRole.chairman,
+  UserRole.board,
+]);
+
+/** Vote weight of one apartment for the meeting mode. */
+export function apartmentVoteWeight(mode: VoteWeightMode, area: number | null | undefined): number {
+  if (mode === VoteWeightMode.by_area) {
+    const a = Number(area ?? 0);
+    return a > 0 ? a : 0;
+  }
+  return 1;
+}
+
+function linkedApartmentIds(user: AuthUser): string[] {
+  if (user.apartmentIds?.length) return user.apartmentIds;
+  return user.apartmentId ? [user.apartmentId] : [];
+}
+
 @Injectable()
 export class MeetingsService {
   constructor(
@@ -39,12 +64,68 @@ export class MeetingsService {
     private kep: KepService,
   ) {}
 
+  /** Meeting of the caller's organization (404 otherwise). */
+  private async loadMeeting(id: string, user: AuthUser) {
+    const meeting = await this.prisma.meeting.findUnique({ where: { id } });
+    if (!meeting) throw new NotFoundException('Збори не знайдено');
+    this.assertMeetingTenant(meeting, user);
+    return meeting;
+  }
+
+  private assertMeetingTenant(meeting: { tenantId: string | null }, user: AuthUser) {
+    if (user.role === UserRole.super_admin) return;
+    if (!user.tenantId || meeting.tenantId !== user.tenantId) {
+      throw new NotFoundException('Збори не знайдено');
+    }
+  }
+
+  /**
+   * Apartments the user may vote for at this meeting: linked to the account and
+   * located in the meeting's building (or organization when no building is set).
+   */
+  async eligibleApartments(
+    meeting: { tenantId: string | null; buildingId: string | null },
+    user: AuthUser,
+  ): Promise<Array<{ id: string; area: number }>> {
+    if (!MEETING_VOTER_ROLES.has(user.role as UserRole)) {
+      throw new ForbiddenException('Голосують лише власники квартир');
+    }
+    const ids = linkedApartmentIds(user);
+    if (!ids.length) {
+      throw new ForbiddenException('Голосують лише власники квартир (немає привʼязаної квартири)');
+    }
+    const apts = await this.prisma.apartment.findMany({
+      where: {
+        id: { in: ids },
+        ...(meeting.buildingId
+          ? { buildingId: meeting.buildingId }
+          : meeting.tenantId
+            ? { building: { tenantId: meeting.tenantId } }
+            : {}),
+      },
+      select: { id: true, area: true },
+    });
+    if (!apts.length) {
+      throw new ForbiddenException('Ваша квартира не належить будинку цих зборів');
+    }
+    return apts;
+  }
+
   list(user: AuthUser) {
     const isStaff = MANAGE_ROLES.includes(user.role as UserRole);
+    const tenantFilter: Prisma.MeetingWhereInput =
+      user.role === UserRole.super_admin || !user.tenantId
+        ? {}
+        : { tenantId: user.tenantId };
+    const statusFilter: Prisma.MeetingWhereInput = isStaff
+      ? {}
+      : { status: { in: [MeetingStatus.scheduled, MeetingStatus.open, MeetingStatus.closed] } };
+
     return this.prisma.meeting.findMany({
-      where: isStaff
-        ? undefined
-        : { status: { in: [MeetingStatus.scheduled, MeetingStatus.open, MeetingStatus.closed] } },
+      where: {
+        ...tenantFilter,
+        ...statusFilter,
+      },
       orderBy: { scheduledAt: 'desc' },
       include: {
         agendaItems: { orderBy: { sortOrder: 'asc' } },
@@ -65,6 +146,7 @@ export class MeetingsService {
                 optionKey: true,
                 weight: true,
                 userId: true,
+                apartmentId: true,
               },
             },
           },
@@ -83,6 +165,8 @@ export class MeetingsService {
       },
     });
     if (!meeting) throw new NotFoundException('Збори не знайдено');
+    this.assertMeetingTenant(meeting, user);
+    const myApartments = linkedApartmentIds(user);
 
     const agenda = meeting.agendaItems.map((item) => {
       const byOption: Record<string, number> = {};
@@ -92,7 +176,9 @@ export class MeetingsService {
         byOption[v.optionKey] = (byOption[v.optionKey] ?? 0) + w;
         totalWeight += w;
       }
-      const myVote = item.votes.find((v) => v.userId === user.id);
+      const myVote =
+        item.votes.find((v) => v.userId === user.id) ??
+        item.votes.find((v) => v.apartmentId && myApartments.includes(v.apartmentId));
       return {
         id: item.id,
         title: item.title,
@@ -110,6 +196,13 @@ export class MeetingsService {
       0,
     );
     const signedCount = meeting.signatures.filter((s) => s.status === 'signed').length;
+    const verifiedCount = meeting.signatures.filter(
+      (s) =>
+        s.status === 'signed' &&
+        Boolean(
+          (s.signaturePayload as Record<string, unknown> | null)?.verified === true,
+        ),
+    ).length;
 
     // Eligible weight for by_area / one_per_apartment (building apartments)
     let eligibleWeight = participantWeight;
@@ -143,6 +236,7 @@ export class MeetingsService {
         eligibleWeight,
         participationPercent,
         signedCount,
+        verifiedCount,
         quorumPercent,
         quorumMet,
       },
@@ -154,11 +248,22 @@ export class MeetingsService {
       throw new ForbiddenException();
     }
 
+    if (dto.buildingId && user.role !== UserRole.super_admin && user.tenantId) {
+      const b = await this.prisma.building.findUnique({
+        where: { id: dto.buildingId },
+        select: { tenantId: true },
+      });
+      if (!b || b.tenantId !== user.tenantId) {
+        throw new BadRequestException('Будинок не належить вашій організації');
+      }
+    }
+
     const meeting = await this.prisma.meeting.create({
       data: {
         title: dto.title,
         description: dto.description,
         type: dto.type ?? MeetingType.general,
+        tenantId: user.tenantId ?? null,
         buildingId: dto.buildingId,
         scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
         endsAt: dto.endsAt ? new Date(dto.endsAt) : null,
@@ -216,8 +321,7 @@ export class MeetingsService {
     if (!MANAGE_ROLES.includes(user.role as UserRole)) {
       throw new ForbiddenException();
     }
-    const meeting = await this.prisma.meeting.findUnique({ where: { id } });
-    if (!meeting) throw new NotFoundException('Збори не знайдено');
+    const meeting = await this.loadMeeting(id, user);
 
     this.assertStatusTransition(meeting.status, status);
 
@@ -242,36 +346,41 @@ export class MeetingsService {
     return updated;
   }
 
-  async register(id: string, user: AuthUser) {
-    const meeting = await this.prisma.meeting.findUnique({ where: { id } });
-    if (!meeting) throw new NotFoundException('Збори не знайдено');
+  /**
+   * Register the caller's eligible apartment(s) as participants (one row per apartment;
+   * a co-owner registering the same apartment does not double the quorum weight).
+   */
+  async register(id: string, user: AuthUser, apartmentId?: string) {
+    const meeting = await this.loadMeeting(id, user);
     if (meeting.status !== MeetingStatus.open && meeting.status !== MeetingStatus.scheduled) {
       throw new BadRequestException('Реєстрація недоступна для цього статусу');
     }
-
-    let weight = 1;
-    if (meeting.voteWeight === VoteWeightMode.by_area && user.apartmentId) {
-      const apt = await this.prisma.apartment.findUnique({ where: { id: user.apartmentId } });
-      weight = apt?.area ?? 1;
+    let apts = await this.eligibleApartments(meeting, user);
+    if (apartmentId) {
+      apts = apts.filter((a) => a.id === apartmentId);
+      if (!apts.length) throw new ForbiddenException('Немає права голосу за цю квартиру');
     }
 
-    const participant = await this.prisma.meetingParticipant.upsert({
-      where: { meetingId_userId: { meetingId: id, userId: user.id } },
-      create: {
-        meetingId: id,
-        userId: user.id,
-        apartmentId: user.apartmentId,
-        weight,
-      },
-      update: { weight },
-    });
-
-    return participant;
+    const rows = [];
+    for (const apt of apts) {
+      const weight = apartmentVoteWeight(meeting.voteWeight, apt.area);
+      rows.push(
+        await this.prisma.meetingParticipant.upsert({
+          where: { meetingId_apartmentId: { meetingId: id, apartmentId: apt.id } },
+          create: { meetingId: id, userId: user.id, apartmentId: apt.id, weight },
+          update: { weight },
+        }),
+      );
+    }
+    return { ...rows[0], participants: rows };
   }
 
+  /**
+   * One vote per apartment per agenda item (re-vote overwrites). Weight follows the
+   * meeting mode: 1 per apartment or apartment area (by_area).
+   */
   async vote(meetingId: string, agendaItemId: string, dto: VoteAgendaDto, user: AuthUser) {
-    const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId } });
-    if (!meeting) throw new NotFoundException('Збори не знайдено');
+    const meeting = await this.loadMeeting(meetingId, user);
     if (meeting.status !== MeetingStatus.open) {
       throw new BadRequestException('Голосування доступне лише для відкритих зборів');
     }
@@ -288,26 +397,32 @@ export class MeetingsService {
       throw new BadRequestException(`Невідомий варіант. Доступні: ${options.join(', ')}`);
     }
 
-    // Auto-register if needed
-    let participant = await this.prisma.meetingParticipant.findUnique({
-      where: { meetingId_userId: { meetingId, userId: user.id } },
+    const apts = await this.eligibleApartments(meeting, user);
+    const target = dto.apartmentId
+      ? apts.find((a) => a.id === dto.apartmentId)
+      : (apts.find((a) => a.id === user.apartmentId) ?? apts[0]);
+    if (!target) throw new ForbiddenException('Немає права голосу за цю квартиру');
+    const weight = apartmentVoteWeight(meeting.voteWeight, target.area);
+
+    // Auto-register the apartment if needed
+    await this.prisma.meetingParticipant.upsert({
+      where: { meetingId_apartmentId: { meetingId, apartmentId: target.id } },
+      create: { meetingId, userId: user.id, apartmentId: target.id, weight },
+      update: { weight },
     });
-    if (!participant) {
-      participant = await this.register(meetingId, user);
-    }
 
     const vote = await this.prisma.meetingVote.upsert({
       where: {
-        agendaItemId_userId: { agendaItemId, userId: user.id },
+        agendaItemId_apartmentId: { agendaItemId, apartmentId: target.id },
       },
       create: {
         agendaItemId,
         userId: user.id,
-        apartmentId: user.apartmentId,
+        apartmentId: target.id,
         optionKey: dto.optionKey,
-        weight: participant.weight,
+        weight,
       },
-      update: { optionKey: dto.optionKey, weight: participant.weight },
+      update: { optionKey: dto.optionKey, weight, userId: user.id },
     });
 
     return vote;
@@ -317,8 +432,7 @@ export class MeetingsService {
    * Build canonical text for QES (protocol snapshot).
    */
   async buildSignDocument(meetingId: string, user: AuthUser) {
-    const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId } });
-    if (!meeting) throw new NotFoundException('Збори не знайдено');
+    const meeting = await this.loadMeeting(meetingId, user);
     if (
       meeting.status !== MeetingStatus.open &&
       meeting.status !== MeetingStatus.closed
@@ -440,8 +554,10 @@ export class MeetingsService {
 
   /** PDF buffer of saved protocol (builds text first if missing). */
   async protocolPdf(id: string, user: AuthUser): Promise<{ buffer: Buffer; filename: string }> {
-    let meeting = await this.prisma.meeting.findUnique({ where: { id } });
-    if (!meeting) throw new NotFoundException('Збори не знайдено');
+    let meeting: Awaited<ReturnType<typeof this.loadMeeting>> | null = await this.loadMeeting(
+      id,
+      user,
+    );
     if (!meeting.protocolText) {
       await this.buildProtocol(id, user);
       meeting = await this.prisma.meeting.findUnique({ where: { id } });

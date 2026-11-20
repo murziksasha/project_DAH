@@ -7,9 +7,9 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { UserRole, UserStatus } from '@prisma/client';
+import { UserRole, UserStatus } from '../../prisma/client';
 import * as bcrypt from 'bcrypt';
-import { createHash, randomBytes, randomUUID } from 'crypto';
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'crypto';
 import { resolveJwtSecret } from '../../common/config/jwt.config';
 import { assertPasswordStrength } from '../../common/utils/password-policy';
 import { openSecret, sealSecret } from '../../common/utils/secret-box';
@@ -112,9 +112,11 @@ export class AuthService {
     }
     if (settings.registrationInviteCode) {
       const code = (dto.inviteCode ?? '').trim();
-      if (!code || code !== settings.registrationInviteCode) {
+      if (!code || !inviteCodeMatches(code, settings.registrationInviteCode)) {
         throw new BadRequestException('Невірний код запрошення');
       }
+    } else if (this.registrationRequiresInvite()) {
+      throw new BadRequestException('Реєстрація можлива лише за кодом запрошення від правління');
     }
 
     const email = dto.email.trim().toLowerCase();
@@ -166,7 +168,7 @@ export class AuthService {
       actionPath: '/login?pending=1',
       actionLabel: 'Сторінка входу',
     });
-    void this.mail.notifyAdmins('registration.new_request', {
+    void this.mail.notifyAdmins(tenantId, 'registration.new_request', {
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
@@ -231,7 +233,7 @@ export class AuthService {
         return this.completeLogin(activeUser, meta);
       }
       const tempToken = await this.jwt.signAsync(
-        { sub: activeUser.id, purpose: '2fa' },
+        { sub: activeUser.id, purpose: '2fa', typ: '2fa' },
         { expiresIn: '5m', secret: resolveJwtSecret(this.config) },
       );
       return {
@@ -816,11 +818,19 @@ export class AuthService {
    * If any building has registrationInviteCode, inviteCode is required and filters that building.
    * Without invite config, returns apartments of the first building (single-OSBB mode).
    */
+  /** REGISTRATION_REQUIRE_INVITE=true: no open (invite-less) self-registration, no apartment list without a code. */
+  private registrationRequiresInvite(): boolean {
+    return this.config.get<string>('REGISTRATION_REQUIRE_INVITE', 'false') === 'true';
+  }
+
   async listApartmentsForRegistration(inviteCode?: string) {
-    const buildings = await this.prisma.building.findMany({
-      select: { id: true, settings: true, name: true },
-      orderBy: { createdAt: 'asc' },
-    });
+    // Phase 3 review: buildings with registration switched off are never listed publicly.
+    const buildings = (
+      await this.prisma.building.findMany({
+        select: { id: true, settings: true, name: true },
+        orderBy: { createdAt: 'asc' },
+      })
+    ).filter((b) => parseBuildingSettings(b.settings).registrationEnabled !== false);
 
     const withInvite = buildings.filter((b) => {
       const s = parseBuildingSettings(b.settings);
@@ -840,12 +850,18 @@ export class AuthService {
       }
       const matched = withInvite.filter((b) => {
         const s = parseBuildingSettings(b.settings);
-        return s.registrationInviteCode === code;
+        return inviteCodeMatches(code, s.registrationInviteCode ?? '');
       });
       if (!matched.length) {
         throw new BadRequestException('Невірний код запрошення');
       }
       buildingIds = matched.map((b) => b.id);
+    } else if (this.registrationRequiresInvite()) {
+      return {
+        requiresInvite: true as const,
+        apartments: [] as Array<{ id: string; entrance: number; number: string }>,
+        message: 'Реєстрація можлива лише за кодом запрошення від правління',
+      };
     } else {
       // No invite: only expose first building (limit enumeration for multi-building)
       const first = buildings[0];
@@ -1095,7 +1111,7 @@ export class AuthService {
 
     if (full.totpEnabled && this.totpPlain(full.totpSecret)) {
       const tempToken = await this.jwt.signAsync(
-        { sub: full.id, purpose: '2fa' },
+        { sub: full.id, purpose: '2fa', typ: '2fa' },
         { expiresIn: '5m', secret: resolveJwtSecret(this.config) },
       );
       return {
@@ -1281,6 +1297,7 @@ export class AuthService {
     tenantId: string,
     meta: SessionMeta = {},
     role?: UserRole,
+    currentSid?: string | null,
   ) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user || user.status === UserStatus.blocked) {
@@ -1340,17 +1357,68 @@ export class AuthService {
       throw new UnauthorizedException(TENANT_INACTIVE_MESSAGE);
     }
 
-    const updated = await this.prisma.user.update({
-      where: { id: userId },
+    let familyId: string = randomUUID();
+    if (currentSid) {
+      const prevSession = await this.prisma.authSession.findUnique({
+        where: { id: currentSid },
+      });
+      if (prevSession && prevSession.userId === userId) {
+        familyId = prevSession.familyId;
+        await this.prisma.authSession.update({
+          where: { id: currentSid },
+          data: { revokedAt: new Date() },
+        });
+      }
+    }
+
+    const tokens = await this.issueSessionTokens(
+      user.id,
+      user.email,
+      membership.role,
+      familyId,
+      meta,
+      membership.tenantId,
+    );
+
+    const refreshHash = await bcrypt.hash(tokens.refreshToken, 10);
+    await this.prisma.user.update({
+      where: { id: user.id },
       data: {
+        refreshToken: refreshHash,
         tenantId: membership.tenantId,
         role: membership.role,
-        status: membership.status,
       },
     });
 
-    await this.revokeAllSessions(userId);
-    return this.completeLogin(updated, meta);
+    await this.audit.log({
+      userId: user.id,
+      action: 'auth.select_tenant',
+      entityType: 'User',
+      entityId: user.id,
+      payload: { role: membership.role, tenantId: membership.tenantId },
+    });
+
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: membership.tenantId },
+      select: { id: true, name: true, slug: true, orgType: true },
+    });
+
+    const memberships = await this.listMemberships(user.id);
+
+    return {
+      requires2fa: false as const,
+      user: this.publicUser(
+        {
+          ...user,
+          tenantId: membership.tenantId,
+          role: membership.role,
+        },
+        tenant,
+        memberships,
+      ),
+      memberships,
+      ...tokens,
+    };
   }
 
   async listMemberships(userId: string) {
@@ -1537,6 +1605,8 @@ export class AuthService {
         refreshTokenHash,
         userAgent: meta.userAgent?.slice(0, 512),
         ip: meta.ip?.slice(0, 64),
+        tenantId: tid ?? null,
+        role,
       },
     });
 
@@ -1556,4 +1626,12 @@ export class AuthService {
       // never block login path on audit failure
     }
   }
+}
+
+/** Constant-time invite code comparison (no timing oracle on the public endpoints). */
+export function inviteCodeMatches(given: string, expected: string): boolean {
+  if (!expected) return false;
+  const a = createHash('sha256').update(given, 'utf8').digest();
+  const b = createHash('sha256').update(expected, 'utf8').digest();
+  return timingSafeEqual(a, b);
 }

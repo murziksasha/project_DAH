@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '@/components/LocaleProvider';
 import { apiFetch, getToken } from '@/lib/api';
-import { getSelectedBuildingId, setSelectedBuildingId } from '@/lib/building-context';
+import { getSelectedBuildingId, setSelectedBuildingId } from '@/lib/building-context';
+import type { ApiResponse } from '@/lib/api-types';
 
 interface BuildingRow {
   id: string;
@@ -21,7 +22,7 @@ export function BuildingSwitcher() {
     const token = getToken();
     if (!token) return;
     try {
-      const list = await apiFetch<BuildingRow[]>('/building/list', { token });
+      const list = await apiFetch<ApiResponse<'/building/list'>>('/building/list', { token });
       setBuildings(list);
       const stored = getSelectedBuildingId();
       if (stored && list.some((b) => b.id === stored)) {

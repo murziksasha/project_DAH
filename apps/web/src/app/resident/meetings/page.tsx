@@ -8,7 +8,8 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { SkeletonCards } from '@/components/ui/Skeleton';
 import { apiFetch, getToken } from '@/lib/api';
-import { formatDateUk } from '@/lib/money';
+import { formatDateUk } from '@/lib/money';
+import type { ApiResponse } from '@/lib/api-types';
 
 interface MeetingListItem {
   id: string;
@@ -30,7 +31,7 @@ interface MeetingDetail {
   title: string;
   status: string;
   agendaItems: AgendaView[];
-  stats: { participants: number; signedCount: number };
+  stats: { participants: number; signedCount: number; verifiedCount?: number };
 }
 
 function statusTone(status: string): 'muted' | 'success' | 'danger' | 'primary' | 'warning' {
@@ -67,7 +68,7 @@ export default function ResidentMeetingsPage() {
       return;
     }
     try {
-      setList(await apiFetch<MeetingListItem[]>('/meetings', { token }));
+      setList(await apiFetch<ApiResponse<'/meetings'>>('/meetings', { token }));
     } catch (e) {
       setError(e instanceof Error ? e.message : t('error'));
     } finally {
@@ -248,6 +249,9 @@ export default function ResidentMeetingsPage() {
               participants: selected.stats.participants,
               signed: selected.stats.signedCount,
             })}
+            {selected.stats.verifiedCount != null && (
+              <span> (верифіковано: {selected.stats.verifiedCount})</span>
+            )}
           </p>
           <div className="resident-meeting-actions">
             <button type="button" className="btn" disabled={busy} onClick={() => void register()}>

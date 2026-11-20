@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { MeetingStatus, MeetingType, VoteWeightMode } from '@prisma/client';
+import { MeetingStatus, MeetingType, VoteWeightMode } from '../../../prisma/client';
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
@@ -93,6 +93,20 @@ export class VoteAgendaDto {
   @ApiProperty({ description: 'Option text, e.g. За' })
   @IsString()
   optionKey!: string;
+
+  @ApiPropertyOptional({
+    description: 'Apartment to vote for (owners of several apartments); default = primary',
+  })
+  @IsOptional()
+  @IsString()
+  apartmentId?: string;
+}
+
+export class RegisterMeetingDto {
+  @ApiPropertyOptional({ description: 'Register only this apartment (default: all eligible)' })
+  @IsOptional()
+  @IsString()
+  apartmentId?: string;
 }
 
 export class SignMeetingDto {

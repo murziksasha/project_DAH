@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { RequestPriority } from '@prisma/client';
+import { RequestPriority } from '../../../prisma/client';
 import { IsArray, IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
 
 export class CreateRequestDto {
@@ -35,4 +35,14 @@ export class CreateRequestDto {
   @IsOptional()
   @IsString()
   buildingId?: string;
+
+  @ApiPropertyOptional({ description: 'Apartment id for resident request' })
+  @IsOptional()
+  @IsString()
+  apartmentId?: string;
+
+  @ApiPropertyOptional({ description: 'Client idempotency key for offline queue replay' })
+  @IsOptional()
+  @IsString()
+  clientRequestId?: string;
 }

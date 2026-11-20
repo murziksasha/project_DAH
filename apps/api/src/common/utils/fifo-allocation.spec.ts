@@ -1,4 +1,4 @@
-import { AccrualLineStatus } from '@prisma/client';
+import { AccrualLineStatus } from '../../prisma/client';
 import { planFifoAllocation, resolveAccrualLineStatus } from './fifo-allocation';
 
 describe('planFifoAllocation', () => {

@@ -1,7 +1,6 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { TransparencyService } from './transparency.service';
 
@@ -14,11 +13,11 @@ export class TransparencyController {
 
   @Get('dashboard')
   dashboard(@CurrentUser() user: AuthUser) {
-    return this.transparency.getResidentDashboard(user.role as UserRole);
+    return this.transparency.getResidentDashboard(user);
   }
 
   @Get('debtors')
   debtors(@CurrentUser() user: AuthUser) {
-    return this.transparency.getDebtorsForUser(user.role as UserRole);
+    return this.transparency.getDebtorsForUser(user);
   }
 }

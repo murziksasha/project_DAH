@@ -7,7 +7,8 @@ import {
   type DocumentTemplatesConfig,
 } from '@dah/shared';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { apiFetch, getToken } from '@/lib/api';
+import { apiFetch, getToken } from '@/lib/api';
+import type { ApiResponse } from '@/lib/api-types';
 
 const DocumentTemplateBuilder = dynamic(
   () =>
@@ -31,7 +32,7 @@ export default function DocumentTemplatesPage() {
       window.location.href = '/login';
       return;
     }
-    apiFetch<DocumentTemplatesConfig>('/building/document-templates', { token })
+    apiFetch<ApiResponse<'/building/document-templates'>>('/building/document-templates', { token })
       .then((data) => {
         setConfig(normalizeDocumentTemplatesConfig(data));
       })

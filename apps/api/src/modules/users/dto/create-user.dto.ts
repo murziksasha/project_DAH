@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '../../../prisma/client';
 import {
   IsEmail,
   IsEnum,

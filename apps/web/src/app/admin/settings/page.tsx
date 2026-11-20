@@ -375,7 +375,7 @@ export default function SettingsPage() {
             Глибока бухгалтерія (Journal SoT)
           </h3>
           <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '0 0 0.75rem' }}>
-            Увімкніть після shadow-compare readyForSot. Записи як і раніше dual-run;
+            Увімкнути можна лише після серії щоденних shadow-compare readyForSot (JOURNAL_SOT_STREAK_DAYS, типово 30) — інакше сервер відповість 409. Вимкнення (відкат) — завжди. Записи як і раніше dual-run;
             читання балансів/звітів — з journal. Env JOURNAL_SOT перевизначає.
           </p>
           <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>

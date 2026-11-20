@@ -4,6 +4,7 @@ import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { clearAuthCookies, setAuthCookies } from '../auth/auth-cookies';
 import { IdentityService } from './identity.service';
+import { IdentityAuthorizeDto, IdentityCallbackDto } from './dto/identity.dto';
 
 @ApiTags('identity')
 @Controller('identity')
@@ -11,11 +12,7 @@ export class IdentityController {
   constructor(private identity: IdentityService) {}
 
   private sessionMeta(req: Request) {
-    const xf = req.headers['x-forwarded-for'];
-    const ip =
-      typeof xf === 'string'
-        ? xf.split(',')[0]?.trim()
-        : req.socket?.remoteAddress ?? undefined;
+    const ip = req.ip ?? req.socket?.remoteAddress ?? undefined;
     return { userAgent: req.headers['user-agent'], ip };
   }
 
@@ -26,14 +23,14 @@ export class IdentityController {
 
   @Throttle({ default: { limit: 20, ttl: 60000 } })
   @Post('authorize')
-  authorize(@Body() body: { returnTo?: string }) {
+  authorize(@Body() body: IdentityAuthorizeDto) {
     return this.identity.startAuthorize(body.returnTo);
   }
 
   @Throttle({ default: { limit: 20, ttl: 60000 } })
   @Post('callback')
   async callback(
-    @Body() body: { code?: string; state: string; phone?: string; email?: string },
+    @Body() body: IdentityCallbackDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -58,11 +55,25 @@ export class IdentityController {
     @Query('return_to') returnTo: string | undefined,
     @Res() res: Response,
   ) {
+    // Phase 3 review: the page was public regardless of IDENTITY_* and accepted any redirect_uri
+    // (incl. javascript:) as the form action. Serve it only for the enabled mock IdP.
+    if (!this.identity.mockPageAllowed()) {
+      res.status(404).send('Not found');
+      return;
+    }
     if (!state || !redirectUri) {
       res.status(400).send('state and redirect_uri required');
       return;
     }
+    if (!this.identity.isAllowedRedirect(redirectUri)) {
+      res.status(400).send('redirect_uri not allowed');
+      return;
+    }
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader(
+      'Content-Security-Policy',
+      `default-src 'none'; style-src 'unsafe-inline'; form-action ${new URL(redirectUri).origin}; frame-ancestors 'none'; base-uri 'none'`,
+    );
     res.send(
       this.identity.mockAuthorizePage({
         state,

@@ -45,7 +45,18 @@ Use before exposing the instance to the internet (200–300 users, low concurren
 
 - [ ] Worker running (slim module + inline cron: reminders / SLA / daily+weekly backups)
 - [ ] Restore drill once per quarter
-- [ ] Backup download requires 2FA for privileged roles
+- [ ] Full instance backup download and upload are restricted strictly to `super_admin`
+- [ ] In-app backup creation marks `partial` status if MinIO file export encounters errors
+
+## Application & Multi-tenant Integrity
+
+- [ ] JWT strategy enforces `typ === 'access'` and validates non-revoked session `sid` on every request
+- [ ] 2FA temporary tokens (`typ: '2fa'`) cannot be used as Bearer tokens
+- [ ] Online payment webhooks verify cryptographic signatures (LiqPay canonical SHA1 / WayForPay HMAC)
+- [ ] Online payment webhooks use DB-level mutex locking to prevent duplicate payment processing
+- [ ] Resident endpoints enforce apartment link ownership; cross-tenant apartment, request, and transparency access blocked
+- [ ] Accounting periods enforce closing checklist before locking; expenses in locked periods cannot be approved
+- [ ] Identity provider integration trusts only verified IdP claims (no client phone fallback); mock identity disabled in prod
 
 ## After deploy smoke test
 

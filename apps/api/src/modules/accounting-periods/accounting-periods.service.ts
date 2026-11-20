@@ -4,7 +4,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AccountingPeriodStatus, UserRole } from '@prisma/client';
+import { AccountingPeriodStatus, Prisma, UserRole } from '../../prisma/client';
+import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { isJournalSotEnabled } from '../../common/utils/finance-sot';
 import { parseBuildingSettings } from '../building/building-settings';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -54,8 +55,19 @@ export class AccountingPeriodsService {
   /**
    * Close-month checklist before soft_closed / locked.
    */
-  async closeChecklist(buildingId: string, period: string) {
+  async closeChecklist(buildingId: string, period: string, user?: AuthUser) {
     this.assertPeriodFormat(period);
+    const buildingRow = await this.prisma.building.findUnique({
+      where: { id: buildingId },
+      select: { id: true, tenantId: true },
+    });
+    if (!buildingRow) throw new NotFoundException('Будинок не знайдено');
+    if (user && user.role !== UserRole.super_admin) {
+      if (!user.tenantId || buildingRow.tenantId !== user.tenantId) {
+        throw new ForbiddenException('Немає доступу до будинку іншої організації');
+      }
+    }
+
     const [y, m] = period.split('-').map(Number);
     const from = new Date(Date.UTC(y, m - 1, 1));
     const to = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999));
@@ -243,13 +255,23 @@ export class AccountingPeriodsService {
     buildingId: string,
     dateOrPeriod: string | Date,
     mutation: PeriodMutation,
+    txClient?: Prisma.TransactionClient,
   ) {
+    const client = txClient ?? this.prisma;
     const period =
       typeof dateOrPeriod === 'string' && PERIOD_RE.test(dateOrPeriod)
         ? dateOrPeriod
         : this.periodKeyFromDate(dateOrPeriod);
 
-    const row = await this.prisma.accountingPeriod.findUnique({
+    if (txClient && typeof txClient.$queryRaw === 'function') {
+      await txClient.$queryRaw`
+        SELECT id FROM "AccountingPeriod"
+        WHERE "buildingId" = ${buildingId} AND "period" = ${period}
+        FOR UPDATE
+      `;
+    }
+
+    const row = await client.accountingPeriod.findUnique({
       where: { buildingId_period: { buildingId, period } },
     });
     const status = row?.status ?? AccountingPeriodStatus.open;
@@ -280,10 +302,16 @@ export class AccountingPeriodsService {
     userId: string,
     role: string,
     notes?: string,
+    user?: AuthUser,
   ) {
     this.assertPeriodFormat(period);
     const building = await this.prisma.building.findUnique({ where: { id: buildingId } });
     if (!building) throw new NotFoundException('Будинок не знайдено');
+    if (user && user.role !== UserRole.super_admin) {
+      if (!user.tenantId || building.tenantId !== user.tenantId) {
+        throw new ForbiddenException('Немає доступу до будинку іншої організації');
+      }
+    }
 
     if (status === AccountingPeriodStatus.locked) {
       if (role !== UserRole.chairman && role !== UserRole.super_admin) {
@@ -292,6 +320,32 @@ export class AccountingPeriodsService {
     }
 
     const existing = await this.getOrCreate(buildingId, period);
+
+    if (
+      (status === AccountingPeriodStatus.locked ||
+        status === AccountingPeriodStatus.soft_closed) &&
+      existing.status !== status
+    ) {
+      const checklist = await this.closeChecklist(buildingId, period);
+      if (status === AccountingPeriodStatus.locked && !checklist.canLock) {
+        const reasons = checklist.checks
+          .filter((c) => !c.ok)
+          .map((c) => c.label)
+          .join('; ');
+        throw new BadRequestException(
+          `Неможливо заблокувати період ${period}: не виконано умови чеклисту (${reasons})`,
+        );
+      }
+      if (status === AccountingPeriodStatus.soft_closed && !checklist.canSoftClose) {
+        const reasons = checklist.checks
+          .filter((c) => !c.ok)
+          .map((c) => c.label)
+          .join('; ');
+        throw new BadRequestException(
+          `Неможливо м'яко закрити період ${period}: не виконано умови чеклисту (${reasons})`,
+        );
+      }
+    }
 
     if (
       existing.status === AccountingPeriodStatus.locked &&
@@ -335,20 +389,65 @@ export class AccountingPeriodsService {
       );
     }
 
-    const updated = await this.prisma.accountingPeriod.update({
-      where: { id: existing.id },
-      data: {
-        status,
-        notes: notes
-          ? isReopen
-            ? `[reopen ${new Date().toISOString().slice(0, 10)}] ${notes}`
-            : notes
-          : existing.notes,
-        closedAt:
-          status === AccountingPeriodStatus.open ? null : new Date(),
-        closedById: status === AccountingPeriodStatus.open ? null : userId,
-      },
-    });
+    const executeSetStatus = async (tx: Prisma.TransactionClient) => {
+      if (typeof tx.$queryRaw === 'function') {
+        try {
+          await tx.$queryRaw`
+            SELECT id FROM "AccountingPeriod"
+            WHERE id = ${existing.id}
+            FOR UPDATE
+          `;
+        } catch {
+          /* mock support */
+        }
+      }
+
+      if (
+        (status === AccountingPeriodStatus.locked ||
+          status === AccountingPeriodStatus.soft_closed) &&
+        existing.status !== status
+      ) {
+        const checklist = await this.closeChecklist(buildingId, period);
+        if (status === AccountingPeriodStatus.locked && !checklist.canLock) {
+          const reasons = checklist.checks
+            .filter((c) => !c.ok)
+            .map((c) => c.label)
+            .join('; ');
+          throw new BadRequestException(
+            `Неможливо заблокувати період ${period}: не виконано умови чеклисту (${reasons})`,
+          );
+        }
+        if (status === AccountingPeriodStatus.soft_closed && !checklist.canSoftClose) {
+          const reasons = checklist.checks
+            .filter((c) => !c.ok)
+            .map((c) => c.label)
+            .join('; ');
+          throw new BadRequestException(
+            `Неможливо м'яко закрити період ${period}: не виконано умови чеклисту (${reasons})`,
+          );
+        }
+      }
+
+      return tx.accountingPeriod.update({
+        where: { id: existing.id },
+        data: {
+          status,
+          notes: notes
+            ? isReopen
+              ? `[reopen ${new Date().toISOString().slice(0, 10)}] ${notes}`
+              : notes
+            : existing.notes,
+          closedAt:
+            status === AccountingPeriodStatus.open ? null : new Date(),
+          closedById: status === AccountingPeriodStatus.open ? null : userId,
+        },
+      });
+    };
+
+    const updated =
+      typeof this.prisma.$transaction === 'function'
+        ? await this.prisma.$transaction(executeSetStatus)
+        : await executeSetStatus(this.prisma as unknown as Prisma.TransactionClient);
 
     await this.audit.log({
       userId,

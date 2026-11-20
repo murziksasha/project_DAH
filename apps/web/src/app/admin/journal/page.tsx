@@ -82,6 +82,12 @@ export default function JournalPage() {
       fundEquityFromJournal: number;
     }>;
   } | null>(null);
+  const [sotReadiness, setSotReadiness] = useState<{
+    requiredDays: number;
+    streakDays: number;
+    eligible: boolean;
+    lastRun: { day: string; readyForSot: boolean } | null;
+  } | null>(null);
   const [adjDesc, setAdjDesc] = useState('');
   const [adjDrAccount, setAdjDrAccount] = useState('expense');
   const [adjCrAccount, setAdjCrAccount] = useState('cash');
@@ -95,7 +101,7 @@ export default function JournalPage() {
     setError('');
     try {
       const q = `buildingId=${encodeURIComponent(bid)}&period=${encodeURIComponent(period)}&limit=100`;
-      const [list, trial, rec, sh] = await Promise.all([
+      const [list, trial, rec, sh, readiness] = await Promise.all([
         apiFetch<JournalEntry[]>(`/journal?${q}`, { token }),
         apiFetch<{
           totalDebit: number;
@@ -123,11 +129,20 @@ export default function JournalPage() {
         }>(`/journal/shadow-compare?buildingId=${encodeURIComponent(bid)}`, {
           token,
         }).catch(() => null),
+        apiFetch<{
+          requiredDays: number;
+          streakDays: number;
+          eligible: boolean;
+          lastRun: { day: string; readyForSot: boolean } | null;
+        }>(`/journal/sot-readiness?buildingId=${encodeURIComponent(bid)}`, { token }).catch(
+          () => null,
+        ),
       ]);
       setEntries(Array.isArray(list) ? list : []);
       setTb(trial);
       setReconcile(rec);
       setShadow(sh);
+      setSotReadiness(readiness);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Помилка завантаження');
     } finally {
@@ -370,6 +385,20 @@ export default function JournalPage() {
                 {shadow.reconcileOk ? 'OK' : `${shadow.mismatchCount} diff`} ·
                 advances {shadow.advancesOk ? 'OK' : 'mismatch'}
               </p>
+              {sotReadiness && (
+                <p>
+                  Серія щоденних перевірок без розбіжностей:{' '}
+                  <strong>
+                    {sotReadiness.streakDays} / {sotReadiness.requiredDays} дн.
+                  </strong>{' '}
+                  {sotReadiness.eligible ? (
+                    <span className="badge badge-ok">можна перемикати журнал як джерело правди</span>
+                  ) : (
+                    <span className="badge badge-warn">ще рано</span>
+                  )}
+                  {sotReadiness.lastRun && ` · остання перевірка ${sotReadiness.lastRun.day}`}
+                </p>
+              )}
               <table className="table">
                 <thead>
                   <tr>

@@ -10,7 +10,8 @@ import {
   type LoginResponse,
 } from '@/lib/api';
 import { getRoleHome, getStoredUser, type StoredUser } from '@/lib/auth';
-import { setSelectedBuildingId } from '@/lib/building-context';
+import { setSelectedBuildingId } from '@/lib/building-context';
+import type { ApiResponse } from '@/lib/api-types';
 
 function activeMemberships(
   list: LoginMembership[] | StoredUser['memberships'] | undefined,
@@ -73,7 +74,7 @@ export function OrgMembershipSwitcher() {
     // Always refresh when possible so dual roles appear after admin assigns them
     if (token) {
       try {
-        const remote = await apiFetch<LoginMembership[]>('/auth/memberships', { token });
+        const remote = await apiFetch<ApiResponse<'/auth/memberships'>>('/auth/memberships', { token });
         memberships = activeMemberships(remote);
         if (memberships.length) {
           localStorage.setItem(

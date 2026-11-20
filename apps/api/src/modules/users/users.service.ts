@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, UserRole, UserStatus } from '@prisma/client';
+import { Prisma, UserRole, UserStatus } from '../../prisma/client';
 import * as bcrypt from 'bcrypt';
 import { assertPasswordStrength } from '../../common/utils/password-policy';
 import { clearDeferredSetupRole, parseBuildingSettings } from '../building/building-settings';

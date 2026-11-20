@@ -9,12 +9,14 @@ describe('Users (e2e)', () => {
   let adminToken: string;
   let apartmentId: string;
   let residentId: string;
+  let tenantId: string;
 
   beforeAll(async () => {
     await resetTestDatabase();
     const fixtures = await seedTestFixtures();
     apartmentId = fixtures.apartment.id;
     residentId = fixtures.resident.id;
+    tenantId = fixtures.building.tenantId;
 
     const moduleFixture = await Test.createTestingModule({
       imports: [AppModule],
@@ -42,6 +44,7 @@ describe('Users (e2e)', () => {
     const res = await request(app.getHttpServer())
       .get('/api/users?page=1&limit=20')
       .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-Tenant-Id', tenantId)
       .expect(200);
 
     expect(res.body.items).toBeInstanceOf(Array);
@@ -53,6 +56,7 @@ describe('Users (e2e)', () => {
     const res = await request(app.getHttpServer())
       .get('/api/users?search=resident')
       .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-Tenant-Id', tenantId)
       .expect(200);
 
     expect(res.body.items.some((u: { email: string }) => u.email === 'test-resident@osbb.local')).toBe(true);
@@ -71,6 +75,7 @@ describe('Users (e2e)', () => {
     const res = await request(app.getHttpServer())
       .patch(`/api/users/${residentId}`)
       .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-Tenant-Id', tenantId)
       .send({
         firstName: 'Updated',
         apartmentIds: [apartmentId, apt2.id],
@@ -99,6 +104,7 @@ describe('Users (e2e)', () => {
     await request(app.getHttpServer())
       .post(`/api/users/${residentId}/apartments/${apt3.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-Tenant-Id', tenantId)
       .expect((res) => expect([200, 201]).toContain(res.status));
 
     const links = await testPrisma.userApartment.findMany({ where: { userId: residentId } });
@@ -109,11 +115,13 @@ describe('Users (e2e)', () => {
     await request(app.getHttpServer())
       .patch(`/api/users/${residentId}/block`)
       .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-Tenant-Id', tenantId)
       .expect(200);
 
     await request(app.getHttpServer())
       .patch(`/api/users/${residentId}`)
       .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-Tenant-Id', tenantId)
       .send({ status: 'active' })
       .expect(200);
   });

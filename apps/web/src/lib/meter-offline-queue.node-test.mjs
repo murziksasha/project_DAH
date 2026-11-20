@@ -3,8 +3,6 @@
  * Simulates localStorage with a Map polyfill.
  */
 import assert from 'node:assert/strict';
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 

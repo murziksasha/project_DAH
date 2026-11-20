@@ -6,7 +6,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const APP_VERSION = process.env.npm_package_version ?? process.env.DAH_VERSION ?? '1.5.1';
+import { APP_VERSION } from '../../common/version';
 
 export type ComponentStatus = 'up' | 'down' | 'skipped';
 
@@ -78,6 +78,24 @@ export class HealthService {
     }
   }
 
+  /** Readiness: DB reachable (the only hard dependency). */
+  async ready(): Promise<boolean> {
+    return (await this.checkDb()) === 'up';
+  }
+
+  /** M9 job markers (WorkerJob) for metrics / ops. */
+  async workerJobs(): Promise<
+    Array<{ name: string; lastRunAt: Date | null; lastStatus: string | null }>
+  > {
+    try {
+      return await this.prisma.workerJob.findMany({
+        select: { name: true, lastRunAt: true, lastStatus: true },
+      });
+    } catch {
+      return [];
+    }
+  }
+
   private async checkDb(): Promise<ComponentStatus> {
     try {
       await this.prisma.$queryRaw`SELECT 1`;
@@ -139,11 +157,11 @@ export class HealthService {
   }
 
   /** Reads optional marker file written by backup scripts (BACKUP_STATUS_PATH). */
-  private checkBackupHint(): {
+  checkBackupHint(): {
     path: string | null;
     lastBackupAt: string | null;
     ageHours: number | null;
-    status: 'ok' | 'stale' | 'missing' | 'skipped';
+    status: 'ok' | 'stale' | 'missing' | 'skipped' | 'partial';
   } {
     const statusPath =
       this.config.get<string>('BACKUP_STATUS_PATH') ||
@@ -155,7 +173,7 @@ export class HealthService {
 
     try {
       const raw = fs.readFileSync(statusPath, 'utf8');
-      const data = JSON.parse(raw) as { finishedAt?: string; createdAt?: string };
+      const data = JSON.parse(raw) as { finishedAt?: string; createdAt?: string; status?: string };
       const iso = data.finishedAt ?? data.createdAt;
       if (!iso) {
         return { path: statusPath, lastBackupAt: null, ageHours: null, status: 'missing' };
@@ -167,7 +185,8 @@ export class HealthService {
         path: statusPath,
         lastBackupAt: new Date(ts).toISOString(),
         ageHours: Math.round(ageHours * 10) / 10,
-        status: ageHours > maxAge ? 'stale' : 'ok',
+        // M17: a backup without files (MinIO skipped/failed) is surfaced, not reported as ok.
+        status: ageHours > maxAge ? 'stale' : data.status === 'partial' ? 'partial' : 'ok',
       };
     } catch {
       return { path: statusPath, lastBackupAt: null, ageHours: null, status: 'missing' };

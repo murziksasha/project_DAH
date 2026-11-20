@@ -8,7 +8,8 @@ import { SkeletonCards } from '@/components/ui/Skeleton';
 import { StatCard } from '@/components/ui/StatCard';
 import { apiFetch, getToken } from '@/lib/api';
 import { getStoredUser } from '@/lib/auth';
-import { formatDateUk } from '@/lib/money';
+import { formatDateUk } from '@/lib/money';
+import type { ApiResponse } from '@/lib/api-types';
 
 type SlaStatus = 'ok' | 'warning' | 'breached' | 'none';
 
@@ -52,7 +53,7 @@ export function DispatcherDashboard() {
     setLoading(true);
     setError('');
     try {
-      const res = await apiFetch<QueueResponse>('/communications/requests/queue', { token });
+      const res = await apiFetch<ApiResponse<'/communications/requests/queue'>>('/communications/requests/queue', { token });
       setData(res);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('error'));

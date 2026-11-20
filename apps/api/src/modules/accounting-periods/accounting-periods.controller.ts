@@ -1,11 +1,13 @@
+import { Permission } from '@dah/shared';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Body, Controller, Get, Patch, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { AccountingPeriodStatus, UserRole } from '@prisma/client';
+import { AccountingPeriodStatus } from '../../prisma/client';
 import { IsEnum, IsOptional, IsString, Matches } from 'class-validator';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { RolesGuard } from '../../common/guards/roles.guard';
+import { TenantAccessService } from '../../common/tenant-access/tenant-access.service';
 import { AccountingPeriodsService } from './accounting-periods.service';
 
 class SetPeriodStatusDto {
@@ -24,43 +26,42 @@ class SetPeriodStatusDto {
   notes?: string;
 }
 
-const READ_ROLES = [
-  UserRole.chairman,
-  UserRole.accountant,
-  UserRole.board,
-  UserRole.auditor,
-  UserRole.super_admin,
-];
-
-const WRITE_ROLES = [UserRole.chairman, UserRole.accountant, UserRole.board, UserRole.super_admin];
 
 @ApiTags('finance-periods')
 @ApiBearerAuth()
 @Controller('finance/periods')
 export class AccountingPeriodsController {
-  constructor(private periods: AccountingPeriodsService) {}
+  constructor(
+    private periods: AccountingPeriodsService,
+    private access: TenantAccessService,
+  ) {}
 
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(...READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
   @Get()
-  list(@Query('buildingId') buildingId: string) {
-    return this.periods.list(buildingId);
+  async list(@Query('buildingId') buildingId: string, @CurrentUser() user: AuthUser) {
+    // L11: only periods of a building in the caller's organization
+    const id = await this.access.resolveBuilding(user, buildingId);
+    return this.periods.list(id);
   }
 
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(...READ_ROLES)
+  @RequirePermissions(Permission.READ_FINANCE)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
   @Get('checklist')
-  checklist(
+  async checklist(
     @Query('buildingId') buildingId: string,
     @Query('period') period: string,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.periods.closeChecklist(buildingId, period);
+    await this.access.assertBuilding(user, buildingId);
+    return this.periods.closeChecklist(buildingId, period, user);
   }
 
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(...WRITE_ROLES)
+  @UseGuards(AuthGuard('jwt'), PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_FINANCE, Permission.PLATFORM_ADMIN)
   @Patch()
-  setStatus(@Body() dto: SetPeriodStatusDto, @CurrentUser() user: AuthUser) {
+  async setStatus(@Body() dto: SetPeriodStatusDto, @CurrentUser() user: AuthUser) {
+    await this.access.assertBuilding(user, dto.buildingId);
     return this.periods.setStatus(
       dto.buildingId,
       dto.period,
@@ -68,6 +69,7 @@ export class AccountingPeriodsController {
       user.id,
       user.role,
       dto.notes,
+      user,
     );
   }
 }

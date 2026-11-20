@@ -10,7 +10,8 @@ import { ApartmentsSection } from './apartments-section';
 import { getRoleLabel, PAGE_SIZE } from './constants';
 import { RolesSection } from './roles-section';
 import { UserForm } from './user-form';
-import { UsersSection } from './users-section';
+import { UsersSection } from './users-section';
+import type { ApiResponse } from '@/lib/api-types';
 import {
   ApartmentRow,
   emptyUserForm,
@@ -75,13 +76,13 @@ export default function OrganizationPage() {
     if (!isSuperAdmin) return;
     const token = getToken();
     if (!token) return;
-    apiFetch<TenantOption[]>('/tenants', { token })
+    apiFetch<ApiResponse<'/tenants'>>('/tenants', { token })
       .then(setTenants)
       .catch(() => setTenants([]));
   }, [isSuperAdmin]);
 
   const loadApartments = useCallback(async (token: string) => {
-    const data = await apiFetch<ApartmentRow[]>('/building/apartments', { token });
+    const data = await apiFetch<ApiResponse<'/building/apartments'>>('/building/apartments', { token });
     setApartments(data);
   }, []);
 
@@ -141,7 +142,7 @@ export default function OrganizationPage() {
     }
     setLoadingRoles(true);
     try {
-      const data = await apiFetch<RolesListResponse>('/roles', { token });
+      const data = await apiFetch<ApiResponse<'/roles'>>('/roles', { token });
       setRoles(data.items ?? []);
     } catch {
       setRoles([]);
@@ -169,11 +170,14 @@ export default function OrganizationPage() {
       loadApartments(token),
       loadResidents(token),
       loadRoles(token),
-      apiFetch<{ pendingDeferredRoles?: Array<'accountant' | 'auditor'> }>('/setup/status', {
+      apiFetch<ApiResponse<'/setup/status'>>('/setup/status', {
         token,
       }).catch(() => ({ pendingDeferredRoles: [] })),
     ]);
     setPendingDeferredRoles(setupStatus.pendingDeferredRoles ?? []);
+    // `selectedTenant` is read via getSelectedTenantId() (storage); it stays a dependency so a
+    // super-admin tenant switch re-runs the load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     loadApartments,
     loadResidents,

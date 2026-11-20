@@ -1,3 +1,5 @@
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
 import {
   collectYears,
   filterLines,
@@ -55,29 +57,29 @@ const timeline = [
 
 describe('account-filters', () => {
   it('collects years', () => {
-    expect(collectYears(lines, timeline)).toEqual(['2026', '2025']);
+    assert.deepEqual(collectYears(lines, timeline), ['2026', '2025']);
   });
 
   it('filters by year and status', () => {
     const f = { ...EMPTY_FILTERS, year: '2026', status: 'partially_paid' };
-    expect(filterLines(lines, f)).toHaveLength(1);
-    expect(filterLines(lines, f)[0].id).toBe('1');
+    assert.equal(filterLines(lines, f).length, 1);
+    assert.equal(filterLines(lines, f)[0].id, '1');
   });
 
   it('filters timeline by kind', () => {
     const f = { ...EMPTY_FILTERS, kind: 'payment' as const };
-    expect(filterTimeline(timeline, f)).toHaveLength(1);
+    assert.equal(filterTimeline(timeline, f).length, 1);
   });
 
   it('groups by year and month', () => {
     const groups = groupTimelineByPeriod(timeline);
-    expect(groups[0].year).toBe('2026');
-    expect(groups[0].months[0].period).toBe('2026-03');
-    expect(groups[0].months[0].events).toHaveLength(2);
+    assert.equal(groups[0].year, '2026');
+    assert.equal(groups[0].months[0].period, '2026-03');
+    assert.equal(groups[0].months[0].events.length, 2);
   });
 
   it('search query', () => {
     const f = { ...EMPTY_FILTERS, q: 'опал' };
-    expect(filterLines(lines, f)).toHaveLength(1);
+    assert.equal(filterLines(lines, f).length, 1);
   });
 });

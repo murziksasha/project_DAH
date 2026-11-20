@@ -1,3 +1,6 @@
+import { Permission } from '@dah/shared';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import {
   Body,
   Controller,
@@ -11,11 +14,9 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
-import { RolesGuard } from '../../common/guards/roles.guard';
+
 import { CreateRoleDto } from './dto/create-role.dto';
 import { ListRolesQueryDto } from './dto/list-roles.query.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
@@ -23,18 +24,18 @@ import { RolesService } from './roles.service';
 
 @ApiTags('roles')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'), RolesGuard)
+@UseGuards(AuthGuard('jwt'), PermissionsGuard)
 @Controller('roles')
 export class RolesController {
   constructor(private roles: RolesService) {}
 
-  @Roles(UserRole.super_admin, UserRole.chairman)
+  @RequirePermissions(Permission.MANAGE_USERS)
   @Get()
   list(@Query() query: ListRolesQueryDto, @TenantId() tenantId?: string | null) {
     return this.roles.listRoles(tenantId, Boolean(query.activeOnly));
   }
 
-  @Roles(UserRole.super_admin)
+  @RequirePermissions(Permission.MANAGE_SETUP)
   @Post()
   create(
     @Body() dto: CreateRoleDto,
@@ -44,7 +45,7 @@ export class RolesController {
     return this.roles.createRole(tenantId, dto, user.id);
   }
 
-  @Roles(UserRole.super_admin)
+  @RequirePermissions(Permission.MANAGE_SETUP)
   @Patch(':code')
   update(
     @Param('code') code: string,
@@ -55,7 +56,7 @@ export class RolesController {
     return this.roles.updateRole(tenantId, code, dto, user.id);
   }
 
-  @Roles(UserRole.super_admin)
+  @RequirePermissions(Permission.MANAGE_SETUP)
   @Delete(':code')
   remove(
     @Param('code') code: string,

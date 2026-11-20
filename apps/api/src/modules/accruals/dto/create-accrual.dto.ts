@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { AccrualDistribution, MeterType } from '@prisma/client';
+import { AccrualDistribution, MeterType } from '../../../prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsArray,

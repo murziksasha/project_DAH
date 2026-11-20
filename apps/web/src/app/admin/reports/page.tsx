@@ -15,7 +15,8 @@ import { StatCard } from '@/components/ui/StatCard';
 import { apiFetch, getToken } from '@/lib/api';
 import { downloadAuthFile } from '@/lib/download';
 import { formatDateUk, formatMoney } from '@/lib/money';
-import { downloadXlsx } from '@/lib/xlsx';
+import { downloadXlsx } from '@/lib/xlsx';
+import type { ApiResponse } from '@/lib/api-types';
 
 interface Debtor {
   apartmentId: string;
@@ -96,16 +97,12 @@ export default function ReportsPage() {
       if (cashSource !== 'auto') qs.set('source', cashSource);
       const q = qs.toString();
       const [d, c, templates, sot] = await Promise.all([
-        apiFetch<Debtor[]>('/payments/reports/debtors', { token }),
+        apiFetch<ApiResponse<'/payments/reports/debtors'>>('/payments/reports/debtors', { token }),
         apiFetch<CashFlowReport>(`/finance/reports/cash-flow${q ? `?${q}` : ''}`, { token }),
-        apiFetch<DocumentTemplatesConfig>('/building/document-templates', { token }).catch(
+        apiFetch<ApiResponse<'/building/document-templates'>>('/building/document-templates', { token }).catch(
           () => null,
         ),
-        apiFetch<{
-          journalSot: boolean;
-          readyForSot: boolean | null;
-          mismatchCount: number | null;
-        }>('/finance/sot-status', { token }).catch(() => null),
+        apiFetch<ApiResponse<'/finance/sot-status'>>('/finance/sot-status', { token }).catch(() => null),
       ]);
       setDebtors(d);
       setCashFlow(c);

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AccrualDistribution, AccrualLineStatus, JournalEntryType, Prisma } from '@prisma/client';
+import { AccrualDistribution, AccrualLineStatus, JournalEntryType, Prisma } from '../../prisma/client';
 import {
   calcAccrualLineAmount,
   validateAccrualDistribution,
@@ -12,6 +12,7 @@ import {
 import { resolveAccrualLineStatus } from '../../common/utils/fifo-allocation';
 import { isJournalSotEnabled } from '../../common/utils/finance-sot';
 import { roundMoney } from '../../common/utils/money';
+import { type AdvanceSource, planAdvanceApplication } from '../../common/utils/advance-application';
 import { createZipStore } from '../../common/utils/zip-store';
 import { PrismaService } from '../../prisma/prisma.service';
 import { domainEvents } from '../../common/utils/domain-events';
@@ -175,7 +176,10 @@ export class AccrualsService {
   }
 
   async createAccrual(dto: CreateAccrualDto, userId: string) {
-    const fund = await this.prisma.fund.findUnique({ where: { id: dto.fundId } });
+    const fund = await this.prisma.fund.findUnique({
+      where: { id: dto.fundId },
+      include: { building: { select: { settings: true } } },
+    });
     if (!fund) throw new NotFoundException('Фонд не знайдено');
 
     // Accrual.period is YYYY-MM — gate by period key
@@ -232,7 +236,20 @@ export class AccrualsService {
     const total = roundMoney(lines.reduce((s, l) => s + l.amount, 0));
     const buildingId = apartments[0]?.buildingId ?? fund.buildingId;
 
-    const accrual = await this.prisma.$transaction(async (tx) => {
+    const autoApplyAdvance =
+      parseBuildingSettings(fund.building?.settings).autoApplyAdvance !== false;
+    let advanceApplied = 0;
+
+    const runTx = async (tx: Prisma.TransactionClient) => {
+      // M6: re-check inside the transaction; DB @@unique([fundId, period, title]) is the
+      // final guard against a concurrent duplicate (P2002 → 400 below).
+      const dup = await tx.accrual.findFirst({
+        where: { fundId: dto.fundId, period: dto.period, title: dto.title },
+        select: { id: true },
+      });
+      if (dup) {
+        throw new BadRequestException('Нарахування з такою назвою за цей період вже існує');
+      }
       const created = await tx.accrual.create({
         data: {
           fundId: dto.fundId,
@@ -264,8 +281,27 @@ export class AccrualsService {
         tx,
       );
 
+      if (autoApplyAdvance) {
+        advanceApplied = await this.applyAdvancesToAccrual(tx, created.id, {
+          buildingId,
+          fundId: dto.fundId,
+          createdById: userId,
+          title: dto.title,
+        });
+      }
+
       return created;
-    });
+    };
+
+    let accrual: Awaited<ReturnType<typeof runTx>>;
+    try {
+      accrual = await this.prisma.$transaction(runTx);
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new BadRequestException('Нарахування з такою назвою за цей період вже існує');
+      }
+      throw err;
+    }
 
     await this.audit.log({
       userId,
@@ -277,6 +313,7 @@ export class AccrualsService {
         distribution: dto.distribution,
         linesCount: lines.length,
         total: lines.reduce((s, l) => s + l.amount, 0),
+        advanceApplied,
       },
     });
 
@@ -295,6 +332,84 @@ export class AccrualsService {
     }));
 
     return this.getAccrual(accrual.id);
+  }
+
+  /**
+   * M5: apply apartment advances (overpayments) to the lines of a new accrual,
+   * inside the accrual transaction. Each applied amount becomes a PaymentAllocation of
+   * the payment that produced the advance (FIFO), so voiding that payment later
+   * re-opens the line correctly. Journal: advance Dr / receivable Cr.
+   * Returns the total applied.
+   */
+  async applyAdvancesToAccrual(
+    tx: Prisma.TransactionClient,
+    accrualId: string,
+    ctx: { buildingId: string; fundId: string; createdById: string; title: string },
+  ): Promise<number> {
+    const lines = await tx.accrualLine.findMany({
+      where: { accrualId },
+      select: { id: true, apartmentId: true, amount: true, paidAmount: true, dueDate: true },
+    });
+    if (!lines.length) return 0;
+    const aptIds = [...new Set(lines.map((l) => l.apartmentId))];
+    if (typeof tx.$queryRaw === 'function') {
+      await tx.$queryRaw`SELECT id FROM "Apartment" WHERE id IN (${Prisma.join(aptIds)}) FOR UPDATE`;
+    }
+    const apts = await tx.apartment.findMany({
+      where: { id: { in: aptIds }, advanceBalance: { gt: 0 } },
+      select: { id: true, number: true, advanceBalance: true },
+    });
+    let applied = 0;
+    for (const apt of apts) {
+      const line = lines.find((l) => l.apartmentId === apt.id);
+      if (!line) continue;
+      const payments = await tx.payment.findMany({
+        where: { apartmentId: apt.id, isVoided: false },
+        select: { id: true, amount: true, allocations: { select: { amount: true } } },
+        orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+      });
+      const sources: AdvanceSource[] = payments.map((p) => ({
+        paymentId: p.id,
+        remaining: roundMoney(
+          Number(p.amount) - p.allocations.reduce((s, a) => s + Number(a.amount), 0),
+        ),
+      }));
+      const open = roundMoney(Number(line.amount) - Number(line.paidAmount));
+      const plan = planAdvanceApplication(open, Number(apt.advanceBalance), sources);
+      if (plan.total <= 0) continue;
+
+      for (const a of plan.allocations) {
+        await tx.paymentAllocation.create({
+          data: { paymentId: a.paymentId, accrualLineId: line.id, amount: a.amount },
+        });
+      }
+      const newPaid = roundMoney(Number(line.paidAmount) + plan.total);
+      await tx.accrualLine.update({
+        where: { id: line.id },
+        data: {
+          paidAmount: newPaid,
+          status: resolveAccrualLineStatus(Number(line.amount), newPaid, line.dueDate),
+        },
+      });
+      await tx.apartment.update({
+        where: { id: apt.id },
+        data: { advanceBalance: { decrement: plan.total } },
+      });
+      await this.posting.postAdvanceApplication(
+        `${accrualId}:${apt.id}`,
+        plan.total,
+        {
+          buildingId: ctx.buildingId,
+          fundId: ctx.fundId,
+          apartmentId: apt.id,
+          createdById: ctx.createdById,
+          description: `Зарахування авансу кв. ${apt.number}: ${ctx.title}`,
+        },
+        tx,
+      );
+      applied = roundMoney(applied + plan.total);
+    }
+    return applied;
   }
 
   /**

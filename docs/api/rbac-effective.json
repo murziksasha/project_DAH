@@ -1,0 +1,1667 @@
+{
+  "POST /api/accounting/adjustments": [
+    "accountant",
+    "chairman"
+  ],
+  "GET /api/accounting/ap-aging": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/accounting/apartments/:apartmentId/statement": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/accounting/ar-aging": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/accounting/bank-gl-balance": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/accounting/bank-reconciliations": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/accounting/bank-reconciliations": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "POST /api/accounting/bank-reconciliations/:id/close": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "GET /api/accounting/budget/plan-fact-encumbrance": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/accounting/cash-book": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/accounting/coa-export-map": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/accounting/overview": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/accounting/owner-change-policy": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/accounting/periods/close-snapshot": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "GET /api/accounting/periods/close-snapshots": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/accounting/supplier-invoices": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/accounting/supplier-invoices": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "POST /api/accounting/supplier-invoices/:id/approve": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "POST /api/accounting/supplier-invoices/pay": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "GET /api/accounting/tariffs": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/accounting/tariffs": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "PATCH /api/accounting/tariffs/:id": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "POST /api/accounting/tariffs/run": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "GET /api/accounting/write-offs": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/accounting/write-offs": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "POST /api/accounting/write-offs/:id/approve": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "POST /api/accounting/year-end": [
+    "accountant",
+    "chairman"
+  ],
+  "GET /api/accruals": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/accruals": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "GET /api/accruals/:id": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/accruals/:id/receipts.pdf": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman"
+  ],
+  "GET /api/accruals/:id/receipts.zip": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman"
+  ],
+  "POST /api/accruals/:id/reverse": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "GET /api/accruals/apartments/:apartmentId/account": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman"
+  ],
+  "GET /api/accruals/apartments/:apartmentId/statement.xlsx": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "resident"
+  ],
+  "POST /api/accruals/lines/:lineId/credit-note": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "GET /api/accruals/lines/:lineId/receipt": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "GET /api/accruals/my-account": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/accruals/preview": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "GET /api/accruals/templates": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/accruals/templates": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "DELETE /api/accruals/templates/:id": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "GET /api/audit/logs": [
+    "auditor",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/auth/2fa/disable": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/auth/2fa/enable": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/auth/2fa/setup": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "GET /api/auth/2fa/status": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/auth/2fa/verify": [
+    "*public*"
+  ],
+  "GET /api/auth/apartments": [
+    "*public*"
+  ],
+  "PATCH /api/auth/approve/:id": [
+    "board",
+    "chairman"
+  ],
+  "POST /api/auth/change-password": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "PATCH /api/auth/email-notify": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/auth/login": [
+    "*public*"
+  ],
+  "POST /api/auth/login/sms/request": [
+    "*public*"
+  ],
+  "POST /api/auth/login/sms/verify": [
+    "*public*"
+  ],
+  "POST /api/auth/logout": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/auth/logout-all": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "GET /api/auth/me": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "GET /api/auth/memberships": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/auth/onboarding/complete": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/auth/password/forgot": [
+    "*public*"
+  ],
+  "POST /api/auth/password/reset": [
+    "*public*"
+  ],
+  "GET /api/auth/pending": [
+    "board",
+    "chairman"
+  ],
+  "GET /api/auth/profile": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "PATCH /api/auth/profile": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/auth/refresh": [
+    "*public*"
+  ],
+  "POST /api/auth/register": [
+    "*public*"
+  ],
+  "PATCH /api/auth/reject/:id": [
+    "board",
+    "chairman"
+  ],
+  "POST /api/auth/select-tenant": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "GET /api/auth/sessions": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "DELETE /api/auth/sessions/:id": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "GET /api/backups": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/backups": [
+    "accountant",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/backups/:kind/:id/download": [
+    "super_admin"
+  ],
+  "GET /api/backups/status": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/backups/upload": [
+    "super_admin"
+  ],
+  "POST /api/backups/weekly": [
+    "accountant",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/building": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "PATCH /api/building": [
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/building/apartments": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/building/apartments": [
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/building/apartments/:apartmentId/residents": [
+    "chairman",
+    "super_admin"
+  ],
+  "DELETE /api/building/apartments/:id": [
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/building/apartments/:id": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "PATCH /api/building/apartments/:id": [
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/building/apartments/import": [
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/building/by/:id": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/building/create": [
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/building/document-templates": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "PATCH /api/building/document-templates": [
+    "accountant",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/building/list": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "GET /api/building/ops-summary": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/building/portfolio": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "dispatcher",
+    "super_admin"
+  ],
+  "DELETE /api/building/residents/:id": [
+    "chairman",
+    "super_admin"
+  ],
+  "PATCH /api/building/residents/:id": [
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/building/search": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "dispatcher",
+    "super_admin"
+  ],
+  "GET /api/building/settings": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "PATCH /api/building/settings": [
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/communications/announcements": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/communications/announcements": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "DELETE /api/communications/announcements/:id": [
+    "board",
+    "chairman"
+  ],
+  "PATCH /api/communications/announcements/:id/read": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "PATCH /api/communications/announcements/read-all": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "GET /api/communications/announcements/unread-count": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "GET /api/communications/polls": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/communications/polls": [
+    "board",
+    "chairman"
+  ],
+  "GET /api/communications/polls/:id": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "PATCH /api/communications/polls/:id/close": [
+    "board",
+    "chairman"
+  ],
+  "POST /api/communications/polls/:id/vote": [
+    "accountant",
+    "board",
+    "chairman",
+    "resident"
+  ],
+  "GET /api/communications/requests": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/communications/requests": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "PATCH /api/communications/requests/:id": [
+    "accountant",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher"
+  ],
+  "GET /api/communications/requests/queue": [
+    "accountant",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher"
+  ],
+  "POST /api/copilot/classify-request": [
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "super_admin"
+  ],
+  "POST /api/copilot/draft-note": [
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/copilot/match-hint": [
+    "accountant",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/copilot/status": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "GET /api/documents": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "POST /api/documents": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "DELETE /api/documents/:id": [
+    "accountant",
+    "chairman"
+  ],
+  "PATCH /api/documents/:id/visibility": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "GET /api/documents/public": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "GET /api/files/download": [
+    "*public*"
+  ],
+  "POST /api/files/upload": [
+    "accountant",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident"
+  ],
+  "GET /api/finance/bank-accounts": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/finance/bank-accounts": [
+    "accountant",
+    "chairman"
+  ],
+  "DELETE /api/finance/bank-accounts/:id": [
+    "accountant",
+    "chairman"
+  ],
+  "PATCH /api/finance/bank-accounts/:id": [
+    "accountant",
+    "chairman"
+  ],
+  "GET /api/finance/budget": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/finance/budget": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "DELETE /api/finance/budget/:id": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "PATCH /api/finance/budget/:id": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "GET /api/finance/budget/plan-fact": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/finance/categories": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/finance/categories": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "DELETE /api/finance/categories/:id": [
+    "accountant",
+    "chairman"
+  ],
+  "PATCH /api/finance/categories/:id": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "GET /api/finance/expenses": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/finance/expenses": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "GET /api/finance/expenses/:id": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/finance/expenses/:id/approve": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "PATCH /api/finance/expenses/:id/void": [
+    "accountant",
+    "chairman"
+  ],
+  "GET /api/finance/funds": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/finance/funds": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "PATCH /api/finance/funds/:id": [
+    "accountant",
+    "chairman"
+  ],
+  "GET /api/finance/periods": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "PATCH /api/finance/periods": [
+    "accountant",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/finance/periods/checklist": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/finance/reports/board.pdf": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/finance/reports/cash-flow": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/finance/reports/expenses-summary": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/finance/reports/export-pack.zip": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/finance/sot-status": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/finance/suppliers": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/finance/suppliers": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "PATCH /api/finance/suppliers/:id": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "GET /api/finance/transfers": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/finance/transfers": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "PATCH /api/finance/transfers/:id/void": [
+    "accountant",
+    "chairman"
+  ],
+  "GET /api/health": [
+    "*public*"
+  ],
+  "GET /api/health/details": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/health/live": [
+    "*public*"
+  ],
+  "GET /api/health/ready": [
+    "*public*"
+  ],
+  "POST /api/identity/authorize": [
+    "*public*"
+  ],
+  "POST /api/identity/callback": [
+    "*public*"
+  ],
+  "GET /api/identity/mock/authorize": [
+    "*public*"
+  ],
+  "GET /api/identity/status": [
+    "*public*"
+  ],
+  "GET /api/journal": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/journal/:id": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/journal/account-card": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/journal/coa": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "PATCH /api/journal/coa/:id/external-code": [
+    "accountant",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/journal/coa/ensure-defaults": [
+    "super_admin"
+  ],
+  "GET /api/journal/fund-balances": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/journal/reconcile": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/journal/shadow-compare": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/journal/shadow-runs": [
+    "accountant",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/journal/sot": [
+    "accountant",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/journal/sot-readiness": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/journal/trial-balance": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/kep/meetings/:meetingId/sign": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "GET /api/kep/mock/authorize": [
+    "*public*"
+  ],
+  "GET /api/kep/sessions/:id": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/kep/sessions/:id/complete": [
+    "*public*"
+  ],
+  "POST /api/kep/sessions/:id/complete-auth": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "GET /api/kep/status": [
+    "*public*"
+  ],
+  "POST /api/kep/webhook": [
+    "*public*"
+  ],
+  "GET /api/mail/logs": [
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/mail/status": [
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/mail/test": [
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/meetings": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/meetings": [
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/meetings/:id": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/meetings/:id/agenda/:agendaItemId/vote": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/meetings/:id/protocol": [
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/meetings/:id/protocol.pdf": [
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/meetings/:id/register": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/meetings/:id/sign": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "PATCH /api/meetings/:id/status": [
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/messenger/peers": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "GET /api/messenger/threads": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "GET /api/messenger/threads/:id/messages": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/messenger/threads/:id/messages": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/messenger/threads/board": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/messenger/threads/building": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/messenger/threads/direct": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "GET /api/meters": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/meters": [
+    "accountant",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "PATCH /api/meters/:id/deactivate": [
+    "accountant",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/meters/:id/readings": [
+    "accountant",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/meters/:id/readings/self": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "GET /api/meters/apartment/:apartmentId": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "GET /api/metrics": [
+    "*public*"
+  ],
+  "GET /api/notifications/inbox": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "PATCH /api/notifications/inbox/:id/read": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "PATCH /api/notifications/inbox/read": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "DELETE /api/notifications/subscribe": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/notifications/subscribe": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "GET /api/notifications/vapid-public-key": [
+    "*public*"
+  ],
+  "GET /api/payments": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/payments": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "GET /api/payments/:id": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "PATCH /api/payments/:id/void": [
+    "accountant",
+    "chairman"
+  ],
+  "POST /api/payments/import": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "PATCH /api/payments/import/lines/:lineId": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "PATCH /api/payments/import/lines/:lineId/ignore": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "POST /api/payments/import/preview": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "GET /api/payments/import/unmatched": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/payments/online/intent": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "GET /api/payments/online/orders/:orderId": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "POST /api/payments/online/sandbox-complete": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "GET /api/payments/online/status": [
+    "*public*"
+  ],
+  "POST /api/payments/online/webhook": [
+    "*public*"
+  ],
+  "GET /api/payments/preview/allocation": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "GET /api/payments/reports/debtors": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/reminders": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/reminders": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "DELETE /api/reminders/:id": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "POST /api/reminders/notify-debtors": [
+    "accountant",
+    "board",
+    "chairman"
+  ],
+  "POST /api/reminders/process": [
+    "accountant",
+    "board",
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/roles": [
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/roles": [
+    "super_admin"
+  ],
+  "DELETE /api/roles/:code": [
+    "super_admin"
+  ],
+  "PATCH /api/roles/:code": [
+    "super_admin"
+  ],
+  "POST /api/setup/apartments": [
+    "super_admin"
+  ],
+  "POST /api/setup/bank": [
+    "super_admin"
+  ],
+  "POST /api/setup/building": [
+    "super_admin"
+  ],
+  "POST /api/setup/complete": [
+    "super_admin"
+  ],
+  "GET /api/setup/status": [
+    "super_admin"
+  ],
+  "POST /api/setup/users": [
+    "super_admin"
+  ],
+  "POST /api/sms/otp/send": [
+    "*public*"
+  ],
+  "POST /api/sms/otp/verify": [
+    "*public*"
+  ],
+  "GET /api/sms/status": [
+    "*public*"
+  ],
+  "POST /api/sms/test": [
+    "chairman",
+    "super_admin"
+  ],
+  "GET /api/tenants": [
+    "super_admin"
+  ],
+  "POST /api/tenants": [
+    "super_admin"
+  ],
+  "DELETE /api/tenants/:id": [
+    "super_admin"
+  ],
+  "GET /api/tenants/:id": [
+    "super_admin"
+  ],
+  "PATCH /api/tenants/:id": [
+    "super_admin"
+  ],
+  "GET /api/tenants/:id/delete-check": [
+    "super_admin"
+  ],
+  "GET /api/transparency/dashboard": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "GET /api/transparency/debtors": [
+    "accountant",
+    "auditor",
+    "board",
+    "chairman",
+    "crew",
+    "dispatcher",
+    "resident",
+    "super_admin"
+  ],
+  "GET /api/users": [
+    "chairman",
+    "super_admin"
+  ],
+  "POST /api/users": [
+    "super_admin"
+  ],
+  "PATCH /api/users/:id": [
+    "super_admin"
+  ],
+  "DELETE /api/users/:id/apartments/:apartmentId": [
+    "super_admin"
+  ],
+  "POST /api/users/:id/apartments/:apartmentId": [
+    "super_admin"
+  ],
+  "PATCH /api/users/:id/block": [
+    "chairman",
+    "super_admin"
+  ]
+}

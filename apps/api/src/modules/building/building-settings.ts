@@ -36,6 +36,11 @@ export interface BuildingSettingsJson {
    * null/undefined = disabled.
    */
   expenseDualApprovalThreshold?: number | null;
+  /**
+   * M5: apply an apartment's advance (overpayment) to new accruals automatically.
+   * Default true; set false to keep advances until a manual allocation.
+   */
+  autoApplyAdvance?: boolean;
   /** Require TOTP for chairman/accountant/board before finance actions (default true in prod). */
   requireFinance2fa?: boolean;
   /**
@@ -58,6 +63,10 @@ export interface BuildingSettingsJson {
    */
   finance?: {
     journalSot?: boolean;
+    /** Phase 3: audit trail of the Journal-SoT switch (POST /journal/sot). */
+    journalSotChangedAt?: string;
+    journalSotChangedBy?: string;
+    journalSotForced?: boolean;
     strictBankRec?: boolean;
     defaultCashFlowSource?: 'legacy' | 'journal' | 'both';
   };

@@ -2,7 +2,8 @@
 
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { apiFetch, getToken } from '@/lib/api';
+import { apiFetch, getToken } from '@/lib/api';
+import type { ApiResponse } from '@/lib/api-types';
 
 interface MeetingListItem {
   id: string;
@@ -32,6 +33,7 @@ interface MeetingDetail {
   stats: {
     participants: number;
     signedCount: number;
+    verifiedCount?: number;
     participationPercent?: number;
     quorumPercent?: number | null;
     quorumMet?: boolean;
@@ -52,7 +54,7 @@ export default function MeetingsPage() {
       window.location.href = '/login';
       return;
     }
-    const data = await apiFetch<MeetingListItem[]>('/meetings', { token });
+    const data = await apiFetch<ApiResponse<'/meetings'>>('/meetings', { token });
     setList(data);
   }, []);
 
@@ -275,6 +277,9 @@ export default function MeetingsPage() {
             <div style={{ color: 'var(--muted)' }}>
               Статус: <strong>{selected.status}</strong> · учасників{' '}
               {selected.stats.participants} · підписів {selected.stats.signedCount}
+              {selected.stats.verifiedCount != null && (
+                <> (верифіковано КЕП: {selected.stats.verifiedCount})</>
+              )}
               {selected.stats.participationPercent != null && (
                 <>
                   {' '}

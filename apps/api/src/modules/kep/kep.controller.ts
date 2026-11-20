@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import {
   BadRequestException,
   Body,
@@ -36,12 +37,21 @@ export class KepController {
   /** Mock QES page (browser). */
   @Get('mock/authorize')
   mockAuthorize(@Query('sessionId') sessionId: string, @Res() res: Response) {
-    if (!sessionId) {
+    if (!this.kep.mockAllowed()) {
+      res.status(404).send('Not found');
+      return;
+    }
+    if (!sessionId || !/^[A-Za-z0-9-]{8,64}$/.test(sessionId)) {
       res.status(400).send('sessionId required');
       return;
     }
+    const nonce = randomBytes(16).toString('base64');
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.send(this.kep.mockAuthorizePage(sessionId));
+    res.setHeader(
+      'Content-Security-Policy',
+      `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'`,
+    );
+    res.send(this.kep.mockAuthorizePage(sessionId, nonce));
   }
 
   @ApiBearerAuth()
@@ -61,7 +71,14 @@ export class KepController {
     @Param('id') id: string,
     @Body() dto: CompleteKepSignDto,
   ) {
-    // Public complete for mock IdP page (and diia mock fallback deeplink)
+    // Public complete for mock IdP page (and diia mock fallback deeplink).
+    // Phase 3 review: check the flag before touching the DB (no session-existence oracle when
+    // mock is off), never accept client-supplied signature/certificate data here, and return
+    // only the status (the full session — refId, title, digest — is for the owner via JWT).
+    if (!this.kep.mockAllowed()) {
+      // Public (unauthenticated) completion exists only for the demo signer.
+      throw new BadRequestException('Mock-підпис вимкнено (KEP_ALLOW_MOCK=false)');
+    }
     const session = await this.kep.getSession(id);
     if (session.provider !== 'mock') {
       // Real diia/cloud must use webhook or complete-auth with JWT
@@ -74,14 +91,11 @@ export class KepController {
         );
       }
     }
-    return this.kep.completeSession({
+    const done = await this.kep.completeSession({
       sessionId: id,
       code: dto.code ?? 'mock_ok',
-      signatureCms: dto.signatureCms,
-      certificateSubject: dto.certificateSubject,
-      certificateSerial: dto.certificateSerial,
-      providerPayload: dto.providerPayload,
     });
+    return { sessionId: done.sessionId, status: done.status, signed: done.signed };
   }
 
   @ApiBearerAuth()

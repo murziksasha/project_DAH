@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch, getToken } from './api';
-import { getSelectedBuildingId } from './building-context';
+import { getSelectedBuildingId } from './building-context';
+import type { ApiResponse } from '@/lib/api-types';
 
 export const queryKeys = {
   health: ['health'] as const,
@@ -29,7 +30,7 @@ export function useFundsQuery(enabled = true) {
     queryKey: queryKeys.funds(buildingId),
     enabled,
     queryFn: () =>
-      apiFetch<Array<{ id: string; name: string; type: string; openingBalance: string | number }>>(
+      apiFetch<ApiResponse<'/finance/funds'>>(
         '/finance/funds',
         { token: authToken() },
       ),
@@ -66,7 +67,7 @@ export function useApartmentsQuery(enabled = true) {
     queryKey: queryKeys.apartments(buildingId),
     enabled,
     queryFn: () =>
-      apiFetch<ApartmentListItem[]>('/building/apartments', { token: authToken() }),
+      apiFetch<ApiResponse<'/building/apartments'>>('/building/apartments', { token: authToken() }),
   });
 }
 
@@ -76,9 +77,7 @@ export function useDebtorsQuery(enabled = true) {
     queryKey: queryKeys.debtors(buildingId),
     enabled,
     queryFn: () =>
-      apiFetch<
-        Array<{ apartmentId: string; number: string; debt: number; isOverdue: boolean }>
-      >('/payments/reports/debtors', { token: authToken() }),
+      apiFetch<ApiResponse<'/payments/reports/debtors'>>('/payments/reports/debtors', { token: authToken() }),
   });
 }
 
@@ -88,13 +87,7 @@ export function useOpsSummaryQuery(enabled = true) {
     queryKey: queryKeys.opsSummary(buildingId),
     enabled,
     queryFn: () =>
-      apiFetch<{
-        pendingResidents: number;
-        openRequests: number;
-        activePolls: number;
-        openAccrualLines: number;
-        documents: number;
-      }>('/building/ops-summary', { token: authToken() }),
+      apiFetch<ApiResponse<'/building/ops-summary'>>('/building/ops-summary', { token: authToken() }),
   });
 }
 
@@ -172,9 +165,7 @@ export function useBankAccountsQuery(enabled = true) {
     queryKey: ['bank-accounts', buildingId] as const,
     enabled,
     queryFn: () =>
-      apiFetch<
-        Array<{ id: string; bankName: string; iban: string; description?: string | null }>
-      >('/finance/bank-accounts', { token: authToken() }),
+      apiFetch<ApiResponse<'/finance/bank-accounts'>>('/finance/bank-accounts', { token: authToken() }),
   });
 }
 
@@ -277,11 +268,11 @@ export function useCommunicationsQuery(enabled = true) {
     queryFn: async (): Promise<CommunicationsBundle> => {
       const token = authToken();
       const [announcements, requests, polls] = await Promise.all([
-        apiFetch<CommunicationsBundle['announcements']>('/communications/announcements', {
+        apiFetch<ApiResponse<'/communications/announcements'>>('/communications/announcements', {
           token,
         }),
-        apiFetch<CommunicationsBundle['requests']>('/communications/requests', { token }),
-        apiFetch<CommunicationsBundle['polls']>('/communications/polls', { token }),
+        apiFetch<ApiResponse<'/communications/requests'>>('/communications/requests', { token }),
+        apiFetch<ApiResponse<'/communications/polls'>>('/communications/polls', { token }),
       ]);
       return { announcements, requests, polls };
     },
@@ -293,19 +284,7 @@ export function useMessengerThreadsQuery(enabled = true) {
     queryKey: queryKeys.messengerThreads,
     enabled,
     queryFn: () =>
-      apiFetch<
-        Array<{
-          id: string;
-          title: string | null;
-          kind: string;
-          lastMessage?: {
-            body: string;
-            createdAt: string;
-            author: { firstName: string; lastName: string };
-          } | null;
-          messageCount?: number;
-        }>
-      >('/messenger/threads', { token: authToken() }),
+      apiFetch<ApiResponse<'/messenger/threads'>>('/messenger/threads', { token: authToken() }),
   });
 }
 
@@ -314,8 +293,6 @@ export function useMessengerPeersQuery(enabled = true) {
     queryKey: queryKeys.messengerPeers,
     enabled,
     queryFn: () =>
-      apiFetch<
-        Array<{ id: string; firstName: string; lastName: string; role: string }>
-      >('/messenger/peers', { token: authToken() }),
+      apiFetch<ApiResponse<'/messenger/peers'>>('/messenger/peers', { token: authToken() }),
   });
 }

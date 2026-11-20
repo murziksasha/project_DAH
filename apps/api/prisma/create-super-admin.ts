@@ -1,7 +1,8 @@
-import { PrismaClient, UserRole, UserStatus } from '@prisma/client';
+import { PrismaClient, UserRole, UserStatus } from '../src/prisma/client';
+import { prismaPgAdapter } from '../src/prisma/prisma-adapter';
 import * as bcrypt from 'bcrypt';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({ adapter: prismaPgAdapter() });
 
 async function main() {
   const email = process.env.SUPER_ADMIN_EMAIL ?? 'admin@dah.local';

@@ -124,7 +124,7 @@ export function AccountTab({
     window.history.replaceState({}, '', url.toString());
   }, [filters, detailsOpen]);
 
-  const timeline = account.timeline ?? [];
+  const timeline = useMemo(() => account.timeline ?? [], [account.timeline]);
   const years = useMemo(
     () => collectYears(account.lines, timeline),
     [account.lines, timeline],

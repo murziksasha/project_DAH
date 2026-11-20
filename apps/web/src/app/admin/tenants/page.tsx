@@ -7,7 +7,8 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { DataTable } from '@/components/ui/DataTable';
 import { apiFetch, getToken } from '@/lib/api';
 import { getStoredUser } from '@/lib/auth';
-import { getSelectedTenantId, setSelectedTenantId } from '@/lib/building-context';
+import { getSelectedTenantId, setSelectedTenantId } from '@/lib/building-context';
+import type { ApiResponse } from '@/lib/api-types';
 
 interface TenantRow {
   id: string;
@@ -64,7 +65,7 @@ export default function TenantsPage() {
       return;
     }
     try {
-      setRows(await apiFetch<TenantRow[]>('/tenants', { token }));
+      setRows(await apiFetch<ApiResponse<'/tenants'>>('/tenants', { token }));
     } catch (err) {
       setError(err instanceof Error ? err.message : t('error'));
     }

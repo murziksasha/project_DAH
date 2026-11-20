@@ -1,49 +1,72 @@
+import { Permission } from '@dah/shared';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { CreateReminderDto } from './dto/create-reminder.dto';
 import { RemindersService } from './reminders.service';
+import { TenantId } from '../../common/decorators/tenant-id.decorator';
+import { TenantAccessService } from '../../common/tenant-access/tenant-access.service';
 
-const WRITE = [UserRole.chairman, UserRole.accountant, UserRole.board];
 
 @ApiTags('reminders')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'), RolesGuard)
+@UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
 @Controller('reminders')
 export class RemindersController {
-  constructor(private reminders: RemindersService) {}
+  constructor(
+    private reminders: RemindersService,
+    private access: TenantAccessService,
+  ) {}
 
-  @Roles(...WRITE, UserRole.auditor)
+  @RequirePermissions(Permission.READ_FINANCE)
   @Get()
-  list(@Query('includeSent') includeSent?: string) {
-    return this.reminders.list(includeSent === '1' || includeSent === 'true');
+  list(
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+    @Query('includeSent') includeSent?: string,
+  ) {
+    return this.reminders.list(
+      includeSent === '1' || includeSent === 'true',
+      this.access.effectiveTenantId(user, tenantId),
+    );
   }
 
-  @Roles(...WRITE)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
   @Post()
-  create(@Body() dto: CreateReminderDto, @CurrentUser() user: AuthUser) {
-    return this.reminders.create(dto, user.id);
+  async create(
+    @Body() dto: CreateReminderDto,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+  ) {
+    const scope = this.access.effectiveTenantId(user, tenantId);
+    if (dto.apartmentId) await this.access.assertApartment(user, dto.apartmentId, tenantId);
+    return this.reminders.create(dto, user.id, scope);
   }
 
-  @Roles(...WRITE)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.reminders.remove(id);
+  remove(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @TenantId() tenantId: string | null,
+  ) {
+    return this.reminders.remove(id, this.access.effectiveTenantId(user, tenantId));
   }
 
-  @Roles(...WRITE)
+  /** Runs only for the caller's organization (worker processes all tenants). */
+  @RequirePermissions(Permission.MANAGE_FINANCE, Permission.PLATFORM_ADMIN)
   @Post('process')
-  process() {
-    return this.reminders.processDue();
+  process(@CurrentUser() user: AuthUser, @TenantId() tenantId: string | null) {
+    return this.reminders.processDue(this.access.effectiveTenantId(user, tenantId));
   }
 
-  @Roles(...WRITE)
+  @RequirePermissions(Permission.MANAGE_FINANCE)
   @Post('notify-debtors')
-  notifyDebtors() {
-    return this.reminders.notifyAllDebtors();
+  notifyDebtors(@CurrentUser() user: AuthUser, @TenantId() tenantId: string | null) {
+    return this.reminders.notifyAllDebtors(this.access.effectiveTenantId(user, tenantId));
   }
 }

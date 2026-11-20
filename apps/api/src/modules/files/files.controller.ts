@@ -1,3 +1,4 @@
+import { resolveFileDownloadSecret } from '../../common/config/secrets.config';
 import {
   BadRequestException,
   Controller,
@@ -14,7 +15,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '../../prisma/client';
 import type { Response } from 'express';
 import { memoryStorage } from 'multer';
 import { ConfigService } from '@nestjs/config';
@@ -56,10 +57,7 @@ export class FilesController {
       throw new BadRequestException('key, exp, sig required');
     }
     const exp = Number(expRaw);
-    const secret =
-      this.config.get<string>('FILE_DOWNLOAD_SECRET') ||
-      this.config.get<string>('JWT_SECRET') ||
-      'dev-only-insecure-file-secret';
+    const secret = resolveFileDownloadSecret((k) => this.config.get<string>(k));
 
     if (!verifyFileDownload(key, exp, sig, secret)) {
       throw new ForbiddenException('Invalid or expired download link');

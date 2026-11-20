@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsObject, IsOptional, IsString, MinLength } from 'class-validator';
 import { KEP_PROVIDERS } from '../kep.types';
 

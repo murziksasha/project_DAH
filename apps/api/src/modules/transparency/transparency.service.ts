@@ -1,5 +1,6 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '../../prisma/client';
+import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   DEFAULT_BUILDING_SETTINGS,
@@ -18,19 +19,39 @@ export class TransparencyService {
     private documents: DocumentsService,
   ) {}
 
-  async getResidentDashboard(userRole: UserRole) {
-    const building = await this.prisma.building.findFirst();
+  private async resolveUserBuilding(user: AuthUser | { role: UserRole; apartmentId?: string | null; tenantId?: string | null }) {
+    let buildingId: string | undefined;
+    if (user.apartmentId) {
+      const apt = await this.prisma.apartment.findUnique({
+        where: { id: user.apartmentId },
+        select: { buildingId: true },
+      });
+      buildingId = apt?.buildingId;
+    }
+    if (buildingId) {
+      return this.prisma.building.findUnique({ where: { id: buildingId } });
+    }
+    if (user.tenantId) {
+      return this.prisma.building.findFirst({ where: { tenantId: user.tenantId } });
+    }
+    return this.prisma.building.findFirst();
+  }
+
+  async getResidentDashboard(userOrRole: AuthUser | UserRole) {
+    const user = typeof userOrRole === 'string' ? { role: userOrRole, tenantId: null } : userOrRole;
+    const building = await this.resolveUserBuilding(user);
     const settingsJson = parseBuildingSettings(building?.settings);
     const showBankDetails =
       settingsJson.showBankDetailsToResidents ??
       DEFAULT_BUILDING_SETTINGS.showBankDetailsToResidents;
 
+    const tenantId = 'tenantId' in user ? user.tenantId : null;
     const [expenseSummary, cashFlow, documents, debtors, bankAccounts] = await Promise.all([
-      this.finance.getExpensesSummary(),
-      this.finance.getCashFlowReport(),
+      this.finance.getExpensesSummary(undefined, undefined, building?.id, tenantId),
+      this.finance.getCashFlowReport(undefined, undefined, building?.id, tenantId),
       this.documents.listPublic(),
-      this.canShowDebtors(userRole, building?.showDebtorsToResidents ?? false)
-        ? this.payments.getDebtorsReport()
+      this.canShowDebtors(user.role as UserRole, building?.showDebtorsToResidents ?? false)
+        ? this.payments.getDebtorsReport(building?.id, tenantId)
         : Promise.resolve(null),
       showBankDetails && building
         ? this.prisma.bankAccount.findMany({
@@ -80,11 +101,14 @@ export class TransparencyService {
     return role === UserRole.resident && setting;
   }
 
-  async getDebtorsForUser(role: UserRole) {
-    const building = await this.prisma.building.findFirst();
-    if (!this.canShowDebtors(role, building?.showDebtorsToResidents ?? false)) {
+  async getDebtorsForUser(userOrRole: AuthUser | UserRole) {
+    const user = typeof userOrRole === 'string' ? { role: userOrRole, tenantId: null } : userOrRole;
+    const building = await this.resolveUserBuilding(user);
+    if (!building) return [];
+    if (!this.canShowDebtors(user.role as UserRole, building.showDebtorsToResidents)) {
       throw new ForbiddenException('Список боржників недоступний');
     }
-    return this.payments.getDebtorsReport();
+    const tenantId = 'tenantId' in user ? user.tenantId : null;
+    return this.payments.getDebtorsReport(building.id, tenantId);
   }
 }

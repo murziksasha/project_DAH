@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { RequestPriority, RequestStatus, UserRole, VoteWeightMode } from '@prisma/client';
+import { Prisma, RequestPriority, RequestStatus, UserRole, VoteWeightMode } from '../../prisma/client';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { roundMoney } from '../../common/utils/money';
 import {
@@ -51,9 +51,13 @@ export class CommunicationsService {
     private storage: StorageService,
   ) {}
 
-  async listAnnouncements(userId: string) {
+  async listAnnouncements(userId: string, tenantId?: string | null) {
+    const where: Prisma.AnnouncementWhereInput = tenantId
+      ? { OR: [{ tenantId }, { tenantId: null, author: { tenantId } }] }
+      : {};
     const [rows, reads] = await Promise.all([
       this.prisma.announcement.findMany({
+        where,
         orderBy: [{ isPinned: 'desc' }, { createdAt: 'desc' }],
         include: {
           author: { select: { id: true, firstName: true, lastName: true } },
@@ -71,13 +75,19 @@ export class CommunicationsService {
     }));
   }
 
-  async unreadAnnouncementCount(userId: string) {
-    const total = await this.prisma.announcement.count();
+  async unreadAnnouncementCount(userId: string, tenantId?: string | null) {
+    const where: Prisma.AnnouncementWhereInput = tenantId
+      ? { OR: [{ tenantId }, { tenantId: null, author: { tenantId } }] }
+      : {};
+    const total = await this.prisma.announcement.count({ where });
     if (total === 0) return { unread: 0 };
     const read = await this.prisma.announcementRead.count({ where: { userId } });
     // Unread = announcements without a read row (approx if some deleted reads cascade)
     const unread = await this.prisma.announcement.count({
-      where: { reads: { none: { userId } } },
+      where: {
+        ...where,
+        reads: { none: { userId } },
+      },
     });
     return { unread, total, read };
   }
@@ -133,13 +143,18 @@ export class CommunicationsService {
     };
   }
 
-  async createAnnouncement(dto: CreateAnnouncementDto, authorId: string) {
+  async createAnnouncement(
+    dto: CreateAnnouncementDto,
+    authorId: string,
+    tenantId?: string | null,
+  ) {
     const announcement = await this.prisma.announcement.create({
       data: {
         title: dto.title,
         body: dto.body,
         isPinned: dto.isPinned ?? false,
         authorId,
+        tenantId: tenantId ?? null,
       },
       include: {
         author: { select: { id: true, firstName: true, lastName: true } },
@@ -148,6 +163,7 @@ export class CommunicationsService {
 
     await this.audit.log({
       userId: authorId,
+      tenantId,
       action: 'announcement.created',
       entityType: 'Announcement',
       entityId: announcement.id,
@@ -208,12 +224,16 @@ export class CommunicationsService {
     return announcement;
   }
 
-  async deleteAnnouncement(id: string, userId: string) {
+  async deleteAnnouncement(id: string, userId: string, tenantId?: string | null) {
     const announcement = await this.prisma.announcement.findUnique({ where: { id } });
     if (!announcement) throw new NotFoundException('Оголошення не знайдено');
+    if (tenantId && announcement.tenantId !== tenantId) {
+      throw new ForbiddenException('Немає доступу до оголошення іншої організації');
+    }
     await this.prisma.announcement.delete({ where: { id } });
     await this.audit.log({
       userId,
+      tenantId,
       action: 'announcement.deleted',
       entityType: 'Announcement',
       entityId: id,
@@ -236,46 +256,83 @@ export class CommunicationsService {
   private async resolveAuthorBuildingId(
     authorId: string,
     preferredBuildingId?: string,
+    tenantId?: string | null,
   ): Promise<string | null> {
     if (preferredBuildingId) {
       const b = await this.prisma.building.findUnique({
         where: { id: preferredBuildingId },
-        select: { id: true },
+        select: { id: true, tenantId: true },
       });
-      return b?.id ?? null;
+      if (b && (!tenantId || b.tenantId === tenantId)) {
+        return b.id;
+      }
+      return null;
     }
     const user = await this.prisma.user.findUnique({
       where: { id: authorId },
       select: {
         apartmentId: true,
-        apartmentLinks: { select: { apartment: { select: { buildingId: true } } }, take: 1 },
+        apartmentLinks: {
+          select: {
+            apartment: {
+              select: {
+                buildingId: true,
+                building: { select: { tenantId: true } },
+              },
+            },
+          },
+        },
       },
     });
     if (user?.apartmentId) {
       const apt = await this.prisma.apartment.findUnique({
         where: { id: user.apartmentId },
-        select: { buildingId: true },
+        select: { buildingId: true, building: { select: { tenantId: true } } },
       });
-      if (apt) return apt.buildingId;
+      if (apt && (!tenantId || apt.building.tenantId === tenantId)) {
+        return apt.buildingId;
+      }
     }
-    return user?.apartmentLinks[0]?.apartment.buildingId ?? null;
+    for (const link of user?.apartmentLinks ?? []) {
+      if (!tenantId || link.apartment.building.tenantId === tenantId) {
+        return link.apartment.buildingId;
+      }
+    }
+    return null;
   }
 
   async listRequests(user: AuthUser) {
     const isAdmin = ADMIN_ROLES.includes(user.role as UserRole);
     const isCrew = user.role === UserRole.crew;
-    const where = isAdmin
-      ? user.tenantId
-        ? {
-            OR: [
-              { buildingId: null },
-              { author: { tenantId: user.tenantId } },
-            ],
-          }
-        : undefined
-      : isCrew
-        ? { assigneeId: user.id }
-        : { authorId: user.id };
+
+    if (!isAdmin && !isCrew) {
+      const rows = await this.prisma.request.findMany({
+        where: { authorId: user.id },
+        orderBy: [{ priority: 'desc' }, { dueAt: 'asc' }, { createdAt: 'desc' }],
+        include: {
+          author: { select: { id: true, firstName: true, lastName: true, email: true } },
+          assignee: { select: { id: true, firstName: true, lastName: true } },
+        },
+      });
+      const withSla = rows.map((r) => this.enrichRequestSla(r));
+      return Promise.all(withSla.map((r) => this.withPhotoUrls(r)));
+    }
+
+    let tenantFilter: Prisma.RequestWhereInput = {};
+    if (user.role !== UserRole.super_admin && user.tenantId) {
+      tenantFilter = {
+        OR: [
+          { tenantId: user.tenantId },
+          { tenantId: null, author: { tenantId: user.tenantId } },
+        ],
+      };
+    }
+
+    const where: Prisma.RequestWhereInput = {
+      ...tenantFilter,
+      ...(isCrew ? { assigneeId: user.id } : {}),
+    };
+
     const rows = await this.prisma.request.findMany({
       where,
       orderBy: [{ priority: 'desc' }, { dueAt: 'asc' }, { createdAt: 'desc' }],
@@ -307,11 +364,14 @@ export class CommunicationsService {
       throw new ForbiddenException('Немає доступу до черги заявок');
     }
 
-    const where: {
-      status?: RequestStatus | { not: RequestStatus };
-      assigneeId?: string | null;
-      priority?: RequestPriority;
-    } = {};
+    const where: Prisma.RequestWhereInput = {};
+
+    if (user.role !== UserRole.super_admin && user.tenantId) {
+      where.OR = [
+        { tenantId: user.tenantId },
+        { tenantId: null, author: { tenantId: user.tenantId } },
+      ];
+    }
 
     if (query.status && Object.values(RequestStatus).includes(query.status as RequestStatus)) {
       where.status = query.status as RequestStatus;
@@ -353,15 +413,57 @@ export class CommunicationsService {
     return { items: enriched, summary };
   }
 
-  async createRequest(dto: CreateRequestDto, authorId: string) {
+  async createRequest(dto: CreateRequestDto, authorId: string, user?: AuthUser) {
+    if (dto.clientRequestId) {
+      const existing = await this.prisma.request.findUnique({
+        where: { clientRequestId: dto.clientRequestId },
+        include: {
+          author: { select: { id: true, firstName: true, lastName: true } },
+        },
+      });
+      if (existing) {
+        return this.withPhotoUrls(this.enrichRequestSla(existing));
+      }
+    }
+
     const priority = dto.priority ?? RequestPriority.normal;
-    const buildingId = await this.resolveAuthorBuildingId(authorId, dto.buildingId);
-    const building = buildingId
+    let resolvedBuildingId: string | null = null;
+
+    if (dto.buildingId) {
+      const b = await this.prisma.building.findUnique({
+        where: { id: dto.buildingId },
+        select: { id: true, tenantId: true },
+      });
+      if (!b || (user?.tenantId && b.tenantId !== user.tenantId)) {
+        throw new BadRequestException('Будинок не знайдено або він належить іншій організації');
+      }
+      resolvedBuildingId = b.id;
+    }
+
+    if (dto.apartmentId) {
+      const apt = await this.prisma.apartment.findUnique({
+        where: { id: dto.apartmentId },
+        include: { building: { select: { id: true, tenantId: true } } },
+      });
+      if (!apt || (user?.tenantId && apt.building.tenantId !== user.tenantId)) {
+        throw new BadRequestException('Квартиру не знайдено або вона належить іншій організації');
+      }
+      if (!resolvedBuildingId) {
+        resolvedBuildingId = apt.buildingId;
+      }
+    }
+
+    if (!resolvedBuildingId) {
+      resolvedBuildingId = await this.resolveAuthorBuildingId(authorId, undefined, user?.tenantId);
+    }
+
+    const building = resolvedBuildingId
       ? await this.prisma.building.findUnique({
-          where: { id: buildingId },
-          select: { settings: true },
+          where: { id: resolvedBuildingId },
+          select: { tenantId: true, settings: true },
         })
-      : await this.prisma.building.findFirst({ select: { settings: true } });
+      : null;
+
     const settings =
       building?.settings && typeof building.settings === 'object'
         ? (building.settings as { slaHoursByCategory?: Record<string, number> })
@@ -375,12 +477,17 @@ export class CommunicationsService {
           settings.slaHoursByCategory ?? null,
         );
 
+    const tenantId = user?.tenantId ?? building?.tenantId ?? null;
+
     const request = await this.prisma.request.create({
       data: {
         title: dto.title,
         description: dto.description,
         category: dto.category,
-        buildingId: buildingId ?? undefined,
+        tenantId,
+        buildingId: resolvedBuildingId ?? undefined,
+        apartmentId: dto.apartmentId ?? undefined,
+        clientRequestId: dto.clientRequestId ?? undefined,
         priority,
         authorId,
         dueAt,
@@ -392,6 +499,7 @@ export class CommunicationsService {
     });
     await this.audit.log({
       userId: authorId,
+      tenantId,
       action: 'request.created',
       entityType: 'Request',
       entityId: request.id,
@@ -400,10 +508,11 @@ export class CommunicationsService {
         category: dto.category,
         priority,
         dueAt: dueAt.toISOString(),
+        clientRequestId: dto.clientRequestId,
       },
     });
 
-    void this.mail.notifyAdmins('request.created', {
+    void this.mail.notifyAdmins(tenantId, 'request.created', {
       firstName: request.author.firstName,
       lastName: request.author.lastName,
       title: dto.title,
@@ -415,9 +524,35 @@ export class CommunicationsService {
     return this.withPhotoUrls(this.enrichRequestSla(request));
   }
 
-  async updateRequest(id: string, dto: UpdateRequestDto, userId: string, actorRole?: string) {
-    const request = await this.prisma.request.findUnique({ where: { id } });
+  async updateRequest(
+    id: string,
+    dto: UpdateRequestDto,
+    userId: string,
+    actorRole?: string,
+    actorTenantId?: string | null,
+  ) {
+    const request = await this.prisma.request.findUnique({
+      where: { id },
+      include: {
+        author: { select: { id: true, tenantId: true } },
+      },
+    });
     if (!request) throw new NotFoundException('Заявку не знайдено');
+
+    // Tenant boundary check
+    if (actorRole !== UserRole.super_admin && actorTenantId) {
+      let requestTenantId = request.tenantId ?? request.author?.tenantId;
+      if (!requestTenantId && request.buildingId) {
+        const b = await this.prisma.building.findUnique({
+          where: { id: request.buildingId },
+          select: { tenantId: true },
+        });
+        requestTenantId = b?.tenantId ?? null;
+      }
+      if (requestTenantId && requestTenantId !== actorTenantId) {
+        throw new ForbiddenException('Немає доступу до заявки іншої організації');
+      }
+    }
 
     // Crew may only update own assigned tickets (status)
     if (actorRole === UserRole.crew) {
@@ -441,6 +576,7 @@ export class CommunicationsService {
     const updated = await this.prisma.request.update({
       where: { id },
       data: {
+        ...(dto.category ? { category: dto.category } : {}),
         status: dto.status,
         priority: dto.priority,
         assigneeId: dto.assigneeId,
@@ -506,8 +642,11 @@ export class CommunicationsService {
     return this.withPhotoUrls(this.enrichRequestSla(updated));
   }
 
-  async listPolls(userId?: string) {
+  async listPolls(userId?: string, tenantId?: string | null) {
+    // M8: rows without tenant are not shared across organizations
+    const where: Prisma.PollWhereInput = tenantId ? { tenantId } : {};
     const polls = await this.prisma.poll.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
       include: {
         options: {
@@ -550,7 +689,7 @@ export class CommunicationsService {
     );
   }
 
-  async getPoll(id: string, userId: string) {
+  async getPoll(id: string, userId: string, tenantId?: string | null) {
     const poll = await this.prisma.poll.findUnique({
       where: { id },
       include: {
@@ -565,6 +704,9 @@ export class CommunicationsService {
       },
     });
     if (!poll) throw new NotFoundException('Опитування не знайдено');
+    if (tenantId && poll.tenantId !== tenantId) {
+      throw new NotFoundException('Опитування не знайдено');
+    }
 
     const userVote = poll.votes[0]?.optionId ?? null;
     const stats = await this.pollStats(id, poll.voteWeight, poll.quorumPercent);
@@ -588,7 +730,7 @@ export class CommunicationsService {
     };
   }
 
-  async createPoll(dto: CreatePollDto, userId: string) {
+  async createPoll(dto: CreatePollDto, userId: string, tenantId?: string | null) {
     if (dto.options.length < 2) {
       throw new BadRequestException('Потрібно щонайменше 2 варіанти відповіді');
     }
@@ -598,6 +740,7 @@ export class CommunicationsService {
         endsAt: dto.endsAt ? new Date(dto.endsAt) : undefined,
         voteWeight: dto.voteWeight ?? VoteWeightMode.one_per_user,
         quorumPercent: dto.quorumPercent,
+        tenantId: tenantId ?? null,
         options: { create: dto.options.map((text) => ({ text })) },
       },
       include: {
@@ -607,6 +750,7 @@ export class CommunicationsService {
     });
     await this.audit.log({
       userId,
+      tenantId,
       action: 'poll.created',
       entityType: 'Poll',
       entityId: poll.id,
@@ -620,12 +764,15 @@ export class CommunicationsService {
     return poll;
   }
 
-  async votePoll(pollId: string, optionId: string, userId: string) {
+  async votePoll(pollId: string, optionId: string, userId: string, tenantId?: string | null) {
     const poll = await this.prisma.poll.findUnique({
       where: { id: pollId },
       include: { options: true },
     });
     if (!poll) throw new NotFoundException('Опитування не знайдено');
+    if (tenantId && poll.tenantId !== tenantId) {
+      throw new ForbiddenException('Немає доступу до опитування іншої організації');
+    }
     if (!poll.isActive) throw new BadRequestException('Опитування закрито');
     if (poll.endsAt && poll.endsAt < new Date()) {
       throw new BadRequestException('Термін опитування минув');
@@ -687,12 +834,15 @@ export class CommunicationsService {
       data: { pollId, optionId, userId, apartmentId, weight },
     });
 
-    return this.getPoll(pollId, userId);
+    return this.getPoll(pollId, userId, tenantId);
   }
 
-  async closePoll(id: string, userId: string) {
+  async closePoll(id: string, userId: string, tenantId?: string | null) {
     const poll = await this.prisma.poll.findUnique({ where: { id } });
     if (!poll) throw new NotFoundException('Опитування не знайдено');
+    if (tenantId && poll.tenantId !== tenantId) {
+      throw new ForbiddenException('Немає доступу до опитування іншої організації');
+    }
     const stats = await this.pollStats(id, poll.voteWeight, poll.quorumPercent);
     const updated = await this.prisma.poll.update({
       where: { id },
@@ -704,6 +854,7 @@ export class CommunicationsService {
     });
     await this.audit.log({
       userId,
+      tenantId,
       action: 'poll.closed',
       entityType: 'Poll',
       entityId: id,
@@ -717,6 +868,14 @@ export class CommunicationsService {
     voteWeight: VoteWeightMode,
     quorumPercent: { toNumber?: () => number } | number | null,
   ) {
+    const poll = await this.prisma.poll.findUnique({
+      where: { id: pollId },
+      select: { tenantId: true },
+    });
+    const tenantId = poll?.tenantId;
+    const buildingFilter = tenantId ? { building: { tenantId } } : {};
+    const userFilter = tenantId ? { tenantId } : {};
+
     const votes = await this.prisma.pollVote.findMany({
       where: { pollId },
       select: { weight: true, optionId: true },
@@ -726,12 +885,17 @@ export class CommunicationsService {
     let eligibleWeight = 0;
     if (voteWeight === VoteWeightMode.one_per_user) {
       eligibleWeight = await this.prisma.user.count({
-        where: { status: 'active', role: 'resident' },
+        where: { status: 'active', role: 'resident', ...userFilter },
       });
     } else if (voteWeight === VoteWeightMode.one_per_apartment) {
-      eligibleWeight = await this.prisma.apartment.count();
+      eligibleWeight = await this.prisma.apartment.count({
+        where: buildingFilter,
+      });
     } else {
-      const areas = await this.prisma.apartment.aggregate({ _sum: { area: true } });
+      const areas = await this.prisma.apartment.aggregate({
+        where: buildingFilter,
+        _sum: { area: true },
+      });
       eligibleWeight = roundMoney(areas._sum.area ?? 0);
     }
 
